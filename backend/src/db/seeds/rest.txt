@@ -1,0 +1,10 @@
+cd "backend"
+# 1. Rollback all migrations (drops tables)
+npx knex migrate:rollback --all
+# 2. Run all migrations again (creates fresh, empty tables)
+npx knex migrate:latest
+# 3. Seed the database with your initial_data.js file
+npx knex seed:run
+
+
+cd "backend";npx knex migrate:rollback --all;npx knex migrate:latest;npx knex seed:run
