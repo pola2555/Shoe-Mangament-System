@@ -1,10 +1,10 @@
 /* ============================================================
    SHOE ERP — Design System
-   Premium dark theme with glass morphism accents
+   Premium dark/light theme with glass morphism accents
    ============================================================ */
 
 :root {
-  /* --- Color Palette --- */
+  /* --- Color Palette (Dark — default) --- */
   --color-bg-primary: #0f1117;
   --color-bg-secondary: #1a1d27;
   --color-bg-card: #22253180;
@@ -66,6 +66,57 @@
   --sidebar-width: 260px;
   --sidebar-collapsed-width: 72px;
   --header-height: 64px;
+}
+
+/* ============================================================
+   LIGHT THEME
+   ============================================================ */
+
+[data-theme="light"] {
+  --color-bg-primary: #f5f6fa;
+  --color-bg-secondary: #ffffff;
+  --color-bg-card: #ffffffcc;
+  --color-bg-hover: #f0f1f5;
+  --color-bg-input: #f8f9fc;
+
+  --color-accent: #6c5ce7;
+  --color-accent-hover: #5a4bd1;
+  --color-accent-soft: #6c5ce715;
+
+  --color-success: #00a884;
+  --color-warning: #e6a817;
+  --color-danger: #d63031;
+  --color-info: #0984e3;
+
+  --color-text-primary: #1a1a2e;
+  --color-text-secondary: #636e8a;
+  --color-text-muted: #a0a8c0;
+
+  --color-border: #e2e5f0;
+  --color-border-hover: #c8cde0;
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.10);
+  --shadow-glow: 0 0 20px rgba(108, 92, 231, 0.10);
+}
+
+[data-theme="light"] .badge-success { background: #00b89418; }
+[data-theme="light"] .badge-warning { background: #fdcb6e18; }
+[data-theme="light"] .badge-danger  { background: #e1705518; }
+[data-theme="light"] .badge-info    { background: #74b9ff18; }
+[data-theme="light"] .badge-neutral { background: #636e8a18; }
+
+[data-theme="light"] .page-title {
+  background: linear-gradient(135deg, #1a1a2e, var(--color-accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+[data-theme="light"] .sidebar__logo-text {
+  background: linear-gradient(135deg, var(--color-accent), #5a4bd1);
+  -webkit-background-clip: text;
+  background-clip: text;
 }
 
 /* ============================================================
@@ -332,4 +383,482 @@ a:hover { color: var(--color-accent-hover); }
 .loading-screen .spinner {
   width: 40px;
   height: 40px;
+}
+
+/* ============================================================
+   RTL SUPPORT
+   ============================================================ */
+
+[dir="rtl"] .table th {
+  text-align: right;
+}
+
+[dir="rtl"] .form-input,
+[dir="rtl"] .form-select,
+[dir="rtl"] .form-textarea {
+  text-align: right;
+}
+
+[dir="rtl"] .btn {
+  flex-direction: row-reverse;
+}
+
+[dir="rtl"] .page-header {
+  flex-direction: row-reverse;
+}
+
+/* ============================================================
+   RESPONSIVE — Mobile-first breakpoints
+   ============================================================ */
+
+/* Tablet & below */
+@media (max-width: 1024px) {
+  :root {
+    --spacing-xl: 1.25rem;
+  }
+  .page-title {
+    font-size: var(--font-size-lg);
+  }
+}
+
+/* Phone */
+@media (max-width: 768px) {
+  :root {
+    --sidebar-width: 260px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .page-title {
+    font-size: var(--font-size-md);
+  }
+
+  .table-container {
+    font-size: var(--font-size-sm);
+  }
+
+  .table th,
+  .table td {
+    padding: 0.5rem 0.625rem;
+  }
+
+  .btn {
+    padding: 0.5rem 0.875rem;
+    font-size: var(--font-size-sm);
+  }
+
+  .card {
+    padding: var(--spacing-md);
+  }
+
+  [dir="rtl"] .page-header {
+    flex-direction: column;
+  }
+}
+
+/* Small phone */
+@media (max-width: 480px) {
+  :root {
+    --spacing-xl: 0.75rem;
+    --spacing-lg: 1rem;
+  }
+
+  .btn-lg {
+    padding: 0.625rem 1.25rem;
+    font-size: var(--font-size-base);
+  }
+}
+
+/* ============================================================
+   MOBILE SIDEBAR OVERLAY BACKDROP
+   ============================================================ */
+
+.sidebar-overlay {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 99;
+    opacity: 0;
+    transition: opacity var(--transition-base);
+  }
+  .sidebar-overlay--visible {
+    display: block;
+    opacity: 1;
+  }
+}
+
+/* ============================================================
+   MOBILE HEADER (hamburger bar)
+   ============================================================ */
+
+.mobile-header {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--header-height);
+    padding: 0 var(--spacing-md);
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border);
+    z-index: 98;
+  }
+
+  .mobile-header__logo {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--color-accent), #a29bfe);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .mobile-header__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    font-size: 1.25rem;
+    transition: all var(--transition-fast);
+  }
+
+  .mobile-header__btn:hover {
+    background: var(--color-bg-hover);
+  }
+
+  .layout__main {
+    margin-top: var(--header-height);
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding: var(--spacing-md) !important;
+  }
+}
+
+/* ============================================================
+   GLOBAL RESPONSIVE — MODALS, FORMS, TABLES, FILTERS
+   ============================================================ */
+
+/* Modal full-width on small screens */
+@media (max-width: 768px) {
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-content {
+    max-width: 100% !important;
+    width: 100% !important;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0 !important;
+    max-height: 90vh;
+    animation: modalSlideUp 250ms ease;
+  }
+
+  @keyframes modalSlideUp {
+    from { opacity: 0; transform: translateY(100%); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+}
+
+/* Filter panels */
+.filters-panel {
+  margin-bottom: var(--spacing-lg);
+}
+
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--spacing-md);
+}
+
+@media (max-width: 768px) {
+  .filters-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .filters-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Search inputs in page headers — don't use fixed widths */
+@media (max-width: 768px) {
+  .page-header .form-input[style*="width"] {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .page-header > div {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .page-header > div > .form-input {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+/* Tabs: horizontal scroll on mobile instead of wrapping */
+@media (max-width: 768px) {
+  .tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    gap: 0;
+    padding-bottom: 2px;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    flex-shrink: 0;
+    font-size: var(--font-size-sm);
+    padding: 0.5rem 0.875rem;
+  }
+}
+
+/* Table: better touch targets and text on mobile */
+@media (max-width: 768px) {
+  .table td,
+  .table th {
+    font-size: var(--font-size-sm);
+  }
+
+  .table td .btn.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: var(--font-size-xs);
+  }
+}
+
+/* Detail modals */
+@media (max-width: 768px) {
+  .modal-content h2 {
+    font-size: var(--font-size-lg);
+  }
+
+  .modal-content .table-container {
+    max-height: 200px;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Badge: smaller on mobile */
+@media (max-width: 480px) {
+  .badge {
+    font-size: 0.65rem;
+    padding: 0.15rem 0.45rem;
+  }
+}
+
+/* ============================================================
+   INLINE FILTER BARS — Transfers, Inventory, Users, ActivityLog
+   Override inline fixed widths on filter selects/inputs
+   ============================================================ */
+@media (max-width: 768px) {
+  /* Any card or div used as a filter bar with inline flex */
+  .card .form-row {
+    display: flex !important;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+
+  .card .form-row .form-group {
+    flex: 1 1 100% !important;
+    min-width: 0 !important;
+    margin-bottom: 0;
+  }
+
+  /* Override fixed-width selects in filter bars */
+  .form-input[style*="width: 160"],
+  .form-input[style*="width: 180"],
+  .form-input[style*="width: 200"],
+  .form-input[style*="width: 140"],
+  .form-input[style*="width: 280"],
+  select.form-input[style*="width"] {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* Filter count / summary text */
+  .filter-count {
+    font-size: var(--font-size-xs);
+    flex-wrap: wrap;
+    line-height: 1.6;
+  }
+
+  /* Filter panel action row (clear button + count) */
+  .filters-panel > div:last-child {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    align-items: flex-start !important;
+  }
+
+  /* Action buttons in table rows — wrap if needed */
+  .table td > div {
+    flex-wrap: wrap;
+  }
+
+  /* Settings page cards */
+  div[style*="maxWidth: 640"],
+  div[style*="max-width: 640"] {
+    max-width: 100% !important;
+  }
+}
+
+/* ============================================================
+   RESPONSIVE TABLE HORIZONTAL SCROLL
+   ============================================================ */
+@media (max-width: 768px) {
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table {
+    min-width: 600px;
+  }
+
+  /* Smaller tables (fewer columns) don't need min-width */
+  .table-container--compact .table {
+    min-width: auto;
+  }
+}
+
+/* ============================================================
+   PERMISSIONS MODAL — grid on mobile
+   ============================================================ */
+@media (max-width: 768px) {
+  .modal-content > div > div[style*="flex-direction: column"] {
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+}
+
+/* ============================================================
+   RESPONSIVE FORM ACTIONS
+   ============================================================ */
+@media (max-width: 480px) {
+  .form-actions {
+    flex-direction: column;
+  }
+
+  .form-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ============================================================
+   RESPONSIVE SEARCH FORMS (Customers, etc.)
+   ============================================================ */
+@media (max-width: 768px) {
+  form.card[style*="display: flex"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  form.card .form-group {
+    flex: 1 1 auto !important;
+  }
+}
+
+/* ============================================================
+   INVENTORY PAGE FILTER FORM — override inline flex layout
+   ============================================================ */
+@media (max-width: 768px) {
+  .card form[style*="display: flex"] {
+    flex-direction: column !important;
+    gap: var(--spacing-sm) !important;
+  }
+
+  .card form[style*="display: flex"] .form-group {
+    min-width: 0 !important;
+  }
+
+  .card form[style*="display: flex"] > div[style*="display: flex"] {
+    flex-direction: row;
+    width: 100%;
+  }
+}
+
+/* ============================================================
+   TREE VIEW — Inventory summary responsive
+   ============================================================ */
+@media (max-width: 768px) {
+  .tree-row.product-row td:first-child {
+    padding-left: 0.5rem !important;
+    font-size: var(--font-size-sm);
+  }
+
+  .tree-row.color-row td:first-child {
+    padding-left: 1.5rem !important;
+  }
+
+  .tree-row.size-row td:first-child {
+    padding-left: 2.5rem !important;
+  }
+}
+
+/* ============================================================
+   PAYMENT BADGES IN DETAIL MODALS
+   ============================================================ */
+@media (max-width: 768px) {
+  .modal-content div[style*="display: flex"][style*="flexWrap: wrap"],
+  .modal-content div[style*="display: flex"][style*="flex-wrap: wrap"] {
+    gap: var(--spacing-xs) !important;
+  }
+}
+
+/* ============================================================
+   PAGE-LEVEL INLINE FILTER ROWS (Transfers filter bar)
+   ============================================================ */
+@media (max-width: 768px) {
+  div[style*="display: flex"][style*="marginBottom: var(--spacing-md)"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  div[style*="display: flex"][style*="marginBottom: var(--spacing-md)"] > .form-input {
+    width: 100% !important;
+  }
+
+  div[style*="display: flex"][style*="marginBottom: var(--spacing-md)"] > .btn {
+    align-self: flex-start;
+  }
+
+  div[style*="display: flex"][style*="marginBottom: var(--spacing-md)"] > span {
+    margin-left: 0 !important;
+    font-size: var(--font-size-xs);
+  }
 }

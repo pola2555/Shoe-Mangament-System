@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
-import { salesAPI, returnsAPI, storesAPI } from '../../api';
+import { salesAPI, returnsAPI } from '../../api';
+import { useAuth } from '../../context/AuthContext';
+import { useTranslation } from '../../i18n/i18nContext';
 import { HiOutlineMagnifyingGlass, HiOutlineArrowUturnLeft } from 'react-icons/hi2';
 
 export default function CustomerReturns() {
+  const { user } = useAuth();
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [daysFilter, setDaysFilter] = useState('');
   const [searching, setSearching] = useState(false);
@@ -30,14 +34,21 @@ export default function CustomerReturns() {
       if (daysFilter) params.days = daysFilter;
 
       const res = await salesAPI.list(params);
-      setSearchResults(res.data.data);
-      if (res.data.data.length === 0) {
-        toast.error('No sales found matching that query.');
-      } else if (res.data.data.length === 1) {
-        loadSaleDetails(res.data.data[0].id);
+      let results = res.data.data;
+      // Filter by assigned stores
+      if (user?.role_name !== 'admin' && !user?.permissions?.all_stores && user?.assigned_stores?.length > 0) {
+        results = results.filter(s => user.assigned_stores.includes(s.store_id));
+      }
+      // Exclude fully refunded sales
+      results = results.filter(s => parseFloat(s.refunded_amount || 0) < parseFloat(s.final_amount));
+      setSearchResults(results);
+      if (results.length === 0) {
+        toast.error(t('returns.no_sales_found'));
+      } else if (results.length === 1) {
+        loadSaleDetails(results[0].id);
       }
     } catch (err) {
-      toast.error('Failed to search sales');
+      toast.error(t('returns.failed_search_sales'));
     } finally {
       setSearching(false);
     }
@@ -51,18 +62,20 @@ export default function CustomerReturns() {
       const sale = res.data.data;
       setSelectedSale(sale);
       
-      // Initialize items state mapping
+      // Initialize items state mapping (exclude already returned items)
       const itemsMap = {};
       sale.items.forEach(item => {
-        itemsMap[item.id] = {
-          selected: false,
-          refund_amount: parseFloat(item.sale_price) || 0
-        };
+        if (!item.is_returned) {
+          itemsMap[item.id] = {
+            selected: false,
+            refund_amount: parseFloat(item.sale_price) || 0
+          };
+        }
       });
       setSelectedItems(itemsMap);
       
     } catch (err) {
-      toast.error('Failed to load sale details');
+      toast.error(t('returns.failed_load_sale'));
     } finally {
       setLoadingSale(false);
     }
@@ -103,7 +116,7 @@ export default function CustomerReturns() {
       }));
 
     if (itemsToReturn.length === 0) {
-      return toast.error('Please select at least one item to return');
+      return toast.error(t('returns.select_at_least_one'));
     }
 
     try {
@@ -121,7 +134,7 @@ export default function CustomerReturns() {
       };
 
       await returnsAPI.createCustomerReturn(payload);
-      toast.success('Return processed successfully!');
+      toast.success(t('returns.return_success'));
       
       // Reset
       setSelectedSale(null);
@@ -132,7 +145,7 @@ export default function CustomerReturns() {
       setRefundMethod('cash');
       
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to process return');
+      toast.error(err.response?.data?.message || t('returns.failed_process'));
     } finally {
       setSubmitting(false);
     }
@@ -147,13 +160,13 @@ export default function CustomerReturns() {
       
       {/* Search Bar */}
       <div className="card" style={{ padding: 'var(--spacing-lg)' }}>
-        <h3 style={{ marginBottom: 'var(--spacing-md)' }}>Lookup Sale</h3>
-        <form onSubmit={handleSearch} style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', padding: '0.5rem 1rem' }}>
+        <h3 style={{ marginBottom: 'var(--spacing-md)' }}>{t('returns.lookup_sale')}</h3>
+        <form onSubmit={handleSearch} style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 200px', display: 'flex', alignItems: 'center', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', padding: '0.5rem 1rem', minWidth: 0 }}>
             <HiOutlineMagnifyingGlass size={20} color="var(--color-text-muted)" style={{ marginRight: '0.5rem' }} />
             <input 
               type="text" 
-              placeholder="Sale Number (S-...), Customer Phone, or Name"
+              placeholder={t('returns.search_sale_placeholder')}
               style={{ background: 'transparent', border: 'none', color: 'var(--color-text)', width: '100%', outline: 'none', fontSize: '1rem' }}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
@@ -166,31 +179,31 @@ export default function CustomerReturns() {
                value={daysFilter}
                onChange={e => setDaysFilter(e.target.value)}
              >
-               <option value="">All Time</option>
-               <option value="1">Last 24 Hours</option>
-               <option value="7">Last 7 Days</option>
-               <option value="30">Last 30 Days</option>
+               <option value="">{t('returns.all_time')}</option>
+               <option value="1">{t('returns.last_24_hours')}</option>
+               <option value="7">{t('returns.last_7_days')}</option>
+               <option value="30">{t('returns.last_30_days')}</option>
              </select>
           </div>
 
           <button type="submit" className="btn btn-primary" disabled={searching}>
-            {searching ? 'Searching...' : 'Search'}
+            {searching ? t('returns.searching') : t('common.search')}
           </button>
         </form>
 
         {/* Search Results (if multiple) */}
         {!selectedSale && searchResults.length > 1 && (
           <div style={{ marginTop: 'var(--spacing-md)' }}>
-            <h4 style={{ marginBottom: 'var(--spacing-sm)', color: 'var(--color-text-secondary)' }}>Multiple matches found:</h4>
+            <h4 style={{ marginBottom: 'var(--spacing-sm)', color: 'var(--color-text-secondary)' }}>{t('returns.multiple_matches')}</h4>
             <div className="table-container">
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Sale No.</th>
-                    <th>Customer</th>
-                    <th>Store</th>
-                    <th>Date</th>
-                    <th>Total</th>
+                    <th>{t('sales.sale_number')}</th>
+                    <th>{t('sales.customer')}</th>
+                    <th>{t('sales.store')}</th>
+                    <th>{t('common.date')}</th>
+                    <th>{t('common.total')}</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -198,12 +211,12 @@ export default function CustomerReturns() {
                   {searchResults.map(s => (
                     <tr key={s.id}>
                       <td><strong>{s.sale_number}</strong></td>
-                      <td>{s.customer_name || 'Walk-in'} {s.customer_phone ? `(${s.customer_phone})` : ''}</td>
+                      <td>{s.customer_name || t('pos.walk_in')} {s.customer_phone ? `(${s.customer_phone})` : ''}</td>
                       <td>{s.store_name}</td>
                       <td>{new Date(s.created_at).toLocaleDateString()}</td>
-                      <td>{parseFloat(s.final_amount).toLocaleString()} EGP</td>
+                      <td>{parseFloat(s.final_amount).toLocaleString()} {t('common.currency')}</td>
                       <td>
-                        <button className="btn btn-sm btn-secondary" onClick={() => loadSaleDetails(s.id)}>Select</button>
+                        <button className="btn btn-sm btn-secondary" onClick={() => loadSaleDetails(s.id)}>{t('common.select')}</button>
                       </td>
                     </tr>
                   ))}
@@ -215,41 +228,41 @@ export default function CustomerReturns() {
       </div>
 
       {/* Sale Details & Return Items */}
-      {loadingSale && <div style={{ textAlign: 'center', padding: 'var(--spacing-xl)' }}>Loading sale details...</div>}
+      {loadingSale && <div style={{ textAlign: 'center', padding: 'var(--spacing-xl)' }}>{t('returns.loading_sale_details')}</div>}
       
       {selectedSale && !loadingSale && (
         <form className="card" onSubmit={handleSubmit} style={{ padding: 'var(--spacing-lg)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-lg)', paddingBottom: 'var(--spacing-md)', borderBottom: '1px solid var(--color-border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-lg)', paddingBottom: 'var(--spacing-md)', borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap', gap: 'var(--spacing-sm)' }}>
             <div>
               <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                Sale: {selectedSale.sale_number}
+                {t('returns.sale')}: {selectedSale.sale_number}
               </h3>
               <div style={{ color: 'var(--color-text-secondary)', marginTop: '0.5rem' }}>
-                Store: <strong>{selectedSale.store_name}</strong> • 
-                Customer: <strong>{selectedSale.customer_name || 'Walk-in'}</strong> {selectedSale.customer_phone ? `(${selectedSale.customer_phone})` : ''} • 
-                Date: {new Date(selectedSale.created_at).toLocaleString()}
+                {t('sales.store')}: <strong>{selectedSale.store_name}</strong> • 
+                {t('sales.customer')}: <strong>{selectedSale.customer_name || t('pos.walk_in')}</strong> {selectedSale.customer_phone ? `(${selectedSale.customer_phone})` : ''} • 
+                {t('common.date')}: {new Date(selectedSale.created_at).toLocaleString()}
               </div>
             </div>
             <button type="button" className="btn btn-secondary" onClick={() => setSelectedSale(null)}>
-              Clear Selection
+              {t('returns.clear_selection')}
             </button>
           </div>
 
-          <h4 style={{ marginBottom: 'var(--spacing-md)' }}>Select Items to Return</h4>
+          <h4 style={{ marginBottom: 'var(--spacing-md)' }}>{t('returns.select_items_to_return')}</h4>
           <div className="table-container" style={{ marginBottom: 'var(--spacing-lg)' }}>
             <table className="table">
               <thead>
                 <tr>
-                  <th style={{ width: 40 }}>Return</th>
-                  <th>Product</th>
-                  <th>Color</th>
-                  <th>Size</th>
-                  <th>Sold For</th>
-                  <th style={{ width: 150 }}>Refund Amount (EGP)</th>
+                  <th style={{ width: 40 }}>{t('returns.return_col')}</th>
+                  <th>{t('sales.product')}</th>
+                  <th>{t('sales.color')}</th>
+                  <th>{t('sales.size')}</th>
+                  <th>{t('returns.sold_for')}</th>
+                  <th style={{ width: 150 }}>{t('returns.refund_amount')} ({t('common.currency')})</th>
                 </tr>
               </thead>
               <tbody>
-                {selectedSale.items.map(item => {
+                {selectedSale.items.filter(item => !item.is_returned).map(item => {
                   const state = selectedItems[item.id] || { selected: false, refund_amount: 0 };
                   return (
                     <tr key={item.id} style={{ background: state.selected ? 'rgba(var(--color-primary-rgb), 0.05)' : '' }}>
@@ -266,7 +279,7 @@ export default function CustomerReturns() {
                         {item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
                         {item.color_name}</span></td>
                       <td>EU {item.size_eu}</td>
-                      <td>{parseFloat(item.sale_price).toLocaleString()} EGP</td>
+                      <td>{parseFloat(item.sale_price).toLocaleString()} {t('common.currency')}</td>
                       <td>
                         <input 
                           type="number"
@@ -283,29 +296,34 @@ export default function CustomerReturns() {
                     </tr>
                   )
                 })}
+                {selectedSale.items.filter(item => !item.is_returned).length === 0 && (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 'var(--spacing-xl)', color: 'var(--color-text-muted)' }}>
+                    {t('returns.all_items_already_returned')}
+                  </td></tr>
+                )}
               </tbody>
             </table>
           </div>
 
-          <h4 style={{ marginBottom: 'var(--spacing-md)' }}>Return Details</h4>
+          <h4 style={{ marginBottom: 'var(--spacing-md)' }}>{t('returns.return_details')}</h4>
           <div className="form-row" style={{ alignItems: 'flex-start' }}>
             <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Refund Method</label>
+              <label className="form-label">{t('returns.refund_method')}</label>
               <select className="form-input" value={refundMethod} onChange={e => setRefundMethod(e.target.value)} required>
-                <option value="cash">Cash</option>
-                <option value="card">Card Refund</option>
-                <option value="store_credit">Store Credit (Wallet)</option>
-                <option value="exchange">Exchange (No payout)</option>
-                <option value="other">Other</option>
+                <option value="cash">{t('pos.cash')}</option>
+                <option value="card">{t('returns.card_refund')}</option>
+                <option value="store_credit">{t('returns.store_credit')}</option>
+                <option value="exchange">{t('returns.exchange')}</option>
+                <option value="other">{t('common.other')}</option>
               </select>
             </div>
             
             <div className="form-group" style={{ flex: 2 }}>
-              <label className="form-label">Return Reason</label>
+              <label className="form-label">{t('returns.return_reason')}</label>
               <input 
                 type="text" 
                 className="form-input" 
-                placeholder="e.g. Defective, Size doesn't fit..."
+                placeholder={t('returns.reason_placeholder')}
                 value={reason}
                 onChange={e => setReason(e.target.value)}
               />
@@ -313,7 +331,7 @@ export default function CustomerReturns() {
           </div>
           
           <div className="form-group">
-            <label className="form-label">Additional Notes</label>
+            <label className="form-label">{t('returns.additional_notes')}</label>
             <textarea 
               className="form-input" 
               rows="2"
@@ -322,14 +340,14 @@ export default function CustomerReturns() {
             />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--spacing-xl)', paddingTop: 'var(--spacing-md)', borderTop: '2px dashed var(--color-border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--spacing-xl)', paddingTop: 'var(--spacing-md)', borderTop: '2px dashed var(--color-border)', flexWrap: 'wrap', gap: 'var(--spacing-md)' }}>
             <div>
-              <span style={{ fontSize: '1.2rem', color: 'var(--color-text-secondary)' }}>Total Approved Refund: </span>
-              <span style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-danger)' }}>{totalRefund.toLocaleString()} EGP</span>
+              <span style={{ fontSize: '1.1rem', color: 'var(--color-text-secondary)' }}>{t('returns.total_approved_refund')} </span>
+              <span style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--color-danger)' }}>{totalRefund.toLocaleString()} {t('common.currency')}</span>
             </div>
-            <button type="submit" className="btn btn-primary" style={{ padding: '0.8rem 2rem', fontSize: '1.1rem' }} disabled={submitting}>
+            <button type="submit" className="btn btn-primary" style={{ padding: '0.7rem 1.5rem', fontSize: '1rem' }} disabled={submitting}>
               <HiOutlineArrowUturnLeft style={{ marginRight: '0.5rem' }} />
-              {submitting ? 'Processing...' : 'Process Return'}
+              {submitting ? t('returns.processing') : t('returns.process_return')}
             </button>
           </div>
         </form>

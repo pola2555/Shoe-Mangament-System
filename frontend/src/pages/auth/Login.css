@@ -69,3 +69,13 @@
   height: 20px;
   border-width: 2px;
 }
+
+/* ============================================================
+   RESPONSIVE – LOGIN
+   ============================================================ */
+@media (max-width: 480px) {
+  .login-container { padding: var(--spacing-md); }
+  .login-card { padding: var(--spacing-lg); }
+  .login-title { font-size: var(--font-size-xl); }
+  .login-glow { width: 250px; height: 250px; }
+}

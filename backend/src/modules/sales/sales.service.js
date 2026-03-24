@@ -90,6 +90,18 @@ class SalesService {
   }
 
   async create(data, userId) {
+    // Store access check: verify user is assigned to this store
+    const userStore = await db('user_stores')
+      .where({ user_id: userId, store_id: data.store_id })
+      .first();
+    if (!userStore) {
+      // Check if user is admin (admins bypass store restriction)
+      const user = await db('users').where('id', userId).first();
+      if (user.role !== 'admin') {
+        throw new AppError('You are not assigned to this store', 403);
+      }
+    }
+
     const saleNumber = await generateDocumentNumber('S', db, 'sales', 'sale_number');
     const saleId = generateUUID();
 

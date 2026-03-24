@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useTranslation } from '../../i18n/i18nContext';
 import {
   HiOutlineHome,
   HiOutlineShoppingBag,
@@ -17,56 +18,60 @@ import {
   HiOutlineArrowRightOnRectangle,
   HiOutlineBars3,
   HiOutlineUserCircle,
+  HiOutlineCog6Tooth,
 } from 'react-icons/hi2';
+import NotificationsPanel from './NotificationsPanel';
 import './Sidebar.css';
 
 const navGroups = [
   {
-    title: 'Overview',
+    titleKey: 'sidebar.overview',
     items: [
-      { path: '/', icon: HiOutlineHome, label: 'Dashboard' },
+      { path: '/', icon: HiOutlineHome, labelKey: 'sidebar.dashboard' },
     ]
   },
   {
-    title: 'Sales & Returns',
+    titleKey: 'sidebar.sales_returns',
     items: [
-      { path: '/pos', icon: HiOutlineShoppingBag, label: 'POS', perm: 'sales' },
-      { path: '/sales', icon: HiOutlineDocumentText, label: 'Sales History', perm: 'sales' },
-      { path: '/returns', icon: HiOutlineTruck, label: 'Returns', perm: 'returns' },
-      { path: '/customers', icon: HiOutlineUserGroup, label: 'Customers', perm: 'sales' },
+      { path: '/pos', icon: HiOutlineShoppingBag, labelKey: 'sidebar.pos', perm: 'pos' },
+      { path: '/sales', icon: HiOutlineDocumentText, labelKey: 'sidebar.sales_history', perm: 'sales' },
+      { path: '/returns', icon: HiOutlineTruck, labelKey: 'sidebar.returns', perm: 'customer_returns' },
+      { path: '/customers', icon: HiOutlineUserGroup, labelKey: 'sidebar.customers', perm: 'customers' },
     ]
   },
   {
-    title: 'Products & Inventory',
+    titleKey: 'sidebar.products_inventory',
     items: [
-      { path: '/products', icon: HiOutlineCube, label: 'Products', perm: 'products' },
-      { path: '/box-templates', icon: HiOutlineCube, label: 'Box Templates', perm: 'products' },
-      { path: '/inventory', icon: HiOutlineClipboardDocumentList, label: 'Inventory', perm: 'inventory' },
-      { path: '/transfers', icon: HiOutlineArrowsRightLeft, label: 'Transfers', perm: 'transfers' },
+      { path: '/products', icon: HiOutlineCube, labelKey: 'sidebar.products', perm: 'products' },
+      { path: '/box-templates', icon: HiOutlineCube, labelKey: 'sidebar.box_templates', perm: 'box_templates' },
+      { path: '/inventory', icon: HiOutlineClipboardDocumentList, labelKey: 'sidebar.inventory', perm: 'inventory' },
+      { path: '/transfers', icon: HiOutlineArrowsRightLeft, labelKey: 'sidebar.transfers', perm: 'transfers' },
     ]
   },
   {
-    title: 'Purchases & Finance',
+    titleKey: 'sidebar.purchases_finance',
     items: [
-      { path: '/purchases', icon: HiOutlineDocumentText, label: 'Purchases', perm: 'purchases' },
-      { path: '/suppliers', icon: HiOutlineTruck, label: 'Suppliers', perm: 'purchases' },
-      { path: '/dealers', icon: HiOutlineUsers, label: 'Dealers', perm: 'dealers' },
-      { path: '/expenses', icon: HiOutlineBanknotes, label: 'Expenses', perm: 'expenses' },
+      { path: '/purchases', icon: HiOutlineDocumentText, labelKey: 'sidebar.purchases', perm: 'purchases' },
+      { path: '/suppliers', icon: HiOutlineTruck, labelKey: 'sidebar.suppliers', perm: 'suppliers' },
+      { path: '/dealers', icon: HiOutlineUsers, labelKey: 'sidebar.dealers', perm: 'dealers' },
+      { path: '/expenses', icon: HiOutlineBanknotes, labelKey: 'sidebar.expenses', perm: 'expenses' },
     ]
   },
   {
-    title: 'Management',
+    titleKey: 'sidebar.management',
     items: [
-      { path: '/reports', icon: HiOutlineChartBarSquare, label: 'Reports', perm: 'reports' },
-      { path: '/stores', icon: HiOutlineBuildingStorefront, label: 'Stores', perm: 'stores' },
-      { path: '/users', icon: HiOutlineUsers, label: 'Users', perm: 'users' },
+      { path: '/reports', icon: HiOutlineChartBarSquare, labelKey: 'sidebar.reports', perm: 'reports' },
+      { path: '/stores', icon: HiOutlineBuildingStorefront, labelKey: 'sidebar.stores', perm: 'stores' },
+      { path: '/users', icon: HiOutlineUsers, labelKey: 'sidebar.users', perm: 'users' },
+      { path: '/activity-log', icon: HiOutlineClipboardDocumentList, labelKey: 'sidebar.activity_log', perm: 'audit_log' },
     ]
   }
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen }) {
   const [collapsed, setCollapsed] = useState(false);
   const { user, logout, hasPermission } = useAuth();
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -74,10 +79,8 @@ export default function Sidebar() {
     navigate('/login');
   };
 
-  // Group visibility calculations happen on render
-
   return (
-    <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
+    <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''} ${mobileOpen ? 'sidebar--open' : ''}`}>
       <div className="sidebar__header">
         <div className="sidebar__logo">
           {!collapsed && <span className="sidebar__logo-text">Shoe ERP</span>}
@@ -99,7 +102,7 @@ export default function Sidebar() {
             <div key={groupIndex} className="sidebar__group">
               {!collapsed && (
                 <div className="sidebar__group-title">
-                  {group.title}
+                  {t(group.titleKey)}
                 </div>
               )}
               {visibleGroupItems.map((item) => (
@@ -110,10 +113,10 @@ export default function Sidebar() {
                     `sidebar__link ${isActive ? 'sidebar__link--active' : ''}`
                   }
                   end={item.path === '/'}
-                  title={collapsed ? item.label : undefined}
+                  title={collapsed ? t(item.labelKey) : undefined}
                 >
                   <item.icon size={20} />
-                  {!collapsed && <span>{item.label}</span>}
+                  {!collapsed && <span>{t(item.labelKey)}</span>}
                 </NavLink>
               ))}
             </div>
@@ -122,6 +125,19 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebar__footer">
+        <NotificationsPanel collapsed={collapsed} />
+
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            `sidebar__link ${isActive ? 'sidebar__link--active' : ''}`
+          }
+          title={collapsed ? t('sidebar.settings') : undefined}
+        >
+          <HiOutlineCog6Tooth size={20} />
+          {!collapsed && <span>{t('sidebar.settings')}</span>}
+        </NavLink>
+        
         <div className="sidebar__user" title={collapsed ? user?.full_name : undefined}>
           <HiOutlineUserCircle size={22} />
           {!collapsed && (
@@ -131,9 +147,9 @@ export default function Sidebar() {
             </div>
           )}
         </div>
-        <button className="sidebar__logout" onClick={handleLogout} title="Logout">
+        <button className="sidebar__logout" onClick={handleLogout} title={t('sidebar.logout')}>
           <HiOutlineArrowRightOnRectangle size={20} />
-          {!collapsed && <span>Logout</span>}
+          {!collapsed && <span>{t('sidebar.logout')}</span>}
         </button>
       </div>
     </aside>

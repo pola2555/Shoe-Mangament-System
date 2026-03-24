@@ -11,8 +11,8 @@ router.use(auth);
 router.get('/', permission('transfers', 'read'), controller.list);
 router.get('/:id', permission('transfers', 'read'), controller.getById);
 router.post('/', permission('transfers', 'write'), validate(createTransferSchema), controller.create);
-router.post('/:id/ship', permission('transfers', 'write'), controller.ship);
-router.post('/:id/receive', permission('transfers', 'write'), controller.receive);
-router.post('/:id/cancel', permission('transfers', 'write'), controller.cancel);
+router.post('/:id/ship', permission('transfer_actions', 'write'), controller.ship);
+router.post('/:id/receive', permission('transfer_actions', 'write'), controller.receive);
+router.post('/:id/cancel', permission('transfer_actions', 'write'), controller.cancel);
 
 module.exports = router;

@@ -5,13 +5,15 @@ import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import ImageViewerModal from '../../components/common/ImageViewerModal';
+import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
 
 export default function PurchaseDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { hasPermission } = useAuth();
+  const { hasPermission, filterStores } = useAuth();
   const canWrite = hasPermission('purchases', 'write');
+  const { t } = useTranslation();
 
   const [invoice, setInvoice] = useState(null);
   const [products, setProducts] = useState([]);
@@ -64,10 +66,10 @@ export default function PurchaseDetailPage() {
       ]);
       setInvoice(inv.data.data);
       setProducts(prods.data.data);
-      setStores(strs.data.data);
+      setStores(filterStores(strs.data.data));
       setTemplates(tmpls.data.data);
     } catch {
-      toast.error('Invoice not found');
+      toast.error(t('purchases.failed_to_load'));
       navigate('/purchases');
     } finally { setLoading(false); }
   };
@@ -103,12 +105,12 @@ export default function PurchaseDetailPage() {
     const total = tmpl.items.reduce((sum, i) => sum + i.quantity, 0);
     setBoxForm(prev => ({ ...prev, total_items: String(total) }));
 
-    toast.success(`Template "${tmpl.name}" applied (${total} items)`);
+    toast.success(`${tmpl.name} (${total} ${t('common.items')})`);
   };
 
   // --- Save current colorGroups as a new template ---
   const handleSaveAsTemplate = async () => {
-    if (!saveTemplateName.trim()) { toast.error('Please enter a template name'); return; }
+    if (!saveTemplateName.trim()) { toast.error(t('common.error')); return; }
     try {
       const items = colorGroups.flatMap(group => {
         const colorObj = colorOptions.find(c => c.id === group.color_id);
@@ -119,7 +121,7 @@ export default function PurchaseDetailPage() {
           color_label: colorLabel || null,
         }));
       });
-      if (items.length === 0) { toast.error('Add at least one size before saving a template'); return; }
+      if (items.length === 0) { toast.error(t('common.error')); return; }
 
       const productId = editBoxDetails?.product_id || boxForm?.product_id || null;
       await boxTemplatesAPI.create({
@@ -127,14 +129,14 @@ export default function PurchaseDetailPage() {
         product_id: productId || null,
         items,
       });
-      toast.success('Template saved!');
+      toast.success(t('common.success'));
       setShowSaveTemplate(false);
       setSaveTemplateName('');
       // Refresh templates list
       const { data } = await boxTemplatesAPI.list();
       setTemplates(data.data);
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to save template');
+      toast.error(err.response?.data?.message || t('common.error'));
     }
   };
 
@@ -192,25 +194,25 @@ export default function PurchaseDetailPage() {
         }
       }
 
-      toast.success('Box created successfully');
+      toast.success(t('common.success'));
       setShowBoxForm(false);
       setBoxForm({ product_id: '', cost_per_item: '', total_items: '', destination_store_id: '', notes: '' });
       setColorGroups([{ color_id: '', sizes: [{ size_eu: '', size_us: '', size_uk: '', size_cm: '', quantity: '' }] }]);
       fetchAll();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to create box');
+      toast.error(err.response?.data?.message || t('common.error'));
     }
   };
 
   // --- Delete Box ---
   const handleDeleteBox = async (boxId) => {
-    if (!confirm('Delete this box?')) return;
+    if (!confirm(t('common.are_you_sure'))) return;
     try {
       await purchasesAPI.deleteBox(boxId);
-      toast.success('Box deleted');
+      toast.success(t('common.success'));
       fetchAll();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Cannot delete box');
+      toast.error(err.response?.data?.message || t('common.error'));
     }
   };
 
@@ -306,13 +308,13 @@ export default function PurchaseDetailPage() {
 
   const handleSmartGenerateBoxItems = () => {
     if (!boxGenStart || !boxGenEnd) {
-      toast.error('Please specify start and end sizes.');
+      toast.error(t('common.error'));
       return;
     }
     const start = parseInt(boxGenStart, 10);
     const end = parseInt(boxGenEnd, 10);
     if (isNaN(start) || isNaN(end) || start > end) {
-      toast.error('Invalid size range.');
+      toast.error(t('common.error'));
       return;
     }
     
@@ -338,7 +340,7 @@ export default function PurchaseDetailPage() {
       const existingSizes = new Set(updated[groupIdx].sizes.map(s => s.size_eu));
       const filteredNewItems = newItems.filter(i => !existingSizes.has(i.size_eu));
       if (filteredNewItems.length < newItems.length) {
-         toast.success('Generated sizes, skipped some that were already there.');
+         toast.success(t('common.success'));
       }
       updated[groupIdx].sizes.push(...filteredNewItems);
       // Sort existing group sizes nicely
@@ -370,23 +372,23 @@ export default function PurchaseDetailPage() {
       console.log('handleSaveBoxAll mapped items:', items, 'from colorGroups:', colorGroups);
       await purchasesAPI.setBoxItems(editingBoxId, items);
       
-      toast.success('Box details & items saved');
+      toast.success(t('common.success'));
       setEditingBoxId(null);
       fetchAll();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to save box');
+      toast.error(err.response?.data?.message || t('common.error'));
     }
   };
 
   // --- Complete Box ---
   const handleCompleteBox = async (boxId) => {
-    if (!confirm('Complete this box? This will create inventory items and cannot be undone.')) return;
+    if (!confirm(t('common.are_you_sure'))) return;
     try {
       await purchasesAPI.completeBox(boxId);
-      toast.success('Box completed — inventory items created!');
+      toast.success(t('common.success'));
       fetchAll();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Cannot complete box');
+      toast.error(err.response?.data?.message || t('common.error'));
     }
   };
 
@@ -402,12 +404,12 @@ export default function PurchaseDetailPage() {
         reference_no: paymentForm.reference_no || null,
         notes: paymentForm.notes || null,
       });
-      toast.success('Payment recorded & auto-allocated');
+      toast.success(t('common.success'));
       setShowPaymentForm(false);
       setPaymentForm({ total_amount: '', payment_method: 'cash', payment_date: new Date().toISOString().split('T')[0], reference_no: '', notes: '' });
       fetchAll();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to create payment');
+      toast.error(err.response?.data?.message || t('common.error'));
     }
   };
 
@@ -419,21 +421,21 @@ export default function PurchaseDetailPage() {
     formData.append('image', file);
     try {
       await purchasesAPI.uploadInvoiceImage(id, formData);
-      toast.success('Image uploaded');
+      toast.success(t('common.success'));
       fetchAll();
-    } catch { toast.error('Failed to upload'); }
+    } catch { toast.error(t('common.error')); }
     e.target.value = '';
   };
 
   // --- Delete Attached Image ---
   const handleDeleteAttachedImage = async (e, imageId) => {
     e.stopPropagation();
-    if (!confirm('Delete this attached image?')) return;
+    if (!confirm(t('common.are_you_sure'))) return;
     try {
       await purchasesAPI.deleteInvoiceImage(id, imageId);
-      toast.success('Image deleted');
+      toast.success(t('common.success'));
       fetchAll();
-    } catch { toast.error('Failed to delete image'); }
+    } catch { toast.error(t('common.error')); }
   };
 
   const handleUpdateInvoice = async (e) => {
@@ -454,22 +456,22 @@ export default function PurchaseDetailPage() {
         fileInputRef.current.value = '';
       }
 
-      toast.success('Invoice updated successfully');
+      toast.success(t('common.success'));
       setShowEditInvoice(false);
       fetchAll();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to update invoice');
+      toast.error(err.response?.data?.message || t('common.error'));
     }
   };
 
   // --- Remove Primary Document ---
   const handleRemovePrimaryDocument = async () => {
-    if (!confirm('Remove the primary invoice document?')) return;
+    if (!confirm(t('common.are_you_sure'))) return;
     try {
       await purchasesAPI.updateInvoice(id, { invoice_image_url: null });
-      toast.success('Primary document removed');
+      toast.success(t('common.success'));
       fetchAll();
-    } catch { toast.error('Failed to remove document'); }
+    } catch { toast.error(t('common.error')); }
   };
 
   if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
@@ -485,36 +487,36 @@ export default function PurchaseDetailPage() {
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <button className="btn btn-secondary btn-sm" onClick={() => navigate('/purchases')} style={{ marginBottom: 8 }}>
-            ← Back to Purchases
+            ← {t('common.back')}
           </button>
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {invoice.invoice_number}
-            <span className={`badge ${statusColors[invoice.status]}`}>{invoice.status}</span>
+            <span className={`badge ${statusColors[invoice.status]}`}>{t(`purchases.${invoice.status}`)}</span>
           </h1>
           <p style={{ color: 'var(--color-text-secondary)', marginTop: 4 }}>
-            Supplier: <strong>{invoice.supplier_name}</strong> &nbsp;•&nbsp;
-            Date: {new Date(invoice.invoice_date).toLocaleDateString()} &nbsp;•&nbsp;
-            Total: <strong>{parseFloat(invoice.total_amount).toLocaleString()} EGP</strong> 
-            {parseFloat(invoice.discount_amount) > 0 && ` (Discount: ${parseFloat(invoice.discount_amount).toLocaleString()} EGP)`} &nbsp;•&nbsp;
-            Paid: {parseFloat(invoice.paid_amount).toLocaleString()} EGP &nbsp;•&nbsp;
+            {t('purchases.supplier')}: <strong>{invoice.supplier_name}</strong> &nbsp;•&nbsp;
+            {t('common.date')}: {new Date(invoice.invoice_date).toLocaleDateString()} &nbsp;•&nbsp;
+            {t('common.total')}: <strong>{parseFloat(invoice.total_amount).toLocaleString()} {t('common.currency')}</strong> 
+            {parseFloat(invoice.discount_amount) > 0 && ` (${t('purchases.discount')}: ${parseFloat(invoice.discount_amount).toLocaleString()} ${t('common.currency')})`} &nbsp;•&nbsp;
+            {t('purchases.paid_amount')}: {parseFloat(invoice.paid_amount).toLocaleString()} {t('common.currency')} &nbsp;•&nbsp;
             <span style={{ color: owed > 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>
-              Owed: {owed.toLocaleString()} EGP
+              {t('purchases.remaining')}: {owed.toLocaleString()} {t('common.currency')}
             </span>
           </p>
-          {invoice.notes && <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9em', marginTop: 4 }}>Notes: {invoice.notes}</p>}
+          {invoice.notes && <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9em', marginTop: 4 }}>{t('common.notes')}: {invoice.notes}</p>}
         </div>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
           {invoice.invoice_image_url && (
             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
               <button 
                 className="btn btn-secondary btn-sm" 
-                title="View Primary Invoice Document"
-                onClick={() => setViewerImage({ url: invoice.invoice_image_url, title: 'Primary Invoice Document' })}
+                title={t('common.view')}
+                onClick={() => setViewerImage({ url: invoice.invoice_image_url, title: t('purchases.invoice_number') })}
               >
-                📄 View Document
+                📄 {t('common.view')}
               </button>
               {canWrite && (
-                <button className="btn btn-danger btn-sm" title="Remove Document" onClick={handleRemovePrimaryDocument}>
+                <button className="btn btn-danger btn-sm" title={t('common.delete')} onClick={handleRemovePrimaryDocument}>
                   ✖
                 </button>
               )}
@@ -530,7 +532,7 @@ export default function PurchaseDetailPage() {
               });
               setShowEditInvoice(true);
             }}>
-              ✎ Edit Invoice
+              ✎ {t('common.edit')}
             </button>
           )}
         </div>
@@ -540,38 +542,38 @@ export default function PurchaseDetailPage() {
       {showEditInvoice && (
         <div className="modal-overlay">
           <div className="modal-content" style={{ maxWidth: 500 }}>
-            <h2>Edit Invoice Details</h2>
+            <h2>{t('common.edit')} {t('purchases.add_invoice')}</h2>
             <form onSubmit={handleUpdateInvoice} style={{ marginTop: 'var(--spacing-md)' }}>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">Total Amount (EGP)</label>
+                  <label className="form-label">{t('purchases.total_amount')} ({t('common.currency')})</label>
                   <input className="form-input" type="number" step="0.01" required value={editInvoiceForm.total_amount}
                     onChange={e => setEditInvoiceForm({...editInvoiceForm, total_amount: e.target.value})} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Discount Amount (EGP)</label>
+                  <label className="form-label">{t('purchases.discount')} ({t('common.currency')})</label>
                   <input className="form-input" type="number" step="0.01" min="0" value={editInvoiceForm.discount_amount}
                     onChange={e => setEditInvoiceForm({...editInvoiceForm, discount_amount: e.target.value})} />
                 </div>
               </div>
               <div className="form-group">
-                <label className="form-label">Invoice Date</label>
+                <label className="form-label">{t('purchases.invoice_date')}</label>
                 <input className="form-input" type="date" required value={editInvoiceForm.invoice_date}
                   onChange={e => setEditInvoiceForm({...editInvoiceForm, invoice_date: e.target.value})} />
               </div>
               <div className="form-group">
-                <label className="form-label">Notes</label>
-                <textarea className="form-input" rows="2" value={editInvoiceForm.notes} placeholder="Optional notes"
+                <label className="form-label">{t('common.notes')}</label>
+                <textarea className="form-input" rows="2" value={editInvoiceForm.notes} placeholder={t('common.notes')}
                   onChange={e => setEditInvoiceForm({...editInvoiceForm, notes: e.target.value})} />
               </div>
               <div className="form-group">
-                <label className="form-label">Primary Invoice Document (Optional Image)</label>
+                <label className="form-label">{t('purchases.upload_image')} ({t('common.optional')})</label>
                 <input ref={fileInputRef} type="file" accept="image/*" className="form-input" />
               </div>
               
               <div className="modal-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowEditInvoice(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Save Changes</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowEditInvoice(false)}>{t('common.cancel')}</button>
+                <button type="submit" className="btn btn-primary">{t('common.save')}</button>
               </div>
             </form>
           </div>
@@ -582,7 +584,7 @@ export default function PurchaseDetailPage() {
       <div className="tabs">
         {['boxes', 'payments', 'images'].map((tab) => (
           <button key={tab} className={`tab ${activeTab === tab ? 'tab--active' : ''}`} onClick={() => setActiveTab(tab)}>
-            {tab === 'boxes' ? `Boxes (${invoice.boxes.length})` : tab === 'payments' ? `Payments (${invoice.allocations.length})` : `Images (${invoice.images.length})`}
+            {tab === 'boxes' ? `${t('purchases.boxes')} (${invoice.boxes.length})` : tab === 'payments' ? `${t('purchases.payments')} (${invoice.allocations.length})` : `${t('products.images')} (${invoice.images.length})`}
           </button>
         ))}
       </div>
@@ -592,21 +594,21 @@ export default function PurchaseDetailPage() {
         <div className="tab-content">
           {canWrite && (
             <div style={{ marginBottom: 'var(--spacing-lg)', display: 'flex', gap: 'var(--spacing-sm)' }}>
-              <button className="btn btn-primary" onClick={() => setShowBoxForm(true)}>+ Add Box</button>
+              <button className="btn btn-primary" onClick={() => setShowBoxForm(true)}>+ {t('purchases.add_box')}</button>
             </div>
           )}
 
           {/* Add Box Form */}
           {showBoxForm && (
             <div className="card" style={{ marginBottom: 'var(--spacing-lg)' }}>
-              <h3 style={{ marginBottom: 'var(--spacing-md)' }}>Add Box</h3>
+              <h3 style={{ marginBottom: 'var(--spacing-md)' }}>{t('purchases.add_box')}</h3>
               <form onSubmit={handleAddBox} className="product-form">
                 <div className="form-row">
                   <div className="form-group">
-                    <label className="form-label">Product <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>(optional)</span></label>
+                    <label className="form-label">{t('products.title')} <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>({t('common.optional')})</span></label>
                     <SearchableSelect
                       options={[
-                        { value: '', label: 'Not yet known' },
+                        { value: '', label: t('common.select') },
                         ...products.map(p => ({ value: p.id, label: `${p.product_code} — ${p.model_name}` }))
                       ]}
                       value={boxForm.product_id}
@@ -614,10 +616,10 @@ export default function PurchaseDetailPage() {
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Destination store</label>
+                    <label className="form-label">{t('stores.title')}</label>
                     <SearchableSelect
                       options={[
-                        { value: '', label: 'Not yet assigned' },
+                        { value: '', label: t('common.select') },
                         ...stores.map((s) => ({ value: s.id, label: s.name }))
                       ]}
                       value={boxForm.destination_store_id}
@@ -628,15 +630,15 @@ export default function PurchaseDetailPage() {
                 {/* Template Picker */}
                 <div className="form-row">
                   <div className="form-group">
-                    <label className="form-label">📦 Apply Template <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>(auto-fill sizes)</span></label>
+                    <label className="form-label">📦 {t('common.select')} <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>({t('products.smart_generator')})</span></label>
                     <SearchableSelect
                       options={[
-                        { value: '', label: '— No template —' },
+                        { value: '', label: `— ${t('common.none')} —` },
                         ...(boxForm.product_id
-                          ? templates.filter(t => t.product_id === boxForm.product_id).map(t => ({ value: t.id, label: `⭐ ${t.name} (${t.items.reduce((s,i) => s+i.quantity,0)} items)` }))
+                          ? templates.filter(tmpl => tmpl.product_id === boxForm.product_id).map(tmpl => ({ value: tmpl.id, label: `⭐ ${tmpl.name} (${tmpl.items.reduce((s,i) => s+i.quantity,0)} ${t('common.items')})` }))
                           : []
                         ),
-                        ...templates.filter(t => !t.product_id || t.product_id !== boxForm.product_id).map(t => ({ value: t.id, label: `${t.name} (${t.items.reduce((s,i) => s+i.quantity,0)} items)${t.product_name ? ' — ' + t.product_name : ''}` }))
+                        ...templates.filter(tmpl => !tmpl.product_id || tmpl.product_id !== boxForm.product_id).map(tmpl => ({ value: tmpl.id, label: `${tmpl.name} (${tmpl.items.reduce((s,i) => s+i.quantity,0)} ${t('common.items')})${tmpl.product_name ? ' — ' + tmpl.product_name : ''}` }))
                       ]}
                       value=""
                       onChange={(e) => { if (e.target.value) applyTemplate(e.target.value, colorOptions); }}
@@ -645,12 +647,12 @@ export default function PurchaseDetailPage() {
                 </div>
                 <div className="form-row">
                   <div className="form-group">
-                    <label className="form-label">Cost per item (EGP) *</label>
+                    <label className="form-label">{t('products.cost_price')} ({t('common.currency')}) *</label>
                     <input className="form-input" type="number" step="0.01" required value={boxForm.cost_per_item}
                       onChange={(e) => setBoxForm({ ...boxForm, cost_per_item: e.target.value })} />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Total items in box *</label>
+                    <label className="form-label">{t('common.quantity')} *</label>
                     <input className="form-input" type="number" required value={boxForm.total_items}
                       onChange={(e) => setBoxForm({ ...boxForm, total_items: e.target.value })} />
                   </div>
@@ -659,8 +661,8 @@ export default function PurchaseDetailPage() {
                   </div>
                 </div>
                 <div className="form-actions">
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowBoxForm(false)}>Cancel</button>
-                  <button type="submit" className="btn btn-primary">Add Box</button>
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowBoxForm(false)}>{t('common.cancel')}</button>
+                  <button type="submit" className="btn btn-primary">{t('purchases.add_box')}</button>
                 </div>
               </form>
             </div>
@@ -669,26 +671,26 @@ export default function PurchaseDetailPage() {
           {/* Box List */}
           {invoice.boxes.length === 0 ? (
             <div className="card" style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: 'var(--spacing-2xl)' }}>
-              No boxes yet. Add boxes to this invoice to track what was purchased.
+              {t('purchases.no_purchases')}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)' }}>
               {invoice.boxes.map((box, idx) => (
                 <div key={box.id} className="card" style={{ position: 'relative', width: '100%' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
-                    <h3 style={{ margin: 0 }}>Box #{idx + 1}</h3>
-                    <span className={`badge ${boxStatusColors[box.detail_status]}`}>{box.detail_status}</span>
+                    <h3 style={{ margin: 0 }}>{t('purchases.boxes')} #{idx + 1}</h3>
+                    <span className={`badge ${boxStatusColors[box.detail_status]}`}>{t(`purchases.${box.detail_status === 'complete' ? 'paid' : box.detail_status}`)}</span>
                   </div>
                   <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', display: 'grid', gap: 4 }}>
-                    <div>Product: <strong>{box.product_name ? `${box.product_code} — ${box.product_name}` : 'Not set'}</strong></div>
-                    <div>Items: <strong>{box.total_items}</strong> × {parseFloat(box.cost_per_item).toLocaleString()} EGP</div>
-                    <div>Store: <strong>{box.store_name || 'Not assigned'}</strong></div>
+                    <div>{t('products.title')}: <strong>{box.product_name ? `${box.product_code} — ${box.product_name}` : t('common.none')}</strong></div>
+                    <div>{t('common.items')}: <strong>{box.total_items}</strong> × {parseFloat(box.cost_per_item).toLocaleString()} {t('common.currency')}</div>
+                    <div>{t('stores.title')}: <strong>{box.store_name || t('common.none')}</strong></div>
                   </div>
 
                   {/* Box Items */}
                   {box.items && box.items.length > 0 && (
                     <div style={{ marginTop: 'var(--spacing-md)' }}>
-                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 6 }}>Sizes & Colors:</div>
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 6 }}>{t('products.size')} & {t('products.colors')}:</div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {box.items.map((item, i) => (
                           <span key={i} className="badge badge-neutral" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -704,19 +706,19 @@ export default function PurchaseDetailPage() {
                   {canWrite && box.detail_status !== 'complete' && (
                     <div style={{ marginTop: 'var(--spacing-md)', display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
                       <button className="btn btn-sm btn-secondary" onClick={() => startEditItems(box)}>
-                        {box.items?.length ? 'Edit Items (Colors/Sizes)' : '+ Add Items'}
+                        {box.items?.length ? t('common.edit') : `+ ${t('purchases.box_items')}`}
                       </button>
                       {box.product_id && box.destination_store_id && box.items?.length > 0 && (
                         <button className="btn btn-sm btn-primary" onClick={() => handleCompleteBox(box.id)}>
-                          ✓ Complete Box
+                          ✓ {t('purchases.complete_box')}
                         </button>
                       )}
-                      <button className="btn btn-sm btn-danger" onClick={() => handleDeleteBox(box.id)}>Delete</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDeleteBox(box.id)}>{t('common.delete')}</button>
                     </div>
                   )}
                   {box.detail_status === 'complete' && (
                     <div style={{ marginTop: 'var(--spacing-md)', color: 'var(--color-success)', fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>
-                      ✓ Complete — inventory items created
+                      ✓ {t('purchases.complete_box')}
                     </div>
                   )}
 
@@ -724,16 +726,16 @@ export default function PurchaseDetailPage() {
                   {editingBoxId === box.id && (
                     <div className="card" style={{ marginTop: 'var(--spacing-lg)', borderTop: '4px solid var(--color-primary)', backgroundColor: 'var(--color-bg-secondary)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
-                        <h4 style={{ margin: 0 }}>Edit Box Details & Sizes</h4>
+                        <h4 style={{ margin: 0 }}>{t('common.edit')} {t('purchases.box_items')}</h4>
                         <div className="form-group" style={{ margin: 0, minWidth: 280 }}>
                           <SearchableSelect
                             options={[
-                              { value: '', label: '📦 Apply Template...' },
+                              { value: '', label: `📦 ${t('common.select')}...` },
                               ...(editBoxDetails.product_id
-                                ? templates.filter(t => t.product_id === editBoxDetails.product_id).map(t => ({ value: t.id, label: `⭐ ${t.name} (${t.items.reduce((s,i) => s+i.quantity,0)} items)` }))
+                                ? templates.filter(tmpl => tmpl.product_id === editBoxDetails.product_id).map(tmpl => ({ value: tmpl.id, label: `⭐ ${tmpl.name} (${tmpl.items.reduce((s,i) => s+i.quantity,0)} ${t('common.items')})` }))
                                 : []
                               ),
-                              ...templates.filter(t => !t.product_id || t.product_id !== editBoxDetails.product_id).map(t => ({ value: t.id, label: `${t.name} (${t.items.reduce((s,i) => s+i.quantity,0)} items)${t.product_name ? ' — ' + t.product_name : ''}` }))
+                              ...templates.filter(tmpl => !tmpl.product_id || tmpl.product_id !== editBoxDetails.product_id).map(tmpl => ({ value: tmpl.id, label: `${tmpl.name} (${tmpl.items.reduce((s,i) => s+i.quantity,0)} ${t('common.items')})${tmpl.product_name ? ' — ' + tmpl.product_name : ''}` }))
                             ]}
                             value=""
                             onChange={(e) => { if (e.target.value) applyTemplate(e.target.value, colorOptions); }}
@@ -743,10 +745,10 @@ export default function PurchaseDetailPage() {
                       
                       <div className="form-row" style={{ marginBottom: 'var(--spacing-md)' }}>
                         <div className="form-group">
-                          <label className="form-label">Product</label>
+                          <label className="form-label">{t('products.title')}</label>
                           <SearchableSelect
                             options={[
-                              { value: '', label: 'Not assigned' },
+                              { value: '', label: t('common.select') },
                               ...products.map(p => ({ value: p.id, label: `${p.product_code} — ${p.model_name}` }))
                             ]}
                             value={editBoxDetails.product_id}
@@ -754,10 +756,10 @@ export default function PurchaseDetailPage() {
                           />
                         </div>
                         <div className="form-group" style={{ flex: 1 }}>
-                          <label className="form-label">Destination Store</label>
+                          <label className="form-label">{t('stores.title')}</label>
                           <SearchableSelect
                             options={[
-                              { value: '', label: 'Not assigned' },
+                              { value: '', label: t('common.select') },
                               ...stores.map((s) => ({ value: s.id, label: s.name }))
                             ]}
                             value={editBoxDetails.destination_store_id}
@@ -768,15 +770,15 @@ export default function PurchaseDetailPage() {
 
                       <div style={{ marginBottom: 'var(--spacing-md)', padding: 'var(--spacing-md)', backgroundColor: 'var(--color-bg-base)', borderRadius: 8, border: '1px solid var(--color-primary)' }}>
                         <h4 style={{ marginBottom: 'var(--spacing-md)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          ⚡ Smart Generator
+                          ⚡ {t('products.smart_generator')}
                         </h4>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 8 }}>Select a color and size range to quickly generate item rows.</p>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 8 }}>{t('products.select_colors_generate')}</p>
                         <div className="form-row" style={{ alignItems: 'flex-end', marginBottom: 0 }}>
                           <div className="form-group" style={{ flex: 1.5, margin: 0 }}>
-                            <label className="form-label">Target Color</label>
+                            <label className="form-label">{t('products.color_name')}</label>
                             <SearchableSelect
                               options={[
-                                { value: '', label: 'No Color Selected' },
+                                { value: '', label: t('common.select') },
                                 ...colorOptions.map((c) => ({ value: c.id, label: c.color_name }))
                               ]}
                               value={boxGenColor}
@@ -784,24 +786,24 @@ export default function PurchaseDetailPage() {
                             />
                           </div>
                           <div className="form-group" style={{ flex: 1, margin: 0 }}>
-                            <label className="form-label">Start EU</label>
+                            <label className="form-label">{t('products.start_size')}</label>
                             <input className="form-input" type="number" value={boxGenStart} onChange={e => setBoxGenStart(e.target.value)} placeholder="38" />
                           </div>
                           <div className="form-group" style={{ flex: 1, margin: 0 }}>
-                            <label className="form-label">End EU</label>
+                            <label className="form-label">{t('products.end_size')}</label>
                             <input className="form-input" type="number" value={boxGenEnd} onChange={e => setBoxGenEnd(e.target.value)} placeholder="45" />
                           </div>
                           <div className="form-group" style={{ flex: 1, margin: 0 }}>
-                            <label className="form-label">Qty/Size</label>
+                            <label className="form-label">{t('common.quantity')}</label>
                             <input className="form-input" type="number" min="1" value={boxGenQty} onChange={e => setBoxGenQty(e.target.value)} placeholder="1" />
                           </div>
                           <button type="button" className="btn btn-primary" onClick={handleSmartGenerateBoxItems}>
-                            Generate Sizes
+                            {t('products.generate_preview')}
                           </button>
                         </div>
                       </div>
 
-                      <h4 style={{ marginBottom: 'var(--spacing-sm)', fontSize: '1em' }}>Items Distribution (total must equal {box.total_items})</h4>
+                      <h4 style={{ marginBottom: 'var(--spacing-sm)', fontSize: '1em' }}>{t('purchases.box_items')} ({t('common.total')}: {box.total_items})</h4>
                       
                       {colorGroups.map((group, gIdx) => (
                         <div key={gIdx} style={{ marginBottom: 'var(--spacing-md)', padding: 'var(--spacing-md)', backgroundColor: 'var(--color-bg-base)', borderRadius: 8, border: '1px solid var(--color-border)', overflowX: 'auto' }}>
@@ -810,7 +812,7 @@ export default function PurchaseDetailPage() {
                               <SearchableSelect
                                 required
                                 options={[
-                                  { value: '', label: 'Select Color...' },
+                                  { value: '', label: `${t('products.color_name')}...` },
                                   ...colorOptions.map((c) => ({ value: c.id, label: c.color_name }))
                                 ]}
                                 value={group.color_id}
@@ -819,7 +821,7 @@ export default function PurchaseDetailPage() {
                               />
                             </div>
                             {colorGroups.length > 1 && (
-                              <button className="btn btn-sm btn-danger" onClick={() => removeColorGroup(gIdx)}>Remove Color Branch</button>
+                              <button className="btn btn-sm btn-danger" onClick={() => removeColorGroup(gIdx)}>{t('common.delete')}</button>
                             )}
                           </div>
 
@@ -828,7 +830,7 @@ export default function PurchaseDetailPage() {
                               <thead>
                                 <tr>
                                   <th style={{width: 60, padding: '0.5rem'}}>EU *</th>
-                                  <th style={{width: 60, padding: '0.5rem'}}>Qty *</th>
+                                  <th style={{width: 60, padding: '0.5rem'}}>{t('common.quantity')} *</th>
                                   <th style={{width: 55, padding: '0.5rem'}}>US</th>
                                   <th style={{width: 55, padding: '0.5rem'}}>UK</th>
                                   <th style={{width: 60, padding: '0.5rem'}}>CM</th>
@@ -868,24 +870,24 @@ export default function PurchaseDetailPage() {
                               </tbody>
                             </table>
                           </div>
-                          <button className="btn btn-sm btn-secondary" style={{ marginTop: 'var(--spacing-sm)' }} onClick={() => addSizeRow(gIdx)}>+ Add Size</button>
+                          <button className="btn btn-sm btn-secondary" style={{ marginTop: 'var(--spacing-sm)' }} onClick={() => addSizeRow(gIdx)}>+ {t('products.size')}</button>
                         </div>
                       ))}
 
                       <div style={{ display: 'flex', gap: 'var(--spacing-sm)', marginTop: 'var(--spacing-md)', flexWrap: 'wrap' }}>
-                        <button className="btn btn-sm btn-secondary" onClick={addColorGroup}>+ Add Another Color</button>
+                        <button className="btn btn-sm btn-secondary" onClick={addColorGroup}>+ {t('products.color_name')}</button>
                         {!showSaveTemplate ? (
-                          <button className="btn btn-sm btn-secondary" style={{ background: 'var(--color-bg-base)', border: '1px dashed var(--color-primary)' }} onClick={() => setShowSaveTemplate(true)}>💾 Save as Template</button>
+                          <button className="btn btn-sm btn-secondary" style={{ background: 'var(--color-bg-base)', border: '1px dashed var(--color-primary)' }} onClick={() => setShowSaveTemplate(true)}>💾 {t('common.save')}</button>
                         ) : (
                           <div style={{ display: 'flex', gap: 'var(--spacing-xs)', alignItems: 'center' }}>
-                            <input className="form-input" placeholder="Template name..." value={saveTemplateName} onChange={(e) => setSaveTemplateName(e.target.value)} style={{ padding: '0.3rem 0.5rem', width: 180 }} />
-                            <button className="btn btn-sm btn-primary" onClick={handleSaveAsTemplate}>Save</button>
+                            <input className="form-input" placeholder={`${t('common.name')}...`} value={saveTemplateName} onChange={(e) => setSaveTemplateName(e.target.value)} style={{ padding: '0.3rem 0.5rem', width: 180 }} />
+                            <button className="btn btn-sm btn-primary" onClick={handleSaveAsTemplate}>{t('common.save')}</button>
                             <button className="btn btn-sm btn-secondary" onClick={() => { setShowSaveTemplate(false); setSaveTemplateName(''); }}>✕</button>
                           </div>
                         )}
                         <div style={{ flex: 1 }} />
-                        <button className="btn btn-sm btn-secondary" onClick={() => setEditingBoxId(null)}>Cancel</button>
-                        <button className="btn btn-sm btn-primary" onClick={handleSaveBoxAll}>Save Box</button>
+                        <button className="btn btn-sm btn-secondary" onClick={() => setEditingBoxId(null)}>{t('common.cancel')}</button>
+                        <button className="btn btn-sm btn-primary" onClick={handleSaveBoxAll}>{t('common.save')}</button>
                       </div>
                     </div>
                   )}
@@ -900,12 +902,12 @@ export default function PurchaseDetailPage() {
       {activeTab === 'payments' && (
         <div className="tab-content">
           <div className="card" style={{ marginBottom: 'var(--spacing-lg)' }}>
-            <h3 style={{ marginBottom: 'var(--spacing-sm)' }}>Payment Summary</h3>
+            <h3 style={{ marginBottom: 'var(--spacing-sm)' }}>{t('purchases.payments')}</h3>
             <p style={{ color: 'var(--color-text-secondary)' }}>
-              Total: <strong>{parseFloat(invoice.total_amount).toLocaleString()} EGP</strong> &nbsp;|&nbsp;
-              Paid: <strong>{parseFloat(invoice.paid_amount).toLocaleString()} EGP</strong> &nbsp;|&nbsp;
+              {t('common.total')}: <strong>{parseFloat(invoice.total_amount).toLocaleString()} {t('common.currency')}</strong> &nbsp;|&nbsp;
+              {t('purchases.paid_amount')}: <strong>{parseFloat(invoice.paid_amount).toLocaleString()} {t('common.currency')}</strong> &nbsp;|&nbsp;
               <span style={{ color: owed > 0 ? 'var(--color-danger)' : 'var(--color-success)', fontWeight: 600 }}>
-                Remaining: {owed.toLocaleString()} EGP
+                {t('purchases.remaining')}: {owed.toLocaleString()} {t('common.currency')}
               </span>
             </p>
           </div>
@@ -915,37 +917,35 @@ export default function PurchaseDetailPage() {
                 <button className="btn btn-primary" onClick={() => {
                   setPaymentForm({ ...paymentForm, total_amount: owed });
                   setShowPaymentForm(true);
-                }}>+ Record Payment</button>
+                }}>+ {t('purchases.add_payment')}</button>
               ) : (
                 <div className="card">
-                  <h3 style={{ marginBottom: 'var(--spacing-md)' }}>Record Payment to {invoice.supplier_name}</h3>
-                  <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)' }}>
-                    Payment will be auto-allocated to this supplier's oldest unpaid invoices (FIFO).
-                  </p>
+                  <h3 style={{ marginBottom: 'var(--spacing-md)' }}>{t('purchases.add_payment')} - {invoice.supplier_name}</h3>
+                  <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)' }} dangerouslySetInnerHTML={{ __html: t('suppliers.payment_allocation_note') }} />
                   <form onSubmit={handleCreatePayment} className="product-form">
                     <div className="form-row">
                       <div className="form-group">
-                        <label className="form-label">Amount (EGP) *</label>
+                        <label className="form-label">{t('common.amount')} ({t('common.currency')}) *</label>
                         <input className="form-input" type="number" step="0.01" required value={paymentForm.total_amount}
                           onChange={(e) => setPaymentForm({ ...paymentForm, total_amount: e.target.value })} />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Payment Date *</label>
+                        <label className="form-label">{t('common.date')} *</label>
                         <input className="form-input" type="date" required value={paymentForm.payment_date}
                           onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })} />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Payment Method *</label>
+                        <label className="form-label">{t('common.type')} *</label>
                         <SearchableSelect
                           required
                           options={[
-                            { value: '', label: 'Select method...' },
-                            { value: 'cash', label: 'Cash' },
-                            { value: 'bank_transfer', label: 'Bank Transfer' },
-                            { value: 'cheque', label: 'Cheque' },
-                            { value: 'instapay', label: 'InstaPay' },
-                            { value: 'vodafone_cash', label: 'Vodafone Cash' },
-                            { value: 'other', label: 'Other' }
+                            { value: '', label: `${t('common.select')}...` },
+                            { value: 'cash', label: t('common.cash') },
+                            { value: 'bank_transfer', label: t('common.bank_transfer') },
+                            { value: 'cheque', label: t('common.cheque') },
+                            { value: 'instapay', label: t('common.instapay') },
+                            { value: 'vodafone_cash', label: t('common.vodafone_cash') },
+                            { value: 'other', label: t('common.other') }
                           ]}
                           value={paymentForm.payment_method}
                           onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
@@ -953,13 +953,13 @@ export default function PurchaseDetailPage() {
                       </div>
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Reference # (for transfers)</label>
+                      <label className="form-label">{t('common.reference_no')}</label>
                       <input className="form-input" value={paymentForm.reference_no}
                         onChange={(e) => setPaymentForm({ ...paymentForm, reference_no: e.target.value })} />
                     </div>
                     <div className="form-actions">
-                      <button type="button" className="btn btn-secondary" onClick={() => setShowPaymentForm(false)}>Cancel</button>
-                      <button type="submit" className="btn btn-primary">Record Payment</button>
+                      <button type="button" className="btn btn-secondary" onClick={() => setShowPaymentForm(false)}>{t('common.cancel')}</button>
+                      <button type="submit" className="btn btn-primary">{t('purchases.add_payment')}</button>
                     </div>
                   </form>
                 </div>
@@ -971,14 +971,14 @@ export default function PurchaseDetailPage() {
             <div className="table-container">
               <table className="table">
                 <thead>
-                  <tr><th>Date</th><th>Method</th><th>Amount</th><th>Reference</th></tr>
+                  <tr><th>{t('common.date')}</th><th>{t('common.type')}</th><th>{t('common.amount')}</th><th>{t('common.reference_no')}</th></tr>
                 </thead>
                 <tbody>
                   {invoice.allocations.map((a) => (
                     <tr key={a.id}>
                       <td>{new Date(a.payment_date).toLocaleDateString()}</td>
                       <td><span className="badge badge-neutral">{a.payment_method}</span></td>
-                      <td><strong>{parseFloat(a.allocated_amount).toLocaleString()} EGP</strong></td>
+                      <td><strong>{parseFloat(a.allocated_amount).toLocaleString()} {t('common.currency')}</strong></td>
                       <td>{a.reference_no || '—'}</td>
                     </tr>
                   ))}
@@ -987,7 +987,7 @@ export default function PurchaseDetailPage() {
             </div>
           ) : (
             <div className="card" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
-              No payments allocated to this invoice yet.
+              {t('purchases.no_purchases')}
             </div>
           )}
         </div>
@@ -998,7 +998,7 @@ export default function PurchaseDetailPage() {
         <div className="tab-content">
           {canWrite && (
             <div style={{ marginBottom: 'var(--spacing-lg)' }}>
-              <button className="btn btn-primary" onClick={() => fileInputRef.current?.click()}>+ Upload Invoice Image</button>
+              <button className="btn btn-primary" onClick={() => fileInputRef.current?.click()}>+ {t('purchases.upload_image')}</button>
               <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageUpload} />
             </div>
           )}
@@ -1015,7 +1015,7 @@ export default function PurchaseDetailPage() {
                   <div style={{ padding: 6, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }} title={img.original_name}>{img.original_name}</span>
                     {canWrite && (
-                      <button className="btn btn-danger btn-sm" style={{ padding: '2px 6px', fontSize: '10px' }} onClick={(e) => handleDeleteAttachedImage(e, img.id)} title="Delete Image">✖</button>
+                      <button className="btn btn-danger btn-sm" style={{ padding: '2px 6px', fontSize: '10px' }} onClick={(e) => handleDeleteAttachedImage(e, img.id)} title={t('common.delete')}>✖</button>
                     )}
                   </div>
                 </div>
@@ -1023,7 +1023,7 @@ export default function PurchaseDetailPage() {
             </div>
           ) : (
             <div className="card" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
-              No invoice images. Upload scanned invoices or photos here.
+              {t('purchases.no_purchases')}
             </div>
           )}
         </div>

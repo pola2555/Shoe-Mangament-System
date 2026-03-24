@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { auditLogAPI } from './api';
 import MainLayout from './components/layout/MainLayout';
 import LoginPage from './pages/auth/LoginPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
@@ -21,6 +22,9 @@ import StoresPage from './pages/stores/StoresPage';
 import UsersPage from './pages/users/UsersPage';
 import SupplierDetailPage from './pages/suppliers/SupplierDetailPage';
 import BoxTemplatesPage from './pages/box-templates/BoxTemplatesPage';
+import ActivityLogPage from './pages/activity-log/ActivityLogPage';
+import SettingsPage from './pages/settings/SettingsPage';
+import ReportsPage from './pages/reports/ReportsPage';
 
 /**
  * Protected route wrapper.
@@ -85,6 +89,22 @@ function ComingSoonPage({ title }) {
   );
 }
 
+/**
+ * Permission-gated route wrapper.
+ * Redirects to dashboard and logs the attempt if user lacks the required permission.
+ */
+function PermissionRoute({ perm, children }) {
+  const { hasPermission, user } = useAuth();
+  if (!perm || hasPermission(perm, 'read')) return children;
+  // Log unauthorized access attempt (fire-and-forget)
+  auditLogAPI.log({
+    action: 'unauthorized_access',
+    module: 'auth',
+    details: { attempted_page: window.location.pathname, required_permission: perm, username: user?.username },
+  }).catch(() => {});
+  return <Navigate to="/" replace />;
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -98,24 +118,26 @@ function AppRoutes() {
         <ProtectedRoute><MainLayout /></ProtectedRoute>
       }>
         <Route index element={<DashboardPage />} />
-        <Route path="pos" element={<POSPage />} />
-        <Route path="products" element={<ProductsListPage />} />
-        <Route path="products/:id" element={<ProductDetailPage />} />
-        <Route path="box-templates" element={<BoxTemplatesPage />} />
-        <Route path="inventory" element={<InventoryPage />} />
-        <Route path="purchases" element={<PurchasesPage />} />
-        <Route path="purchases/:id" element={<PurchaseDetailPage />} />
-        <Route path="transfers" element={<TransfersPage />} />
-        <Route path="customers" element={<CustomersPage />} />
-        <Route path="returns" element={<ReturnsPage />} />
-        <Route path="suppliers" element={<SuppliersListPage />} />
-        <Route path="suppliers/:id" element={<SupplierDetailPage />} />
-        <Route path="dealers" element={<DealersPage />} />
-        <Route path="expenses" element={<ExpensesPage />} />
-        <Route path="reports" element={<ComingSoonPage title="Reports" />} />
-        <Route path="stores" element={<StoresPage />} />
-        <Route path="users" element={<UsersPage />} />
-        <Route path="sales" element={<SalesPage />} />
+        <Route path="pos" element={<PermissionRoute perm="pos"><POSPage /></PermissionRoute>} />
+        <Route path="products" element={<PermissionRoute perm="products"><ProductsListPage /></PermissionRoute>} />
+        <Route path="products/:id" element={<PermissionRoute perm="products"><ProductDetailPage /></PermissionRoute>} />
+        <Route path="box-templates" element={<PermissionRoute perm="box_templates"><BoxTemplatesPage /></PermissionRoute>} />
+        <Route path="inventory" element={<PermissionRoute perm="inventory"><InventoryPage /></PermissionRoute>} />
+        <Route path="purchases" element={<PermissionRoute perm="purchases"><PurchasesPage /></PermissionRoute>} />
+        <Route path="purchases/:id" element={<PermissionRoute perm="purchases"><PurchaseDetailPage /></PermissionRoute>} />
+        <Route path="transfers" element={<PermissionRoute perm="transfers"><TransfersPage /></PermissionRoute>} />
+        <Route path="customers" element={<PermissionRoute perm="customers"><CustomersPage /></PermissionRoute>} />
+        <Route path="returns" element={<PermissionRoute perm="customer_returns"><ReturnsPage /></PermissionRoute>} />
+        <Route path="suppliers" element={<PermissionRoute perm="suppliers"><SuppliersListPage /></PermissionRoute>} />
+        <Route path="suppliers/:id" element={<PermissionRoute perm="suppliers"><SupplierDetailPage /></PermissionRoute>} />
+        <Route path="dealers" element={<PermissionRoute perm="dealers"><DealersPage /></PermissionRoute>} />
+        <Route path="expenses" element={<PermissionRoute perm="expenses"><ExpensesPage /></PermissionRoute>} />
+        <Route path="reports" element={<PermissionRoute perm="reports"><ReportsPage /></PermissionRoute>} />
+        <Route path="stores" element={<PermissionRoute perm="stores"><StoresPage /></PermissionRoute>} />
+        <Route path="users" element={<PermissionRoute perm="users"><UsersPage /></PermissionRoute>} />
+        <Route path="sales" element={<PermissionRoute perm="sales"><SalesPage /></PermissionRoute>} />
+        <Route path="activity-log" element={<PermissionRoute perm="audit_log"><ActivityLogPage /></PermissionRoute>} />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
 
       {/* Catch-all */}
@@ -134,9 +156,9 @@ export default function App() {
           toastOptions={{
             duration: 3000,
             style: {
-              background: '#1a1d27',
-              color: '#e8e8ef',
-              border: '1px solid #2d3045',
+              background: 'var(--color-bg-secondary)',
+              color: 'var(--color-text-primary)',
+              border: '1px solid var(--color-border)',
               borderRadius: '10px',
               fontSize: '14px',
               fontFamily: 'Inter, sans-serif',

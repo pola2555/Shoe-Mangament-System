@@ -8,10 +8,10 @@ const { createSupplierSchema, updateSupplierSchema } = require('./suppliers.vali
 const router = Router();
 router.use(auth);
 
-router.get('/', permission('purchases', 'read'), controller.list);
-router.get('/:id', permission('purchases', 'read'), controller.getById);
-router.post('/', permission('purchases', 'write'), validate(createSupplierSchema), controller.create);
-router.put('/:id', permission('purchases', 'write'), validate(updateSupplierSchema), controller.update);
-router.delete('/:id', permission('purchases', 'write'), controller.delete);
+router.get('/', permission('suppliers', 'read'), controller.list);
+router.get('/:id', permission('suppliers', 'read'), controller.getById);
+router.post('/', permission('suppliers', 'write'), validate(createSupplierSchema), controller.create);
+router.put('/:id', permission('suppliers', 'write'), validate(updateSupplierSchema), controller.update);
+router.delete('/:id', permission('suppliers', 'write'), controller.delete);
 
 module.exports = router;

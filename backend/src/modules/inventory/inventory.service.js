@@ -34,6 +34,8 @@ class InventoryService {
         'products.min_selling_price',
         'products.max_selling_price',
         'store_product_prices.selling_price as store_selling_price',
+        'store_product_prices.min_selling_price as store_min_selling_price',
+        'store_product_prices.max_selling_price as store_max_selling_price',
         'product_colors.color_name',
         'product_colors.hex_code',
         'stores.name as store_name'
@@ -89,6 +91,8 @@ class InventoryService {
         'products.min_selling_price',
         'products.max_selling_price',
         'store_product_prices.selling_price as store_selling_price',
+        'store_product_prices.min_selling_price as store_min_selling_price',
+        'store_product_prices.max_selling_price as store_max_selling_price',
         'product_colors.color_name',
         'product_colors.hex_code',
         'product_variants.size_eu',
@@ -108,7 +112,8 @@ class InventoryService {
       )
       .groupBy(
         'products.id', 'products.product_code', 'products.model_name', 'products.brand',
-        'products.default_selling_price', 'products.min_selling_price', 'products.max_selling_price', 'store_product_prices.selling_price',
+        'products.default_selling_price', 'products.min_selling_price', 'products.max_selling_price',
+        'store_product_prices.selling_price', 'store_product_prices.min_selling_price', 'store_product_prices.max_selling_price',
         'product_colors.color_name', 'product_colors.hex_code',
         'product_variants.size_eu', 'product_variants.sku',
         'stores.id', 'stores.name'

@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import '../products/Products.css';
+import { useTranslation } from '../../i18n/i18nContext';
 
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState([]);
@@ -14,8 +15,9 @@ export default function ExpensesPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [form, setForm] = useState({ store_id: '', category_id: '', amount: '', description: '', expense_date: new Date().toISOString().split('T')[0] });
   const [filters, setFilters] = useState({ store_id: '', category_id: '', dateFrom: '', dateTo: '', search: '' });
-  const { hasPermission } = useAuth();
+  const { hasPermission, filterStores } = useAuth();
   const canWrite = hasPermission('expenses', 'write');
+  const { t } = useTranslation();
 
   useEffect(() => { fetchMeta(); fetchExpenses(); }, []);
 
@@ -23,7 +25,7 @@ export default function ExpensesPage() {
     try {
       const [c, s] = await Promise.all([expensesAPI.getCategories(), storesAPI.list()]);
       setCategories(c.data.data);
-      setStores(s.data.data);
+      setStores(filterStores(s.data.data));
     } catch {}
   };
 
@@ -35,6 +37,11 @@ export default function ExpensesPage() {
 
   const filtered = useMemo(() => {
     let result = [...expenses];
+    // Filter by assigned stores
+    if (stores.length > 0) {
+      const storeIds = stores.map(s => s.id);
+      result = result.filter(e => !e.store_id || storeIds.includes(e.store_id));
+    }
     if (filters.search) {
       const q = filters.search.toLowerCase();
       result = result.filter(e => e.description.toLowerCase().includes(q) || (e.category_name && e.category_name.toLowerCase().includes(q)));
@@ -58,7 +65,7 @@ export default function ExpensesPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this expense?')) return;
+    if (!confirm(t('common.are_you_sure'))) return;
     try { await expensesAPI.delete(id); toast.success('Deleted'); fetchExpenses(); }
     catch { toast.error('Failed'); }
   };
@@ -76,15 +83,15 @@ export default function ExpensesPage() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Expenses</h1>
+        <h1 className="page-title">{t('expenses.title')}</h1>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
-          <input className="form-input" placeholder="Search expenses..." value={filters.search}
+          <input className="form-input" placeholder={t('expenses.search_placeholder')} value={filters.search}
             onChange={(e) => setFilters({ ...filters, search: e.target.value })} style={{ width: 200 }} />
           <button className={`btn ${showFilters || activeFilterCount ? 'btn-accent' : 'btn-secondary'}`}
             onClick={() => setShowFilters(!showFilters)}>
-            🔍 Filters{activeFilterCount > 0 && ` (${activeFilterCount})`}
+            🔍 {t('common.filters')}{activeFilterCount > 0 && ` (${activeFilterCount})`}
           </button>
-          {canWrite && <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Add Expense</button>}
+          {canWrite && <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ {t('expenses.add_expense')}</button>}
         </div>
       </div>
 
@@ -93,10 +100,10 @@ export default function ExpensesPage() {
         <div className="filters-panel card">
           <div className="filters-grid">
             <div className="form-group">
-              <label className="form-label">Store</label>
+              <label className="form-label">{t('expenses.store')}</label>
               <SearchableSelect
                 options={[
-                  { value: '', label: 'All Stores' },
+                  { value: '', label: t('stores.all_stores') },
                   ...stores.map((s) => ({ value: s.id, label: s.name }))
                 ]}
                 value={filters.store_id}
@@ -104,10 +111,10 @@ export default function ExpensesPage() {
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Category</label>
+              <label className="form-label">{t('expenses.category')}</label>
               <SearchableSelect
                 options={[
-                  { value: '', label: 'All' },
+                  { value: '', label: t('common.all') },
                   ...categories.map((c) => ({ value: c.id, label: c.name }))
                 ]}
                 value={filters.category_id}
@@ -115,23 +122,23 @@ export default function ExpensesPage() {
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Date From</label>
+              <label className="form-label">{t('common.from')}</label>
               <input className="form-input" type="date" value={filters.dateFrom} onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })} />
             </div>
             <div className="form-group">
-              <label className="form-label">Date To</label>
+              <label className="form-label">{t('common.to')}</label>
               <input className="form-input" type="date" value={filters.dateTo} onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })} />
             </div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--spacing-sm)', flexWrap: 'wrap', gap: 'var(--spacing-sm)' }}>
             <span className="filter-count">
-              {filtered.length} expenses &nbsp;•&nbsp; Total: <strong style={{ color: 'var(--color-danger)' }}>{total.toLocaleString()} EGP</strong>
+              {filtered.length} {t('expenses.title').toLowerCase()} &nbsp;•&nbsp; {t('common.total')}: <strong style={{ color: 'var(--color-danger)' }}>{total.toLocaleString()} {t('common.currency')}</strong>
               {categoryBreakdown.length > 0 && <> &nbsp;•&nbsp; {categoryBreakdown.map(([cat, amt], i) => (
                 <span key={cat} style={{ marginLeft: i > 0 ? 8 : 0 }}>{cat}: <strong>{amt.toLocaleString()}</strong></span>
               ))}</>}
             </span>
             {activeFilterCount > 0 && <button className="btn btn-sm btn-secondary"
-              onClick={() => setFilters({ store_id: '', category_id: '', dateFrom: '', dateTo: '', search: '' })}>Clear All</button>}
+              onClick={() => setFilters({ store_id: '', category_id: '', dateFrom: '', dateTo: '', search: '' })}>{t('common.clear')}</button>}
           </div>
         </div>
       )}
@@ -139,25 +146,25 @@ export default function ExpensesPage() {
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
           <div className="modal-content card" onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>New Expense</h2>
+            <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>{t('expenses.add_expense')}</h2>
             <form onSubmit={handleSubmit} className="product-form">
               <div className="form-row">
-                <div className="form-group"><label className="form-label">Store *</label>
+                <div className="form-group"><label className="form-label">{t('expenses.store')} *</label>
                   <SearchableSelect
                     required
                     options={[
-                      { value: '', label: 'Select' },
+                      { value: '', label: t('common.select') },
                       ...stores.map((s) => ({ value: s.id, label: s.name }))
                     ]}
                     value={form.store_id}
                     onChange={(e) => setForm({ ...form, store_id: e.target.value })}
                   />
                 </div>
-                <div className="form-group"><label className="form-label">Category *</label>
+                <div className="form-group"><label className="form-label">{t('expenses.category')} *</label>
                   <SearchableSelect
                     required
                     options={[
-                      { value: '', label: 'Select' },
+                      { value: '', label: t('common.select') },
                       ...categories.map((c) => ({ value: c.id, label: c.name }))
                     ]}
                     value={form.category_id}
@@ -166,16 +173,16 @@ export default function ExpensesPage() {
                 </div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label className="form-label">Amount (EGP) *</label>
+                <div className="form-group"><label className="form-label">{t('expenses.amount')} ({t('common.currency')}) *</label>
                   <input className="form-input" type="number" step="0.01" required value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
-                <div className="form-group"><label className="form-label">Date *</label>
+                <div className="form-group"><label className="form-label">{t('expenses.expense_date')} *</label>
                   <input className="form-input" type="date" required value={form.expense_date} onChange={(e) => setForm({ ...form, expense_date: e.target.value })} /></div>
               </div>
-              <div className="form-group"><label className="form-label">Description *</label>
+              <div className="form-group"><label className="form-label">{t('expenses.description')} *</label>
                 <input className="form-input" required value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
               <div className="form-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Record</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>{t('common.cancel')}</button>
+                <button type="submit" className="btn btn-primary">{t('common.create')}</button>
               </div>
             </form>
           </div>
@@ -185,17 +192,17 @@ export default function ExpensesPage() {
       {loading ? <div className="loading-screen"><div className="spinner" /></div> : (
         <div className="table-container">
           <table className="table">
-            <thead><tr><th>Date</th><th>Store</th><th>Category</th><th>Description</th><th>Amount</th><th>By</th>{canWrite && <th></th>}</tr></thead>
+            <thead><tr><th>{t('common.date')}</th><th>{t('expenses.store')}</th><th>{t('expenses.category')}</th><th>{t('expenses.description')}</th><th>{t('expenses.amount')}</th><th>By</th>{canWrite && <th></th>}</tr></thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>No expenses.</td></tr>
+                <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>{t('expenses.no_expenses')}</td></tr>
               ) : filtered.map((e) => (
                 <tr key={e.id}>
                   <td>{new Date(e.expense_date).toLocaleDateString()}</td>
                   <td>{e.store_name}</td>
                   <td><span className="badge badge-neutral">{e.category_name}</span></td>
                   <td>{e.description}</td>
-                  <td><strong>{parseFloat(e.amount).toLocaleString()} EGP</strong></td>
+                  <td><strong>{parseFloat(e.amount).toLocaleString()} {t('common.currency')}</strong></td>
                   <td>{e.created_by_name}</td>
                   {canWrite && <td><button className="btn btn-sm btn-danger" onClick={() => handleDelete(e.id)}>✕</button></td>}
                 </tr>

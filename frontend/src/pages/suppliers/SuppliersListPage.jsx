@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { suppliersAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
+import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
 
 export default function SuppliersListPage() {
@@ -13,6 +14,7 @@ export default function SuppliersListPage() {
   const [editingId, setEditingId] = useState(null);
   const { hasPermission } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   useEffect(() => { fetchSuppliers(); }, []);
 
@@ -52,7 +54,7 @@ export default function SuppliersListPage() {
 
   const handleDelete = async (e, id) => {
     e.stopPropagation();
-    if (!window.confirm('Are you sure you want to delete this supplier? Cannot delete if they have invoices.')) return;
+    if (!window.confirm(t('common.are_you_sure'))) return;
     try {
       await suppliersAPI.delete(id);
       toast.success('Supplier deleted');
@@ -67,10 +69,10 @@ export default function SuppliersListPage() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Suppliers</h1>
+        <h1 className="page-title">{t('suppliers.title')}</h1>
         {hasPermission('purchases', 'write') && (
           <button className="btn btn-primary" onClick={() => { setEditingId(null); setFormData({ name: '', phone: '', email: '', address: '', notes: '' }); setShowForm(true); }}>
-            + Add Supplier
+            + {t('suppliers.add_supplier')}
           </button>
         )}
       </div>
@@ -78,29 +80,29 @@ export default function SuppliersListPage() {
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
           <div className="modal-content card" onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>{editingId ? 'Edit' : 'New'} Supplier</h2>
+            <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>{editingId ? t('common.edit') : t('common.create')} {t('sidebar.suppliers')}</h2>
             <form onSubmit={handleSubmit} className="product-form">
               <div className="form-group">
-                <label className="form-label">Name *</label>
+                <label className="form-label">{t('common.name')} *</label>
                 <input className="form-input" required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">Phone</label>
+                  <label className="form-label">{t('common.phone')}</label>
                   <input className="form-input" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Email</label>
+                  <label className="form-label">{t('common.email')}</label>
                   <input className="form-input" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
                 </div>
               </div>
               <div className="form-group">
-                <label className="form-label">Address</label>
+                <label className="form-label">{t('common.address')}</label>
                 <textarea className="form-input" rows={2} value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />
               </div>
               <div className="form-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">{editingId ? 'Update' : 'Create'}</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>{t('common.cancel')}</button>
+                <button type="submit" className="btn btn-primary">{editingId ? t('common.update') : t('common.create')}</button>
               </div>
             </form>
           </div>
@@ -112,8 +114,8 @@ export default function SuppliersListPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Name</th><th>Phone</th><th>Total Invoiced</th><th>Total Paid</th><th>Balance</th><th>Status</th>
-                <th>Actions</th>
+                <th>{t('common.name')}</th><th>{t('common.phone')}</th><th>{t('suppliers.total_purchases')}</th><th>{t('suppliers.total_paid')}</th><th>{t('suppliers.balance')}</th><th>{t('common.status')}</th>
+                <th>{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -126,12 +128,12 @@ export default function SuppliersListPage() {
                   <td style={{ color: s.balance > 0 ? 'var(--color-danger)' : 'var(--color-success)', fontWeight: 600 }}>
                     {fmt(s.balance)}
                   </td>
-                  <td><span className={`badge ${s.is_active ? 'badge-success' : 'badge-danger'}`}>{s.is_active ? 'Active' : 'Inactive'}</span></td>
+                  <td><span className={`badge ${s.is_active ? 'badge-success' : 'badge-danger'}`}>{s.is_active ? t('common.active') : t('common.inactive')}</span></td>
                   <td>
                     {hasPermission('purchases', 'write') && (
                       <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
-                        <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); startEdit(s); }}>Edit</button>
-                        <button className="btn btn-sm btn-danger" onClick={(e) => handleDelete(e, s.id)}>Delete</button>
+                        <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); startEdit(s); }}>{t('common.edit')}</button>
+                        <button className="btn btn-sm btn-danger" onClick={(e) => handleDelete(e, s.id)}>{t('common.delete')}</button>
                       </div>
                     )}
                   </td>

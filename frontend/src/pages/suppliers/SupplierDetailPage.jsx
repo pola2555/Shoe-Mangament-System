@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { suppliersAPI, purchasesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
+import { useTranslation } from '../../i18n/i18nContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import '../products/Products.css';
@@ -10,6 +11,7 @@ export default function SupplierDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
+  const { t } = useTranslation();
   const canWrite = hasPermission('purchases', 'write');
 
   const [supplier, setSupplier] = useState(null);
@@ -30,7 +32,7 @@ export default function SupplierDetailPage() {
       const { data } = await suppliersAPI.getById(id);
       setSupplier(data.data);
     } catch {
-      toast.error('Supplier not found');
+      toast.error(t('suppliers.no_suppliers'));
       navigate('/suppliers');
     } finally {
       setLoading(false);
@@ -48,12 +50,12 @@ export default function SupplierDetailPage() {
         reference_no: paymentForm.reference_no || null,
         notes: paymentForm.notes || null,
       });
-      toast.success('Payment recorded successfully');
+      toast.success(t('common.success'));
       setShowPaymentForm(false);
       setPaymentForm({ total_amount: '', payment_method: 'cash', payment_date: new Date().toISOString().split('T')[0], reference_no: '', notes: '' });
       fetchSupplier(); // Refresh to recalculate balances
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to record payment');
+      toast.error(err.response?.data?.message || t('common.error'));
     }
   };
 
@@ -70,7 +72,7 @@ export default function SupplierDetailPage() {
       <div className="page-header">
         <div>
           <button className="btn btn-secondary btn-sm" onClick={() => navigate('/suppliers')} style={{ marginBottom: 8 }}>
-            ← Back to Suppliers
+            ← {t('suppliers.back_to_suppliers')}
           </button>
           <h1 className="page-title">{supplier.name}</h1>
           <p style={{ color: 'var(--color-text-secondary)', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
@@ -79,13 +81,13 @@ export default function SupplierDetailPage() {
           </p>
           <div style={{ marginTop: 'var(--spacing-md)' }}>
             <span className={`badge ${supplier.is_active ? 'badge-success' : 'badge-danger'}`}>
-              {supplier.is_active ? 'Active' : 'Inactive'}
+              {supplier.is_active ? t('common.active') : t('common.inactive')}
             </span>
           </div>
         </div>
         {canWrite && (
           <button className="btn btn-primary" onClick={() => setShowPaymentForm(true)}>
-            + Record Payment
+            + {t('suppliers.record_payment')}
           </button>
         )}
       </div>
@@ -93,19 +95,19 @@ export default function SupplierDetailPage() {
       {/* Financial Overview Cards */}
       <div className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: 'var(--spacing-xl)' }}>
         <div className="stat-card">
-          <div className="stat-label">Total Invoiced</div>
+          <div className="stat-label">{t('suppliers.total_invoiced')}</div>
           <div className="stat-value">{fmt(supplier.total_invoiced)}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Total Returned</div>
+          <div className="stat-label">{t('suppliers.total_returned')}</div>
           <div className="stat-value">{fmt(supplier.total_returns)}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Total Paid</div>
+          <div className="stat-label">{t('suppliers.total_paid')}</div>
           <div className="stat-value" style={{ color: 'var(--color-primary-light)' }}>{fmt(supplier.total_paid)}</div>
         </div>
         <div className={`stat-card ${oweUs ? '' : 'stat-card--danger'}`} style={{ border: `1px solid ${oweUs ? 'var(--color-success)' : 'var(--color-danger)'}` }}>
-          <div className="stat-label">{oweUs ? 'Advance Payment (They owe you)' : 'Account Balance (You owe them)'}</div>
+          <div className="stat-label">{oweUs ? t('suppliers.advance_payment') : t('suppliers.account_balance')}</div>
           <div className="stat-value" style={{ color: oweUs ? 'var(--color-success)' : 'var(--color-danger)' }}>
             {fmt(absBalance)}
           </div>
@@ -116,54 +118,54 @@ export default function SupplierDetailPage() {
       {showPaymentForm && (
         <div className="modal-overlay" onClick={() => setShowPaymentForm(false)}>
           <div className="modal-content card" onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginBottom: 'var(--spacing-md)' }}>Record Payment</h2>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)' }}>
-              Any payment recorded here will automatically be allocated to the oldest unpaid invoices first (FIFO). If the payment exceeds the owed amount, the remaining funds will be stored as an <strong>Advance Payment</strong> on the supplier's account balance.
-            </p>
+            <h2 style={{ marginBottom: 'var(--spacing-md)' }}>{t('suppliers.record_payment')}</h2>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)' }}
+              dangerouslySetInnerHTML={{ __html: t('suppliers.payment_allocation_note') }}
+            />
             <form onSubmit={handleCreatePayment} className="product-form">
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">Amount (EGP) *</label>
+                  <label className="form-label">{t('common.amount')} (EGP) *</label>
                   <input className="form-input" type="number" step="0.01" required value={paymentForm.total_amount}
                     onChange={(e) => setPaymentForm({ ...paymentForm, total_amount: e.target.value })} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Payment Date *</label>
+                  <label className="form-label">{t('sales.payment_date')} *</label>
                   <input className="form-input" type="date" required value={paymentForm.payment_date}
                     onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })} />
                 </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">Payment Method *</label>
+                  <label className="form-label">{t('pos.payment_method')} *</label>
                   <SearchableSelect
                     required
                     options={[
-                      { value: 'cash', label: 'Cash' },
-                      { value: 'bank_transfer', label: 'Bank Transfer' },
-                      { value: 'cheque', label: 'Cheque' },
-                      { value: 'instapay', label: 'InstaPay' },
-                      { value: 'vodafone_cash', label: 'Vodafone Cash' },
-                      { value: 'other', label: 'Other' }
+                      { value: 'cash', label: t('common.cash') },
+                      { value: 'bank_transfer', label: t('common.bank_transfer') },
+                      { value: 'cheque', label: t('common.cheque') },
+                      { value: 'instapay', label: t('common.instapay') },
+                      { value: 'vodafone_cash', label: t('common.vodafone_cash') },
+                      { value: 'other', label: t('common.other') }
                     ]}
                     value={paymentForm.payment_method}
                     onChange={(e) => setPaymentForm({ ...paymentForm, payment_method: e.target.value })}
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Reference #</label>
+                  <label className="form-label">{t('common.reference_no')}</label>
                   <input className="form-input" value={paymentForm.reference_no}
                     onChange={(e) => setPaymentForm({ ...paymentForm, reference_no: e.target.value })} />
                 </div>
               </div>
               <div className="form-group">
-                <label className="form-label">Notes</label>
+                <label className="form-label">{t('common.notes')}</label>
                 <textarea className="form-input" rows={2} value={paymentForm.notes}
                   onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })} />
               </div>
               <div className="form-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowPaymentForm(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Save Payment</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowPaymentForm(false)}>{t('common.cancel')}</button>
+                <button type="submit" className="btn btn-primary">{t('suppliers.save_payment')}</button>
               </div>
             </form>
           </div>
@@ -174,7 +176,7 @@ export default function SupplierDetailPage() {
       <div className="tabs">
         {['invoices', 'payments', 'returns'].map((tab) => (
           <button key={tab} className={`tab ${activeTab === tab ? 'tab--active' : ''}`} onClick={() => setActiveTab(tab)}>
-            {tab.charAt(0).toUpperCase() + tab.slice(1)} ({supplier[tab]?.length || 0})
+            {t(`suppliers.${tab}`)} ({supplier[tab]?.length || 0})
           </button>
         ))}
       </div>
@@ -187,12 +189,12 @@ export default function SupplierDetailPage() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Invoice #</th>
-                    <th>Date</th>
-                    <th>Total Amnt</th>
-                    <th>Paid Amnt</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th>{t('purchases.invoice_number')}</th>
+                    <th>{t('common.date')}</th>
+                    <th>{t('purchases.total_amount')}</th>
+                    <th>{t('purchases.paid_amount')}</th>
+                    <th>{t('common.status')}</th>
+                    <th>{t('common.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -208,7 +210,7 @@ export default function SupplierDetailPage() {
                         </span>
                       </td>
                       <td>
-                        <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); navigate(`/purchases/${inv.id}`); }}>View Details</button>
+                        <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); navigate(`/purchases/${inv.id}`); }}>{t('common.view_details')}</button>
                       </td>
                     </tr>
                   ))}
@@ -217,7 +219,7 @@ export default function SupplierDetailPage() {
             </div>
           ) : (
             <div className="card" style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: 'var(--spacing-2xl)' }}>
-              No purchase invoices recorded for this supplier.
+              {t('suppliers.no_invoices')}
             </div>
           )}
         </div>
@@ -231,10 +233,10 @@ export default function SupplierDetailPage() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Date</th>
-                    <th>Method</th>
-                    <th>Reference</th>
-                    <th>Amount</th>
+                    <th>{t('common.date')}</th>
+                    <th>{t('pos.payment_method')}</th>
+                    <th>{t('common.reference_no')}</th>
+                    <th>{t('common.amount')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -251,7 +253,7 @@ export default function SupplierDetailPage() {
             </div>
           ) : (
             <div className="card" style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: 'var(--spacing-2xl)' }}>
-              No payments have been recorded for this supplier.
+              {t('suppliers.no_payments')}
             </div>
           )}
         </div>
@@ -265,10 +267,10 @@ export default function SupplierDetailPage() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Return #</th>
-                    <th>Date</th>
-                    <th>Reason</th>
-                    <th>Refund Value</th>
+                    <th>{t('returns.return_number')}</th>
+                    <th>{t('common.date')}</th>
+                    <th>{t('returns.reason')}</th>
+                    <th>{t('returns.refund_amount')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -285,7 +287,7 @@ export default function SupplierDetailPage() {
             </div>
           ) : (
             <div className="card" style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: 'var(--spacing-2xl)' }}>
-              No supplier returns recorded.
+              {t('suppliers.no_returns')}
             </div>
           )}
         </div>

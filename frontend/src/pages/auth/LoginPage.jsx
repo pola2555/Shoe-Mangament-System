@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useTranslation } from '../../i18n/i18nContext';
 import toast from 'react-hot-toast';
 import './Login.css';
 
@@ -9,22 +10,23 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!username || !password) {
-      toast.error('Please enter username and password');
+      toast.error(t('validation.field_required'));
       return;
     }
 
     setLoading(true);
     try {
       await login(username, password);
-      toast.success('Welcome back!');
+      toast.success(t('auth.welcome_back'));
       navigate('/');
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Login failed');
+      toast.error(err.response?.data?.message || t('auth.login_failed'));
     } finally {
       setLoading(false);
     }
@@ -37,17 +39,17 @@ export default function LoginPage() {
         <div className="login-card glass">
           <div className="login-header">
             <h1 className="login-title">Shoe ERP</h1>
-            <p className="login-subtitle">Sign in to your account</p>
+            <p className="login-subtitle">{t('auth.sign_in_subtitle')}</p>
           </div>
 
           <form className="login-form" onSubmit={handleSubmit}>
             <div className="form-group">
-              <label className="form-label" htmlFor="username">Username</label>
+              <label className="form-label" htmlFor="username">{t('auth.username')}</label>
               <input
                 id="username"
                 className="form-input"
                 type="text"
-                placeholder="Enter your username"
+                placeholder={t('auth.username')}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 autoComplete="username"
@@ -56,12 +58,12 @@ export default function LoginPage() {
             </div>
 
             <div className="form-group">
-              <label className="form-label" htmlFor="password">Password</label>
+              <label className="form-label" htmlFor="password">{t('auth.password')}</label>
               <input
                 id="password"
                 className="form-input"
                 type="password"
-                placeholder="Enter your password"
+                placeholder={t('auth.password')}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
@@ -69,7 +71,7 @@ export default function LoginPage() {
             </div>
 
             <button type="submit" className="btn btn-primary btn-lg login-btn" disabled={loading}>
-              {loading ? <span className="spinner" /> : 'Sign In'}
+              {loading ? <span className="spinner" /> : t('auth.sign_in')}
             </button>
           </form>
         </div>

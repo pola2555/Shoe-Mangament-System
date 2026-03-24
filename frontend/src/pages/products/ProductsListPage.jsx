@@ -5,6 +5,7 @@ import { productsAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
+import { useTranslation } from '../../i18n/i18nContext';
 import './Products.css';
 
 export default function ProductsListPage() {
@@ -25,6 +26,7 @@ export default function ProductsListPage() {
   });
   const { hasPermission } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   useEffect(() => { fetchProducts(); }, []);
 
@@ -126,11 +128,11 @@ export default function ProductsListPage() {
   return (
     <div className="products-page">
       <div className="page-header">
-        <h1 className="page-title">Products</h1>
+        <h1 className="page-title">{t('products.title')}</h1>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
           {/* Search */}
           <div className="search-box">
-            <input className="form-input" placeholder="Search products..." value={filters.search}
+            <input className="form-input" placeholder={t('products.search_placeholder')} value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })} style={{ width: 220 }} />
           </div>
 
@@ -142,12 +144,12 @@ export default function ProductsListPage() {
 
           {/* View Toggle */}
           <div className="view-toggle">
-            <button className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setViewMode('table')} title="Table view">☰</button>
-            <button className={`btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setViewMode('grid')} title="Grid view">⊞</button>
+            <button className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setViewMode('table')} title={t('products.table_view')}>☰</button>
+            <button className={`btn btn-sm ${viewMode === 'grid' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setViewMode('grid')} title={t('products.grid_view')}>⊞</button>
           </div>
 
           {hasPermission('products', 'write') && (
-            <button className="btn btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>+ Add Product</button>
+            <button className="btn btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>+ {t('products.add_product')}</button>
           )}
         </div>
       </div>
@@ -157,10 +159,10 @@ export default function ProductsListPage() {
         <div className="filters-panel card">
           <div className="filters-grid">
             <div className="form-group">
-              <label className="form-label">Brand</label>
+              <label className="form-label">{t('products.brand')}</label>
               <SearchableSelect
                 options={[
-                  { value: '', label: 'All Brands' },
+                  { value: '', label: t('common.all') },
                   ...brands.map(b => ({ value: b, label: b }))
                 ]}
                 value={filters.brand}
@@ -178,12 +180,12 @@ export default function ProductsListPage() {
                 onChange={(e) => setFilters({ ...filters, priceMax: e.target.value })} />
             </div>
             <div className="form-group">
-              <label className="form-label">Status</label>
+              <label className="form-label">{t('common.status')}</label>
               <SearchableSelect
                 options={[
-                  { value: '', label: 'All' },
-                  { value: 'active', label: 'Active' },
-                  { value: 'inactive', label: 'Inactive' }
+                  { value: '', label: t('common.all') },
+                  { value: 'active', label: t('common.active') },
+                  { value: 'inactive', label: t('common.inactive') }
                 ]}
                 value={filters.status}
                 onChange={(e) => setFilters({ ...filters, status: e.target.value })}
@@ -193,11 +195,11 @@ export default function ProductsListPage() {
               <label className="form-label">Sort By</label>
               <SearchableSelect
                 options={[
-                  { value: 'model_name', label: 'Name' },
-                  { value: 'product_code', label: 'Code' },
-                  { value: 'brand', label: 'Brand' },
-                  { value: 'default_selling_price', label: 'Price' },
-                  { value: 'net_price', label: 'Cost' }
+                  { value: 'model_name', label: t('common.name') },
+                  { value: 'product_code', label: t('products.product_code') },
+                  { value: 'brand', label: t('products.brand') },
+                  { value: 'default_selling_price', label: t('products.selling_price') },
+                  { value: 'net_price', label: t('products.cost_price') }
                 ]}
                 value={filters.sortBy}
                 onChange={(e) => setFilters({ ...filters, sortBy: e.target.value })}
@@ -218,7 +220,7 @@ export default function ProductsListPage() {
             </div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--spacing-sm)' }}>
-            <span className="filter-count">{filteredProducts.length} of {products.length} products</span>
+            <span className="filter-count">{filteredProducts.length} / {products.length} {t('products.title')}</span>
             {activeFilterCount > 0 && <button className="btn btn-sm btn-secondary" onClick={clearFilters}>Clear All</button>}
           </div>
         </div>
@@ -228,25 +230,25 @@ export default function ProductsListPage() {
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
           <div className="modal-content card" onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>{editingId ? 'Edit Product' : 'New Product'}</h2>
+            <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>{editingId ? t('products.edit_product') : t('products.add_product')}</h2>
             <form onSubmit={handleSubmit} className="product-form">
               <div className="form-row">
-                <div className="form-group"><label className="form-label">Product Code *</label>
+                <div className="form-group"><label className="form-label">{t('products.product_code')} *</label>
                   <input className="form-input" required value={formData.product_code}
                     onChange={(e) => setFormData({ ...formData, product_code: e.target.value })}
                     placeholder="e.g. NAM90" disabled={!!editingId} /></div>
-                <div className="form-group"><label className="form-label">Brand</label>
+                <div className="form-group"><label className="form-label">{t('products.brand')}</label>
                   <input className="form-input" value={formData.brand}
                     onChange={(e) => setFormData({ ...formData, brand: e.target.value })} placeholder="e.g. Nike" /></div>
               </div>
-              <div className="form-group"><label className="form-label">Model Name *</label>
+              <div className="form-group"><label className="form-label">{t('products.model_name')} *</label>
                 <input className="form-input" required value={formData.model_name}
                   onChange={(e) => setFormData({ ...formData, model_name: e.target.value })} placeholder="e.g. Air Max 90" /></div>
               <div className="form-row">
-                <div className="form-group"><label className="form-label">Net Price (cost)</label>
+                <div className="form-group"><label className="form-label">{t('products.cost_price')}</label>
                   <input className="form-input" type="number" step="0.01" value={formData.net_price}
                     onChange={(e) => setFormData({ ...formData, net_price: e.target.value })} /></div>
-                <div className="form-group"><label className="form-label">Selling Price</label>
+                <div className="form-group"><label className="form-label">{t('products.selling_price')}</label>
                   <input className="form-input" type="number" step="0.01" value={formData.default_selling_price}
                     onChange={(e) => setFormData({ ...formData, default_selling_price: e.target.value })} /></div>
               </div>
@@ -262,8 +264,8 @@ export default function ProductsListPage() {
                 <textarea className="form-input" rows={3} value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })} /></div>
               <div className="form-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">{editingId ? 'Update' : 'Create'}</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>{t('common.cancel')}</button>
+                <button type="submit" className="btn btn-primary">{editingId ? t('common.update') : t('common.create')}</button>
               </div>
             </form>
           </div>
@@ -276,7 +278,7 @@ export default function ProductsListPage() {
       ) : filteredProducts.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: 'var(--spacing-2xl)' }}>
           <p style={{ color: 'var(--color-text-secondary)' }}>
-            {products.length === 0 ? 'No products found. Add your first product!' : 'No products match your filters.'}
+            {t('products.no_products')}
           </p>
         </div>
       ) : viewMode === 'grid' ? (
@@ -297,7 +299,7 @@ export default function ProductsListPage() {
                 <div className="product-card__header">
                   <span className="product-card__code">{p.product_code}</span>
                   <span className={`badge ${p.is_active ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.7rem' }}>
-                    {p.is_active ? 'Active' : 'Inactive'}
+                    {p.is_active ? t('common.active') : t('common.inactive')}
                   </span>
                 </div>
 
@@ -312,31 +314,31 @@ export default function ProductsListPage() {
                         style={{ backgroundColor: c.hex_code || '#888' }}
                         title={c.color_name} />
                     ))}
-                    <span className="product-card__color-count">{p.color_count} color{p.color_count !== 1 ? 's' : ''}</span>
+                    <span className="product-card__color-count">{p.color_count} {t('products.colors')}</span>
                   </div>
                 )}
 
                 {/* Stats */}
                 <div className="product-card__stats">
-                  <span title="Size variants">📏 {p.variant_count} variant{p.variant_count !== 1 ? 's' : ''}</span>
-                  <span title="In stock" style={{ color: p.in_stock_count > 0 ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
-                    📦 {p.in_stock_count} in stock
+                  <span title={t('products.variants')}>📏 {p.variant_count} {t('products.variants')}</span>
+                  <span title={t('products.total_stock')} style={{ color: p.in_stock_count > 0 ? 'var(--color-success)' : 'var(--color-text-muted)' }}>
+                    📦 {p.in_stock_count} {t('products.total_stock')}
                   </span>
                 </div>
 
                 {/* Prices */}
                 <div className="product-card__prices">
                   {p.default_selling_price != null && (
-                    <span className="product-card__price">{fmt(p.default_selling_price)} EGP</span>
+                    <span className="product-card__price">{fmt(p.default_selling_price)} {t('common.currency')}</span>
                   )}
                   {p.net_price != null && (
-                    <span className="product-card__cost">Cost: {fmt(p.net_price)}</span>
+                    <span className="product-card__cost">{t('products.cost_price')}: {fmt(p.net_price)}</span>
                   )}
                 </div>
 
                 {p.net_price != null && p.default_selling_price != null && parseFloat(p.default_selling_price) > 0 && (
                   <div className="product-card__margin">
-                    Margin: <strong style={{ color: 'var(--color-success)' }}>
+                    {t('products.margin')}: <strong style={{ color: 'var(--color-success)' }}>
                       {((parseFloat(p.default_selling_price) - parseFloat(p.net_price)) / parseFloat(p.default_selling_price) * 100).toFixed(0)}%
                     </strong>
                   </div>
@@ -345,7 +347,7 @@ export default function ProductsListPage() {
 
               {hasPermission('products', 'write') && (
                 <button className="btn btn-sm btn-secondary product-card__edit"
-                  onClick={(e) => { e.stopPropagation(); startEdit(p); }}>Edit</button>
+                  onClick={(e) => { e.stopPropagation(); startEdit(p); }}>{t('common.edit')}</button>
               )}
             </div>
           ))}
@@ -357,23 +359,23 @@ export default function ProductsListPage() {
             <thead>
               <tr>
                 <th className="sortable" onClick={() => setFilters({ ...filters, sortBy: 'product_code', sortDir: filters.sortBy === 'product_code' && filters.sortDir === 'asc' ? 'desc' : 'asc' })}>
-                  Code {filters.sortBy === 'product_code' ? (filters.sortDir === 'asc' ? '↑' : '↓') : ''}
+                  {t('products.product_code')} {filters.sortBy === 'product_code' ? (filters.sortDir === 'asc' ? '↑' : '↓') : ''}
                 </th>
                 <th className="sortable" onClick={() => setFilters({ ...filters, sortBy: 'brand', sortDir: filters.sortBy === 'brand' && filters.sortDir === 'asc' ? 'desc' : 'asc' })}>
-                  Brand {filters.sortBy === 'brand' ? (filters.sortDir === 'asc' ? '↑' : '↓') : ''}
+                  {t('products.brand')} {filters.sortBy === 'brand' ? (filters.sortDir === 'asc' ? '↑' : '↓') : ''}
                 </th>
                 <th className="sortable" onClick={() => setFilters({ ...filters, sortBy: 'model_name', sortDir: filters.sortBy === 'model_name' && filters.sortDir === 'asc' ? 'desc' : 'asc' })}>
-                  Model {filters.sortBy === 'model_name' ? (filters.sortDir === 'asc' ? '↑' : '↓') : ''}
+                  {t('products.model_name')} {filters.sortBy === 'model_name' ? (filters.sortDir === 'asc' ? '↑' : '↓') : ''}
                 </th>
                 <th className="sortable" onClick={() => setFilters({ ...filters, sortBy: 'net_price', sortDir: filters.sortBy === 'net_price' && filters.sortDir === 'asc' ? 'desc' : 'asc' })}>
-                  Net Price {filters.sortBy === 'net_price' ? (filters.sortDir === 'asc' ? '↑' : '↓') : ''}
+                  {t('products.cost_price')} {filters.sortBy === 'net_price' ? (filters.sortDir === 'asc' ? '↑' : '↓') : ''}
                 </th>
                 <th className="sortable" onClick={() => setFilters({ ...filters, sortBy: 'default_selling_price', sortDir: filters.sortBy === 'default_selling_price' && filters.sortDir === 'asc' ? 'desc' : 'asc' })}>
-                  Selling Price {filters.sortBy === 'default_selling_price' ? (filters.sortDir === 'asc' ? '↑' : '↓') : ''}
+                  {t('products.selling_price')} {filters.sortBy === 'default_selling_price' ? (filters.sortDir === 'asc' ? '↑' : '↓') : ''}
                 </th>
                 <th>Min / Max</th>
-                <th>Status</th>
-                <th>Actions</th>
+                <th>{t('common.status')}</th>
+                <th>{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -382,12 +384,12 @@ export default function ProductsListPage() {
                   <td><strong>{p.product_code}</strong></td>
                   <td>{p.brand || '—'}</td>
                   <td>{p.model_name}</td>
-                  <td>{p.net_price != null ? `${fmt(p.net_price)} EGP` : '—'}</td>
-                  <td>{p.default_selling_price != null ? `${fmt(p.default_selling_price)} EGP` : '—'}</td>
+                  <td>{p.net_price != null ? `${fmt(p.net_price)} ${t('common.currency')}` : '—'}</td>
+                  <td>{p.default_selling_price != null ? `${fmt(p.default_selling_price)} ${t('common.currency')}` : '—'}</td>
                   <td>{p.min_selling_price != null ? fmt(p.min_selling_price) : '—'} / {p.max_selling_price != null ? fmt(p.max_selling_price) : '—'}</td>
-                  <td><span className={`badge ${p.is_active ? 'badge-success' : 'badge-danger'}`}>{p.is_active ? 'Active' : 'Inactive'}</span></td>
+                  <td><span className={`badge ${p.is_active ? 'badge-success' : 'badge-danger'}`}>{p.is_active ? t('common.active') : t('common.inactive')}</span></td>
                   <td>{hasPermission('products', 'write') && (
-                    <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); startEdit(p); }}>Edit</button>
+                    <button className="btn btn-sm btn-secondary" onClick={(e) => { e.stopPropagation(); startEdit(p); }}>{t('common.edit')}</button>
                   )}</td>
                 </tr>
               ))}

@@ -4,12 +4,14 @@ import { productsAPI, storesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
+import { useTranslation } from '../../i18n/i18nContext';
 import './Products.css';
 
 export default function ProductDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
+  const { t } = useTranslation();
   const canWrite = hasPermission('products', 'write');
 
   const [product, setProduct] = useState(null);
@@ -45,6 +47,12 @@ export default function ProductDetailPage() {
   const [showPriceForm, setShowPriceForm] = useState(false);
   const [uploadColorId, setUploadColorId] = useState(null);
 
+  // Edit Product Info
+  const [showEditProduct, setShowEditProduct] = useState(false);
+  const [editProductForm, setEditProductForm] = useState({
+    brand: '', model_name: '', net_price: '', default_selling_price: '', min_selling_price: '', max_selling_price: '', description: '',
+  });
+
   useEffect(() => { fetchProduct(); fetchStores(); }, [id]);
 
   const fetchProduct = async () => {
@@ -53,7 +61,7 @@ export default function ProductDetailPage() {
       const { data } = await productsAPI.getById(id);
       setProduct(data.data);
     } catch {
-      toast.error('Product not found');
+      toast.error(t('products.no_products'));
       navigate('/products');
     } finally {
       setLoading(false);
@@ -67,15 +75,44 @@ export default function ProductDetailPage() {
     } catch { /* ignore */ }
   };
 
+  // --- Edit Product ---
+  const handleEditProductClick = () => {
+    setEditProductForm({
+      brand: product.brand || '',
+      model_name: product.model_name,
+      net_price: product.net_price ?? '',
+      default_selling_price: product.default_selling_price ?? '',
+      min_selling_price: product.min_selling_price ?? '',
+      max_selling_price: product.max_selling_price ?? '',
+      description: product.description || '',
+    });
+    setShowEditProduct(true);
+  };
+
+  const handleSaveProduct = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = { ...editProductForm };
+      ['net_price', 'default_selling_price', 'min_selling_price', 'max_selling_price'].forEach((f) => {
+        payload[f] = payload[f] === '' ? null : parseFloat(payload[f]);
+      });
+      await productsAPI.update(id, payload);
+      toast.success(t('products.product_updated'));
+      setShowEditProduct(false);
+      fetchProduct();
+    } catch (err) {
+      toast.error(err.response?.data?.message || t('products.failed_update'));
+    }
+  };
+
   // --- Toggle Active ---
   const handleToggleActive = async () => {
-    const action = product.is_active ? 'deactivate' : 'activate';
-    if (!confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} this product?`)) return;
+    if (!confirm(product.is_active ? t('products.confirm_deactivate') : t('products.confirm_activate'))) return;
     try {
       const { data } = await productsAPI.toggleActive(id);
       toast.success(data.message);
       fetchProduct();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    } catch (err) { toast.error(err.response?.data?.message || t('common.error')); }
   };
 
   // --- Colors ---
@@ -83,22 +120,22 @@ export default function ProductDetailPage() {
     e.preventDefault();
     try {
       await productsAPI.createColor(id, colorForm);
-      toast.success('Color added');
+      toast.success(t('products.color_added'));
       setShowColorForm(false);
       setColorForm({ color_name: '', hex_code: '' });
       fetchProduct();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to add color');
+      toast.error(err.response?.data?.message || t('products.failed_add_color'));
     }
   };
 
   const handleDeleteColor = async (colorId) => {
-    if (!confirm('Delete this color and all its images?')) return;
+    if (!confirm(t('products.confirm_delete_color'))) return;
     try {
       await productsAPI.deleteColor(id, colorId);
-      toast.success('Color deleted');
+      toast.success(t('products.color_deleted'));
       fetchProduct();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed to delete color'); }
+    } catch (err) { toast.error(err.response?.data?.message || t('products.failed_delete_color')); }
   };
 
   // --- Images ---
@@ -109,30 +146,30 @@ export default function ProductDetailPage() {
     formData.append('image', file);
     try {
       await productsAPI.uploadImage(id, uploadColorId, formData);
-      toast.success('Image uploaded');
+      toast.success(t('products.image_uploaded'));
       fetchProduct();
     } catch (err) {
-      toast.error('Failed to upload image');
+      toast.error(t('products.failed_upload'));
     }
     e.target.value = '';
     setUploadColorId(null);
   };
 
   const handleDeleteImage = async (imageId) => {
-    if (!confirm('Delete this image?')) return;
+    if (!confirm(t('products.confirm_delete_image'))) return;
     try {
       await productsAPI.deleteImage(id, imageId);
-      toast.success('Image deleted');
+      toast.success(t('products.image_deleted'));
       fetchProduct();
-    } catch { toast.error('Failed to delete image'); }
+    } catch { toast.error(t('products.failed_delete_image')); }
   };
 
   const handleSetPrimary = async (imageId) => {
     try {
       await productsAPI.setPrimaryImage(id, imageId);
-      toast.success('Primary image set');
+      toast.success(t('products.primary_image_set'));
       fetchProduct();
-    } catch { toast.error('Failed to set primary'); }
+    } catch { toast.error(t('products.failed_set_primary')); }
   };
 
   // --- Variants ---
@@ -142,22 +179,22 @@ export default function ProductDetailPage() {
       const payload = { ...variantForm };
       payload.size_cm = payload.size_cm === '' ? null : parseFloat(payload.size_cm);
       await productsAPI.createVariant(id, payload);
-      toast.success('Variant added');
+      toast.success(t('products.variant_added'));
       setShowVariantForm(false);
       setVariantForm({ product_color_id: '', size_eu: '', size_us: '', size_uk: '', size_cm: '' });
       fetchProduct();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to add variant');
+      toast.error(err.response?.data?.message || t('products.failed_add_variant'));
     }
   };
 
   const handleDeleteVariant = async (variantId) => {
-    if (!confirm('Delete this variant?')) return;
+    if (!confirm(t('products.confirm_delete_variant'))) return;
     try {
       await productsAPI.deleteVariant(id, variantId);
-      toast.success('Variant deleted');
+      toast.success(t('products.variant_deleted'));
       fetchProduct();
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed to delete variant'); }
+    } catch (err) { toast.error(err.response?.data?.message || t('products.failed_delete_variant')); }
   };
 
   const handleEditVariantClick = (v) => {
@@ -179,11 +216,11 @@ export default function ProductDetailPage() {
       const payload = { ...editVariantForm };
       payload.size_cm = payload.size_cm === '' ? null : parseFloat(payload.size_cm);
       await productsAPI.updateVariant(id, vId, payload);
-      toast.success('Variant updated');
+      toast.success(t('products.variant_updated'));
       setEditingVariantId(null);
       fetchProduct();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to update variant');
+      toast.error(err.response?.data?.message || t('products.failed_update_variant'));
     }
   };
 
@@ -195,10 +232,10 @@ export default function ProductDetailPage() {
   };
 
   const handleGeneratePreview = () => {
-    if (genSelectedColors.length === 0) return toast.error('Please select at least one color');
+    if (genSelectedColors.length === 0) return toast.error(t('products.select_at_least_one_color'));
     const start = parseInt(genSizeStart);
     const end = parseInt(genSizeEnd);
-    if (!start || !end || start > end) return toast.error('Please enter a valid size range (e.g. 38 to 45)');
+    if (!start || !end || start > end) return toast.error(t('products.valid_size_range'));
 
     let newPreview = [];
     for (const colorId of genSelectedColors) {
@@ -219,10 +256,10 @@ export default function ProductDetailPage() {
     }
     
     if (newPreview.length === 0) {
-      toast.success('All these combinations already exist!');
+      toast.success(t('products.combinations_exist'));
     } else {
       setGenPreview(newPreview);
-      toast.success(`Generated ${newPreview.length} variants for preview.`);
+      toast.success(`${t('products.preview_generating')} (${newPreview.length})`);
     }
   };
 
@@ -259,14 +296,14 @@ export default function ProductDetailPage() {
       );
 
       await Promise.all(promises);
-      toast.success('Variants successfully batched and saved!');
+      toast.success(t('products.variants_saved'));
       
       // Reset forms
       setGenPreview([]);
       setShowVariantForm(false);
       fetchProduct();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to batch save variants');
+      toast.error(err.response?.data?.message || t('products.failed_save_variants'));
     }
   };
 
@@ -280,21 +317,21 @@ export default function ProductDetailPage() {
         max_selling_price: priceForm.max_selling_price ? parseFloat(priceForm.max_selling_price) : null,
       };
       await productsAPI.setStorePrice(id, priceForm.store_id, payload);
-      toast.success('Store price set');
+      toast.success(t('products.store_price_set'));
       setShowPriceForm(false);
       setPriceForm({ store_id: '', selling_price: '', min_selling_price: '', max_selling_price: '' });
       fetchProduct();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to set price');
+      toast.error(err.response?.data?.message || t('products.failed_set_price'));
     }
   };
 
   const handleDeletePrice = async (storeId) => {
     try {
       await productsAPI.deleteStorePrice(id, storeId);
-      toast.success('Store price removed');
+      toast.success(t('products.store_price_removed'));
       fetchProduct();
-    } catch { toast.error('Failed to remove price'); }
+    } catch { toast.error(t('products.failed_remove_price')); }
   };
 
   if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
@@ -306,23 +343,86 @@ export default function ProductDetailPage() {
       <div className="page-header">
         <div>
           <button className="btn btn-secondary btn-sm" onClick={() => navigate('/products')} style={{ marginBottom: 8 }}>
-            ← Back to Products
+            ← {t('common.back')}
           </button>
           <h1 className="page-title">{product.brand} {product.model_name}</h1>
-          <p style={{ color: 'var(--color-text-secondary)' }}>Code: {product.product_code} &nbsp;•&nbsp;
-            Sell: {product.default_selling_price ?? '—'} EGP &nbsp;•&nbsp;
-            Range: {product.min_selling_price ?? '—'} – {product.max_selling_price ?? '—'} EGP
+          <p style={{ color: 'var(--color-text-secondary)' }}>{t('products.code')}: {product.product_code} &nbsp;•&nbsp;
+            {t('products.sell')}: {product.default_selling_price ?? '—'} {t('common.currency')} &nbsp;•&nbsp;
+            {t('products.range')}: {product.min_selling_price ?? '—'} – {product.max_selling_price ?? '—'} {t('common.currency')}
           </p>
         </div>
         {canWrite && (
-          <button
-            className={`btn btn-sm ${product.is_active ? 'btn-danger' : 'btn-primary'}`}
-            onClick={handleToggleActive}
-          >
-            {product.is_active ? '⏸ Deactivate' : '▶ Activate'}
-          </button>
+          <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+            <button className="btn btn-sm btn-secondary" onClick={handleEditProductClick}>✏️ {t('products.edit_info')}</button>
+            <button
+              className={`btn btn-sm ${product.is_active ? 'btn-danger' : 'btn-primary'}`}
+              onClick={handleToggleActive}
+            >
+              {product.is_active ? `⏸ ${t('common.inactive')}` : `▶ ${t('common.active')}`}
+            </button>
+          </div>
         )}
       </div>
+
+      {/* Edit Product Modal */}
+      {showEditProduct && (
+        <div className="modal-overlay" onClick={() => setShowEditProduct(false)}>
+          <div className="modal-content card" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>{t('products.edit_product')}</h2>
+            <form onSubmit={handleSaveProduct}>
+              <div className="form-group" style={{ marginBottom: 'var(--spacing-sm)' }}>
+                <label className="form-label">{t('products.product_code')}</label>
+                <input className="form-input" value={product.product_code} disabled style={{ opacity: 0.6 }} />
+              </div>
+              <div className="form-row">
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('products.brand')}</label>
+                  <input className="form-input" value={editProductForm.brand}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, brand: e.target.value })} />
+                </div>
+                <div className="form-group" style={{ flex: 2 }}>
+                  <label className="form-label">{t('products.model_name')} *</label>
+                  <input className="form-input" required value={editProductForm.model_name}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, model_name: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('products.net_price')}</label>
+                  <input className="form-input" type="number" step="0.01" min="0" value={editProductForm.net_price}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, net_price: e.target.value })} />
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('products.selling_price')}</label>
+                  <input className="form-input" type="number" step="0.01" min="0" value={editProductForm.default_selling_price}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, default_selling_price: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('products.min_price')}</label>
+                  <input className="form-input" type="number" step="0.01" min="0" value={editProductForm.min_selling_price}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, min_selling_price: e.target.value })} />
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">{t('products.max_price')}</label>
+                  <input className="form-input" type="number" step="0.01" min="0" value={editProductForm.max_selling_price}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, max_selling_price: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">{t('common.description')}</label>
+                <textarea className="form-input" rows={3} value={editProductForm.description}
+                  onChange={(e) => setEditProductForm({ ...editProductForm, description: e.target.value })} />
+              </div>
+              <div className="form-actions" style={{ marginTop: 'var(--spacing-md)' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowEditProduct(false)}>{t('common.cancel')}</button>
+                <button type="submit" className="btn btn-primary">{t('products.save_changes')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="tabs">
@@ -332,7 +432,7 @@ export default function ProductDetailPage() {
             className={`tab ${activeTab === tab ? 'tab--active' : ''}`}
             onClick={() => setActiveTab(tab)}
           >
-            {tab === 'colors' ? 'Colors & Images' : tab === 'variants' ? 'Size Variants' : 'Store Prices'}
+            {tab === 'colors' ? t('products.colors_and_images') : tab === 'variants' ? t('products.size_variants') : t('products.store_prices')}
           </button>
         ))}
       </div>
@@ -343,11 +443,11 @@ export default function ProductDetailPage() {
           {canWrite && (
             <div style={{ marginBottom: 'var(--spacing-lg)' }}>
               {!showColorForm ? (
-                <button className="btn btn-primary" onClick={() => setShowColorForm(true)}>+ Add Color</button>
+                <button className="btn btn-primary" onClick={() => setShowColorForm(true)}>+ {t('products.add_color')}</button>
               ) : (
                 <form onSubmit={handleAddColor} className="inline-form card">
                   <div className="form-group">
-                    <label className="form-label">Quick Pick a Color</label>
+                    <label className="form-label">{t('products.quick_pick_color')}</label>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 'var(--spacing-sm)' }}>
                       {[
                         { name: 'Black', hex: '#000000' },
@@ -390,13 +490,13 @@ export default function ProductDetailPage() {
                   </div>
                   <div className="form-row">
                     <div className="form-group" style={{ flex: 1 }}>
-                      <label className="form-label">Color Name *</label>
+                      <label className="form-label">{t('products.color_name')} *</label>
                       <input className="form-input" required value={colorForm.color_name}
                         onChange={(e) => setColorForm({ ...colorForm, color_name: e.target.value })}
                         placeholder="e.g. Black" />
                     </div>
                     <div className="form-group" style={{ maxWidth: 100 }}>
-                      <label className="form-label">Custom</label>
+                      <label className="form-label">{t('products.custom')}</label>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <input type="color" value={colorForm.hex_code || '#000000'}
                           onChange={(e) => setColorForm({ ...colorForm, hex_code: e.target.value })}
@@ -408,8 +508,8 @@ export default function ProductDetailPage() {
                     </div>
                   </div>
                   <div className="form-actions">
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowColorForm(false)}>Cancel</button>
-                    <button type="submit" className="btn btn-primary btn-sm">Add</button>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowColorForm(false)}>{t('common.cancel')}</button>
+                    <button type="submit" className="btn btn-primary btn-sm">{t('common.add')}</button>
                   </div>
                 </form>
               )}
@@ -417,7 +517,7 @@ export default function ProductDetailPage() {
           )}
 
           {product.colors.length === 0 ? (
-            <div className="card" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>No colors added yet</div>
+            <div className="card" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>{t('products.no_colors')}</div>
           ) : (
             <div className="colors-grid">
               {product.colors.map((color) => (
@@ -428,10 +528,10 @@ export default function ProductDetailPage() {
                     )}
                     <strong>{color.color_name}</strong>
                     <span className={`badge ${color.is_active ? 'badge-success' : 'badge-danger'}`}>
-                      {color.is_active ? 'Active' : 'Inactive'}
+                      {color.is_active ? t('common.active') : t('common.inactive')}
                     </span>
                     {canWrite && (
-                      <button className="btn btn-sm btn-danger" onClick={() => handleDeleteColor(color.id)} title="Delete color" style={{ marginLeft: 'auto', padding: '2px 8px' }}>✕</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDeleteColor(color.id)} title={t('common.delete')} style={{ marginLeft: 'auto', padding: '2px 8px' }}>✕</button>
                     )}
                   </div>
 
@@ -455,7 +555,7 @@ export default function ProductDetailPage() {
                         className="color-image color-image--add"
                         onClick={() => { setUploadColorId(color.id); fileInputRef.current?.click(); }}
                       >
-                        + Add Image
+                        + {t('products.add_image')}
                       </button>
                     )}
                   </div>
@@ -473,14 +573,14 @@ export default function ProductDetailPage() {
           {canWrite && (
             <div style={{ marginBottom: 'var(--spacing-lg)' }}>
               {!showVariantForm ? (
-                <button className="btn btn-primary" onClick={() => setShowVariantForm(true)}>+ Add Variants</button>
+                <button className="btn btn-primary" onClick={() => setShowVariantForm(true)}>+ {t('products.add_variants')}</button>
               ) : (
                 <div className="card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
-                    <h3 style={{ margin: 0 }}>Add Variants</h3>
+                    <h3 style={{ margin: 0 }}>{t('products.add_variants')}</h3>
                     <div style={{ display: 'flex', gap: 10 }}>
-                      <button className={`btn btn-sm ${generatorMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setGeneratorMode(true)}>⚡ Smart Generator</button>
-                      <button className={`btn btn-sm ${!generatorMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setGeneratorMode(false)}>📝 Single Variant</button>
+                      <button className={`btn btn-sm ${generatorMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setGeneratorMode(true)}>⚡ {t('products.smart_generator')}</button>
+                      <button className={`btn btn-sm ${!generatorMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setGeneratorMode(false)}>📝 {t('products.single_variant')}</button>
                     </div>
                   </div>
 
@@ -488,11 +588,11 @@ export default function ProductDetailPage() {
                     /* SMART GENERATOR MODE */
                     <div>
                       {product.colors.length === 0 ? (
-                        <p style={{ color: 'var(--color-text-danger)' }}>Please add colors to the product first before using the generator.</p>
+                        <p style={{ color: 'var(--color-text-danger)' }}>{t('products.add_colors_first')}</p>
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
                           <div className="form-group">
-                            <label className="form-label">Select Colors to Generate For</label>
+                            <label className="form-label">{t('products.select_colors_generate')}</label>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                               {product.colors.map(c => (
                                 <button
@@ -516,27 +616,27 @@ export default function ProductDetailPage() {
                           
                           <div className="form-row" style={{ alignItems: 'flex-end' }}>
                             <div className="form-group" style={{ flex: 1 }}>
-                              <label className="form-label">Start Size (EU)</label>
+                              <label className="form-label">{t('products.start_size')}</label>
                               <input className="form-input" type="number" value={genSizeStart} onChange={e => setGenSizeStart(e.target.value)} placeholder="e.g. 38" />
                             </div>
                             <div className="form-group" style={{ flex: 1 }}>
-                              <label className="form-label">End Size (EU)</label>
+                              <label className="form-label">{t('products.end_size')}</label>
                               <input className="form-input" type="number" value={genSizeEnd} onChange={e => setGenSizeEnd(e.target.value)} placeholder="e.g. 45" />
                             </div>
                             <div className="form-group">
-                              <button className="btn btn-secondary" onClick={handleGeneratePreview}>Generate Preview</button>
+                              <button className="btn btn-secondary" onClick={handleGeneratePreview}>{t('products.generate_preview')}</button>
                             </div>
                           </div>
 
                           {genPreview.length > 0 && (
                             <div style={{ marginTop: 'var(--spacing-md)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--spacing-md)' }}>
-                              <h4>Preview Generating ({genPreview.length} variants)</h4>
-                              <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 8 }}>You can assign standard US/UK/CM sizing to specific variants before saving, or delete ones you don't need.</p>
+                              <h4>{t('products.preview_generating')} ({genPreview.length} {t('products.variants')})</h4>
+                              <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 8 }}>{t('products.preview_description')}</p>
                               <div style={{ maxHeight: 400, overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
                                 <table className="table" style={{ margin: 0 }}>
                                   <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--color-surface)', zIndex: 1, borderBottom: '2px solid var(--color-border)' }}>
                                     <tr>
-                                      <th>Color</th><th>EU</th><th>US (Optional)</th><th>UK (Optional)</th><th>CM (Optional)</th><th></th>
+                                      <th>{t('products.colors')}</th><th>EU</th><th>US ({t('common.optional')})</th><th>UK ({t('common.optional')})</th><th>CM ({t('common.optional')})</th><th></th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -552,7 +652,7 @@ export default function ProductDetailPage() {
                                           <td><input className="form-input" style={{ padding: '4px 8px' }} value={p.size_us} onChange={e => updatePreviewRow(p.tempId, 'size_us', e.target.value)} placeholder="e.g. 9" /></td>
                                           <td><input className="form-input" style={{ padding: '4px 8px' }} value={p.size_uk} onChange={e => updatePreviewRow(p.tempId, 'size_uk', e.target.value)} placeholder="e.g. 8" /></td>
                                           <td><input className="form-input" type="number" step="0.1" style={{ padding: '4px 8px' }} value={p.size_cm} onChange={e => updatePreviewRow(p.tempId, 'size_cm', e.target.value)} placeholder="e.g. 27.0" /></td>
-                                          <td><button className="btn btn-sm btn-danger" title="Remove from batch" onClick={() => deletePreviewRow(p.tempId)}>✕</button></td>
+                                          <td><button className="btn btn-sm btn-danger" title={t('products.remove')} onClick={() => deletePreviewRow(p.tempId)}>✕</button></td>
                                         </tr>
                                       )
                                     })}
@@ -560,8 +660,8 @@ export default function ProductDetailPage() {
                                 </table>
                               </div>
                               <div className="form-actions" style={{ marginTop: 'var(--spacing-md)' }}>
-                                <button type="button" className="btn btn-secondary" onClick={() => { setGenPreview([]); setShowVariantForm(false); }}>Cancel All</button>
-                                <button type="button" className="btn btn-primary" onClick={handleSaveGeneratedVariants}>Save All Variants</button>
+                                <button type="button" className="btn btn-secondary" onClick={() => { setGenPreview([]); setShowVariantForm(false); }}>{t('common.cancel')}</button>
+                                <button type="button" className="btn btn-primary" onClick={handleSaveGeneratedVariants}>{t('products.save_all_variants')}</button>
                               </div>
                             </div>
                           )}
@@ -573,11 +673,11 @@ export default function ProductDetailPage() {
                     <form onSubmit={handleAddVariant} className="inline-form">
                       <div className="form-row">
                         <div className="form-group">
-                          <label className="form-label">Color *</label>
+                          <label className="form-label">{t('products.colors')} *</label>
                           <SearchableSelect
                             required
                             options={[
-                              { value: '', label: 'Select color' },
+                              { value: '', label: t('products.select_color') },
                               ...product.colors.map((c) => ({ value: c.id, label: c.color_name }))
                             ]}
                             value={variantForm.product_color_id}
@@ -585,7 +685,7 @@ export default function ProductDetailPage() {
                           />
                         </div>
                         <div className="form-group">
-                          <label className="form-label">EU Size *</label>
+                          <label className="form-label">{t('products.eu_size')} *</label>
                           <input className="form-input" required value={variantForm.size_eu}
                             onChange={(e) => setVariantForm({ ...variantForm, size_eu: e.target.value })}
                             placeholder="42" />
@@ -593,24 +693,24 @@ export default function ProductDetailPage() {
                       </div>
                       <div className="form-row">
                         <div className="form-group">
-                          <label className="form-label">US Size</label>
+                          <label className="form-label">{t('products.us_size')}</label>
                           <input className="form-input" value={variantForm.size_us}
                             onChange={(e) => setVariantForm({ ...variantForm, size_us: e.target.value })} placeholder="9" />
                         </div>
                         <div className="form-group">
-                          <label className="form-label">UK Size</label>
+                          <label className="form-label">{t('products.uk_size')}</label>
                           <input className="form-input" value={variantForm.size_uk}
                             onChange={(e) => setVariantForm({ ...variantForm, size_uk: e.target.value })} placeholder="8" />
                         </div>
                         <div className="form-group">
                           <label className="form-label">CM</label>
                           <input className="form-input" type="number" step="0.1" value={variantForm.size_cm}
-                            onChange={(e) => setVariantForm({ ...variantForm, size_cm: e.target.value })} placeholder="27.0" />
+                            onChange={(e) => setVariantForm({ ...variantForm, size_cm: e.target.value })} />
                         </div>
                       </div>
                       <div className="form-actions">
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowVariantForm(false)}>Cancel</button>
-                        <button type="submit" className="btn btn-primary btn-sm">Add Variant</button>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowVariantForm(false)}>{t('common.cancel')}</button>
+                        <button type="submit" className="btn btn-primary btn-sm">{t('products.add_variant')}</button>
                       </div>
                     </form>
                   )}
@@ -620,19 +720,19 @@ export default function ProductDetailPage() {
           )}
 
           {product.variants.length === 0 ? (
-            <div className="card" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>No variants added yet. Add a color first, then add size variants.</div>
+            <div className="card" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>{t('products.no_variants')}. {t('products.add_color_first')}</div>
           ) : (
             <div className="table-container">
               <table className="table">
                 <thead>
                   <tr>
-                    <th>SKU</th>
-                    <th>Color</th>
+                    <th>{t('products.sku')}</th>
+                    <th>{t('products.colors')}</th>
                     <th>EU</th>
                     <th>US</th>
                     <th>UK</th>
                     <th>CM</th>
-                    <th>Status</th>
+                    <th>{t('common.status')}</th>
                     {canWrite && <th></th>}
                   </tr>
                 </thead>
@@ -658,13 +758,13 @@ export default function ProductDetailPage() {
                           <td>
                             <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 'var(--font-size-sm)' }}>
                               <input type="checkbox" checked={editVariantForm.is_active} onChange={e => setEditVariantForm({...editVariantForm, is_active: e.target.checked})} />
-                              {editVariantForm.is_active ? 'Active' : 'Inactive'}
+                              {editVariantForm.is_active ? t('common.active') : t('common.inactive')}
                             </label>
                           </td>
                           {canWrite && (
                             <td style={{ whiteSpace: 'nowrap' }}>
-                              <button className="btn btn-sm btn-success" onClick={() => handleSaveVariantEdit(v.id)} title="Save">💾</button>
-                              <button className="btn btn-sm btn-secondary" style={{ marginLeft: 4 }} onClick={handleCancelEditVariant} title="Cancel">✕</button>
+                              <button className="btn btn-sm btn-success" onClick={() => handleSaveVariantEdit(v.id)} title={t('common.save')}>💾</button>
+                              <button className="btn btn-sm btn-secondary" style={{ marginLeft: 4 }} onClick={handleCancelEditVariant} title={t('common.cancel')}>✕</button>
                             </td>
                           )}
                         </tr>
@@ -686,13 +786,13 @@ export default function ProductDetailPage() {
                         <td>{v.size_cm != null ? `${v.size_cm}` : '—'}</td>
                         <td>
                           <span className={`badge ${v.is_active ? 'badge-success' : 'badge-danger'}`}>
-                            {v.is_active ? 'Active' : 'Inactive'}
+                            {v.is_active ? t('common.active') : t('common.inactive')}
                           </span>
                         </td>
                         {canWrite && (
                           <td style={{ whiteSpace: 'nowrap' }}>
-                            <button className="btn btn-sm btn-secondary" onClick={() => handleEditVariantClick(v)} title="Edit">✏️</button>
-                            <button className="btn btn-sm btn-danger" style={{ marginLeft: 4 }} onClick={() => handleDeleteVariant(v.id)} title="Delete">✕</button>
+                            <button className="btn btn-sm btn-secondary" onClick={() => handleEditVariantClick(v)} title={t('common.edit')}>✏️</button>
+                            <button className="btn btn-sm btn-danger" style={{ marginLeft: 4 }} onClick={() => handleDeleteVariant(v.id)} title={t('common.delete')}>✕</button>
                           </td>
                         )}
                       </tr>
@@ -709,27 +809,31 @@ export default function ProductDetailPage() {
       {activeTab === 'prices' && (
         <div className="tab-content">
           <div className="price-defaults card" style={{ marginBottom: 'var(--spacing-lg)' }}>
-            <h3 style={{ marginBottom: 'var(--spacing-sm)' }}>Default Prices</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-sm)' }}>
+              <h3 style={{ margin: 0 }}>{t('products.default_prices')}</h3>
+              {canWrite && <button className="btn btn-sm btn-secondary" onClick={handleEditProductClick}>✏️ {t('common.edit')}</button>}
+            </div>
             <p style={{ color: 'var(--color-text-secondary)' }}>
-              Sell: <strong>{product.default_selling_price ?? '—'} EGP</strong> &nbsp;|&nbsp;
-              Min: <strong>{product.min_selling_price ?? '—'}</strong> &nbsp;|&nbsp;
-              Max: <strong>{product.max_selling_price ?? '—'}</strong>
+              {t('products.cost')}: <strong>{product.net_price ?? '—'} {t('common.currency')}</strong> &nbsp;|&nbsp;
+              {t('products.sell')}: <strong>{product.default_selling_price ?? '—'} {t('common.currency')}</strong> &nbsp;|&nbsp;
+              {t('products.min')}: <strong>{product.min_selling_price ?? '—'}</strong> &nbsp;|&nbsp;
+              {t('products.max')}: <strong>{product.max_selling_price ?? '—'}</strong>
             </p>
           </div>
 
           {canWrite && (
             <div style={{ marginBottom: 'var(--spacing-lg)' }}>
               {!showPriceForm ? (
-                <button className="btn btn-primary" onClick={() => setShowPriceForm(true)}>+ Set Store Price</button>
+                <button className="btn btn-primary" onClick={() => setShowPriceForm(true)}>+ {t('products.set_store_price')}</button>
               ) : (
                 <form onSubmit={handleSetPrice} className="inline-form card">
                   <div className="form-row">
                     <div className="form-group">
-                      <label className="form-label">Store *</label>
+                      <label className="form-label">{t('stores.title')} *</label>
                       <SearchableSelect
                         required
                         options={[
-                          { value: '', label: 'Select store' },
+                          { value: '', label: t('products.select_store') },
                           ...stores.map((s) => ({ value: s.id, label: s.name }))
                         ]}
                         value={priceForm.store_id}
@@ -737,26 +841,26 @@ export default function ProductDetailPage() {
                       />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Selling Price *</label>
+                      <label className="form-label">{t('products.selling_price')} *</label>
                       <input className="form-input" type="number" step="0.01" required value={priceForm.selling_price}
                         onChange={(e) => setPriceForm({ ...priceForm, selling_price: e.target.value })} />
                     </div>
                   </div>
                   <div className="form-row">
                     <div className="form-group">
-                      <label className="form-label">Min Price</label>
+                      <label className="form-label">{t('products.min_price')}</label>
                       <input className="form-input" type="number" step="0.01" value={priceForm.min_selling_price}
                         onChange={(e) => setPriceForm({ ...priceForm, min_selling_price: e.target.value })} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Max Price</label>
+                      <label className="form-label">{t('products.max_price')}</label>
                       <input className="form-input" type="number" step="0.01" value={priceForm.max_selling_price}
                         onChange={(e) => setPriceForm({ ...priceForm, max_selling_price: e.target.value })} />
                     </div>
                   </div>
                   <div className="form-actions">
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowPriceForm(false)}>Cancel</button>
-                    <button type="submit" className="btn btn-primary btn-sm">Save</button>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowPriceForm(false)}>{t('common.cancel')}</button>
+                    <button type="submit" className="btn btn-primary btn-sm">{t('common.save')}</button>
                   </div>
                 </form>
               )}
@@ -767,18 +871,18 @@ export default function ProductDetailPage() {
             <div className="table-container">
               <table className="table">
                 <thead>
-                  <tr><th>Store</th><th>Selling Price</th><th>Min</th><th>Max</th>{canWrite && <th>Actions</th>}</tr>
+                  <tr><th>{t('stores.title')}</th><th>{t('products.selling_price')}</th><th>{t('products.min')}</th><th>{t('products.max')}</th>{canWrite && <th>{t('common.actions')}</th>}</tr>
                 </thead>
                 <tbody>
                   {product.store_prices.map((sp) => (
                     <tr key={sp.id}>
                       <td><strong>{sp.store_name}</strong></td>
-                      <td>{sp.selling_price} EGP</td>
-                      <td>{sp.min_selling_price ?? 'Default'}</td>
-                      <td>{sp.max_selling_price ?? 'Default'}</td>
+                      <td>{sp.selling_price} {t('common.currency')}</td>
+                      <td>{sp.min_selling_price ?? t('products.default_price')}</td>
+                      <td>{sp.max_selling_price ?? t('products.default_price')}</td>
                       {canWrite && (
                         <td>
-                          <button className="btn btn-sm btn-danger" onClick={() => handleDeletePrice(sp.store_id)}>Remove</button>
+                          <button className="btn btn-sm btn-danger" onClick={() => handleDeletePrice(sp.store_id)}>{t('products.remove')}</button>
                         </td>
                       )}
                     </tr>
@@ -788,7 +892,7 @@ export default function ProductDetailPage() {
             </div>
           ) : (
             <div className="card" style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>
-              No store-specific prices. All stores use the default prices above.
+              {t('products.no_store_prices')}
             </div>
           )}
         </div>

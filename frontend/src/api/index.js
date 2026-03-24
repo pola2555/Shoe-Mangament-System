@@ -22,6 +22,10 @@ export const usersAPI = {
   deactivate: (id) => api.delete(`/users/${id}`),
   setPermissions: (id, permissions) => api.put(`/users/${id}/permissions`, { permissions }),
   changePassword: (data) => api.put('/users/change-password', data),
+  listRoles: () => api.get('/users/roles'),
+  listPermissions: () => api.get('/users/permissions'),
+  getStores: (id) => api.get(`/users/${id}/stores`),
+  setStores: (id, storeIds) => api.put(`/users/${id}/stores`, { store_ids: storeIds }),
 };
 
 export const productsAPI = {
@@ -146,6 +150,11 @@ export const returnsAPI = {
   createSupplierReturn: (data) => api.post('/returns/supplier', data),
 };
 
+export const notificationsAPI = {
+  getUnread: () => api.get('/notifications'),
+  markAsRead: (id) => api.put(`/notifications/${id}/read`),
+};
+
 export const expensesAPI = {
   list: (params) => api.get('/expenses', { params }),
   getCategories: () => api.get('/expenses/categories'),
@@ -156,5 +165,19 @@ export const expensesAPI = {
 };
 
 export const reportsAPI = {
-  dashboard: () => api.get('/reports/dashboard'),
+  dashboard: (params) => api.get('/reports/dashboard', { params }),
+  dashboardHome: (params) => api.get('/reports/dashboard-home', { params }),
+  dashboardAdmin: (params) => api.get('/reports/dashboard-admin', { params }),
+  salesAnalytics: (params) => api.get('/reports/sales-analytics', { params }),
+  productAnalytics: (params) => api.get('/reports/product-analytics', { params }),
+  inventoryAnalytics: (params) => api.get('/reports/inventory-analytics', { params }),
+  financial: (params) => api.get('/reports/financial', { params }),
+  customerAnalytics: (params) => api.get('/reports/customer-analytics', { params }),
+  employeeAnalytics: (params) => api.get('/reports/employee-analytics', { params }),
+};
+
+export const auditLogAPI = {
+  list: (params) => api.get('/audit-log', { params }),
+  log: (data) => api.post('/audit-log/log', data),
+  clear: () => api.delete('/audit-log/clear'),
 };

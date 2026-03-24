@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { purchasesAPI, suppliersAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
+import { useTranslation } from '../../i18n/i18nContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import '../products/Products.css';
@@ -17,6 +18,7 @@ export default function PurchasesPage() {
     supplier_id: '', total_amount: '', invoice_date: new Date().toISOString().split('T')[0], notes: '',
   });
   const { hasPermission } = useAuth();
+  const { t } = useTranslation();
   const navigate = useNavigate();
 
   useEffect(() => { fetchData(); }, []);
@@ -27,7 +29,7 @@ export default function PurchasesPage() {
       const [inv, sup] = await Promise.all([purchasesAPI.listInvoices(), suppliersAPI.list()]);
       setInvoices(inv.data.data);
       setSuppliers(sup.data.data);
-    } catch { toast.error('Failed to load data'); }
+    } catch { toast.error(t('purchases.failed_to_load')); }
     finally { setLoading(false); }
   };
 
@@ -49,10 +51,10 @@ export default function PurchasesPage() {
     try {
       const payload = { ...form, total_amount: parseFloat(form.total_amount), boxes: [] };
       const { data } = await purchasesAPI.createInvoice(payload);
-      toast.success(`Invoice ${data.data.invoice_number} created`);
+      toast.success(t('purchases.invoice_created').replace('{number}', data.data.invoice_number));
       setShowForm(false);
       navigate(`/purchases/${data.data.id}`);
-    } catch (err) { toast.error(err.response?.data?.message || 'Failed'); }
+    } catch (err) { toast.error(err.response?.data?.message || t('common.error')); }
   };
 
   const statusColors = { pending: 'badge-warning', partial: 'badge-info', paid: 'badge-success' };
@@ -62,29 +64,29 @@ export default function PurchasesPage() {
 
   const handleDeleteInvoice = async (e, id) => {
     e.stopPropagation();
-    if (!window.confirm('Are you sure you want to delete this invoice?')) return;
+    if (!window.confirm(t('purchases.delete_confirm'))) return;
     try {
       await purchasesAPI.deleteInvoice(id);
-      toast.success('Invoice deleted successfully');
+      toast.success(t('purchases.invoice_deleted'));
       fetchData();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to delete invoice');
+      toast.error(err.response?.data?.message || t('purchases.failed_to_delete'));
     }
   };
 
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Purchase Invoices</h1>
+        <h1 className="page-title">{t('purchases.title')}</h1>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
-          <input className="form-input" placeholder="Search invoices..." value={filters.search}
+          <input className="form-input" placeholder={t('purchases.search_placeholder')} value={filters.search}
             onChange={(e) => setFilters({ ...filters, search: e.target.value })} style={{ width: 200 }} />
           <button className={`btn ${showFilters || activeFilterCount ? 'btn-accent' : 'btn-secondary'}`}
             onClick={() => setShowFilters(!showFilters)}>
-            🔍 Filters{activeFilterCount > 0 && ` (${activeFilterCount})`}
+            🔍 {t('common.filters')}{activeFilterCount > 0 && ` (${activeFilterCount})`}
           </button>
           {hasPermission('purchases', 'write') && (
-            <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ New Invoice</button>
+            <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ {t('purchases.add_invoice')}</button>
           )}
         </div>
       </div>
@@ -94,10 +96,10 @@ export default function PurchasesPage() {
         <div className="filters-panel card">
           <div className="filters-grid">
             <div className="form-group">
-              <label className="form-label">Supplier</label>
+              <label className="form-label">{t('purchases.supplier')}</label>
               <SearchableSelect
                 options={[
-                  { value: '', label: 'All Suppliers' },
+                  { value: '', label: t('purchases.all_suppliers') },
                   ...suppliers.map(s => ({ value: s.id, label: s.name }))
                 ]}
                 value={filters.supplier_id}
@@ -105,33 +107,33 @@ export default function PurchasesPage() {
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Status</label>
+              <label className="form-label">{t('purchases.status')}</label>
               <SearchableSelect
                 options={[
-                  { value: '', label: 'All' },
-                  { value: 'pending', label: 'Pending' },
-                  { value: 'partial', label: 'Partial' },
-                  { value: 'paid', label: 'Paid' }
+                  { value: '', label: t('common.all') },
+                  { value: 'pending', label: t('purchases.pending') },
+                  { value: 'partial', label: t('purchases.partial') },
+                  { value: 'paid', label: t('purchases.paid') }
                 ]}
                 value={filters.status}
                 onChange={(e) => setFilters({ ...filters, status: e.target.value })}
               />
             </div>
             <div className="form-group">
-              <label className="form-label">Date From</label>
+              <label className="form-label">{t('purchases.date_from')}</label>
               <input className="form-input" type="date" value={filters.dateFrom} onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })} />
             </div>
             <div className="form-group">
-              <label className="form-label">Date To</label>
+              <label className="form-label">{t('purchases.date_to')}</label>
               <input className="form-input" type="date" value={filters.dateTo} onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })} />
             </div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--spacing-sm)' }}>
             <span className="filter-count">
-              {filtered.length} invoices &nbsp;•&nbsp; Total: <strong>{totalAmount.toLocaleString()} EGP</strong> &nbsp;•&nbsp; Paid: <strong>{totalPaid.toLocaleString()} EGP</strong> &nbsp;•&nbsp; Remaining: <strong style={{ color: 'var(--color-danger)' }}>{(totalAmount - totalPaid).toLocaleString()} EGP</strong>
+              {filtered.length} {t('purchases.title').toLowerCase()} &nbsp;•&nbsp; {t('common.total')}: <strong>{totalAmount.toLocaleString()} {t('common.currency')}</strong> &nbsp;•&nbsp; {t('purchases.paid_amount')}: <strong>{totalPaid.toLocaleString()} {t('common.currency')}</strong> &nbsp;•&nbsp; {t('purchases.remaining')}: <strong style={{ color: 'var(--color-danger)' }}>{(totalAmount - totalPaid).toLocaleString()} {t('common.currency')}</strong>
             </span>
             {activeFilterCount > 0 && <button className="btn btn-sm btn-secondary"
-              onClick={() => setFilters({ search: '', supplier_id: '', status: '', dateFrom: '', dateTo: '' })}>Clear All</button>}
+              onClick={() => setFilters({ search: '', supplier_id: '', status: '', dateFrom: '', dateTo: '' })}>{t('purchases.clear_all')}</button>}
           </div>
         </div>
       )}
@@ -139,14 +141,14 @@ export default function PurchasesPage() {
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
           <div className="modal-content card" onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>New Purchase Invoice</h2>
+            <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>{t('purchases.new_purchase_invoice')}</h2>
             <form onSubmit={handleSubmit} className="product-form">
               <div className="form-group">
-                <label className="form-label">Supplier *</label>
+                <label className="form-label">{t('purchases.supplier')} *</label>
                 <SearchableSelect
                   required
                   options={[
-                    { value: '', label: 'Select supplier' },
+                    { value: '', label: t('purchases.select_supplier') },
                     ...suppliers.map(s => ({ value: s.id, label: s.name }))
                   ]}
                   value={form.supplier_id}
@@ -154,19 +156,19 @@ export default function PurchasesPage() {
                 />
               </div>
               <div className="form-row">
-                <div className="form-group"><label className="form-label">Total Amount *</label>
+                <div className="form-group"><label className="form-label">{t('purchases.total_amount')} *</label>
                   <input className="form-input" type="number" step="0.01" required value={form.total_amount}
                     onChange={(e) => setForm({ ...form, total_amount: e.target.value })} /></div>
-                <div className="form-group"><label className="form-label">Invoice Date *</label>
+                <div className="form-group"><label className="form-label">{t('purchases.invoice_date')} *</label>
                   <input className="form-input" type="date" required value={form.invoice_date}
                     onChange={(e) => setForm({ ...form, invoice_date: e.target.value })} /></div>
               </div>
-              <div className="form-group"><label className="form-label">Notes</label>
+              <div className="form-group"><label className="form-label">{t('common.notes')}</label>
                 <textarea className="form-input" rows={2} value={form.notes}
                   onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
               <div className="form-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Create</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>{t('common.cancel')}</button>
+                <button type="submit" className="btn btn-primary">{t('common.create')}</button>
               </div>
             </form>
           </div>
@@ -176,10 +178,10 @@ export default function PurchasesPage() {
       {loading ? <div className="loading-screen"><div className="spinner" /></div> : (
         <div className="table-container">
           <table className="table">
-            <thead><tr><th>Invoice #</th><th>Supplier</th><th>Date</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Status</th>{hasPermission('purchases', 'write') && <th style={{textAlign: 'right'}}>Actions</th>}</tr></thead>
+            <thead><tr><th>{t('purchases.invoice_number')}</th><th>{t('purchases.supplier')}</th><th>{t('common.date')}</th><th>{t('common.total')}</th><th>{t('purchases.paid_amount')}</th><th>{t('purchases.remaining')}</th><th>{t('purchases.status')}</th>{hasPermission('purchases', 'write') && <th style={{textAlign: 'right'}}>{t('common.actions')}</th>}</tr></thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={hasPermission('purchases', 'write') ? 8 : 7} style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>No invoices found.</td></tr>
+                <tr><td colSpan={hasPermission('purchases', 'write') ? 8 : 7} style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>{t('purchases.no_purchases')}</td></tr>
               ) : filtered.map((inv) => {
                 const remaining = parseFloat(inv.total_amount) - (parseFloat(inv.discount_amount) || 0) - parseFloat(inv.paid_amount);
                 return (
@@ -187,15 +189,15 @@ export default function PurchasesPage() {
                     <td><strong>{inv.invoice_number}</strong></td>
                     <td>{inv.supplier_name}</td>
                     <td>{new Date(inv.invoice_date).toLocaleDateString()}</td>
-                    <td>{parseFloat(inv.total_amount).toLocaleString()} EGP</td>
-                    <td>{parseFloat(inv.paid_amount).toLocaleString()} EGP</td>
+                    <td>{parseFloat(inv.total_amount).toLocaleString()} {t('common.currency')}</td>
+                    <td>{parseFloat(inv.paid_amount).toLocaleString()} {t('common.currency')}</td>
                     <td style={{ color: remaining > 0 ? 'var(--color-danger)' : 'var(--color-success)', fontWeight: 600 }}>
-                      {remaining.toLocaleString()} EGP
+                      {remaining.toLocaleString()} {t('common.currency')}
                     </td>
-                    <td><span className={`badge ${statusColors[inv.status]}`}>{inv.status}</span></td>
+                    <td><span className={`badge ${statusColors[inv.status]}`}>{t(`purchases.${inv.status}`)}</span></td>
                     {hasPermission('purchases', 'write') && (
                       <td style={{textAlign: 'right'}}>
-                        <button className="btn btn-sm btn-danger" onClick={(e) => handleDeleteInvoice(e, inv.id)}>Delete</button>
+                        <button className="btn btn-sm btn-danger" onClick={(e) => handleDeleteInvoice(e, inv.id)}>{t('common.delete')}</button>
                       </td>
                     )}
                   </tr>

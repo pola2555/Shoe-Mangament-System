@@ -13,9 +13,12 @@ import {
 } from 'react-icons/hi2';
 import CheckoutModal from './CheckoutModal';
 import ProductSelectorModal from './ProductSelectorModal';
+import { useTranslation } from '../../i18n/i18nContext';
+import './POS.css';
 
 export default function POSPage() {
-  const { user } = useAuth();
+  const { user, filterStores } = useAuth();
+  const { t } = useTranslation();
   
   // Data
   const [stores, setStores] = useState([]);
@@ -68,6 +71,15 @@ export default function POSPage() {
     }
   }, [selectedStore]);
 
+  // Clear cart when store changes (items belong to a specific store and have store-specific prices)
+  const handleStoreChange = (newStoreId) => {
+    if (newStoreId !== selectedStore && cart.length > 0) {
+      if (!confirm(t('pos.clear_cart') + '?')) return;
+    }
+    setCart([]);
+    setSelectedStore(newStoreId);
+  };
+
   const fetchInitialData = async () => {
     try {
       setLoading(true);
@@ -75,15 +87,16 @@ export default function POSPage() {
         storesAPI.list(),
         customersAPI.list()
       ]);
-      setStores(strs.data.data);
+      const accessibleStores = filterStores(strs.data.data);
+      setStores(accessibleStores);
       setCustomers(custs.data.data);
       
       // Only auto-select store if we don't already have one from localStorage
-      if (strs.data.data.length > 0 && !selectedStore) {
-        setSelectedStore(strs.data.data[0].id);
+      if (accessibleStores.length > 0 && !selectedStore) {
+        setSelectedStore(accessibleStores[0].id);
       }
     } catch (err) {
-      toast.error('Failed to load POS data');
+      toast.error(t('pos.sale_failed'));
     } finally {
       setLoading(false);
     }
@@ -117,22 +130,23 @@ export default function POSPage() {
       
       setProducts(Array.from(productMap.values()));
     } catch (err) {
-      toast.error('Search failed');
+      toast.error(t('pos.sale_failed'));
     } finally {
       setSearching(false);
     }
   };
 
   const addToCart = (physicalItem) => {
-    const maxPrice = parseFloat(physicalItem.max_selling_price || 999999);
-    const minPrice = parseFloat(physicalItem.min_selling_price || 0);
-    let defaultPrice = parseFloat(physicalItem.store_selling_price || physicalItem.default_selling_price || 0);
+    // Use store-specific min/max if available, otherwise fall back to product defaults
+    const maxPrice = parseFloat(physicalItem.store_max_selling_price ?? physicalItem.max_selling_price ?? 999999) || 999999;
+    const minPrice = parseFloat(physicalItem.store_min_selling_price ?? physicalItem.min_selling_price ?? 0) || 0;
+    let defaultPrice = parseFloat(physicalItem.store_selling_price ?? physicalItem.default_selling_price ?? 0) || 0;
 
     if (defaultPrice > maxPrice) defaultPrice = maxPrice;
     if (defaultPrice < minPrice) defaultPrice = minPrice;
 
     setCart([...cart, { ...physicalItem, sale_price: defaultPrice }]);
-    toast.success(`Added ${physicalItem.product_name} Size ${physicalItem.size_eu}`);
+    toast.success(`${t('pos.add_to_cart')}: ${physicalItem.product_name} - ${physicalItem.size_eu}`);
     // Optional: close modal immediately or let the cashier keep tapping sizes
   };
 
@@ -167,7 +181,7 @@ export default function POSPage() {
       };
 
       await salesAPI.create(payload);
-      toast.success('Sale completed successfully!');
+      toast.success(t('pos.sale_completed'));
       
       // Reset POS
       setCart([]);
@@ -181,7 +195,7 @@ export default function POSPage() {
       handleSearch();
       
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to complete sale');
+      toast.error(err.response?.data?.message || t('pos.sale_failed'));
     } finally {
       setCheckingOut(false);
     }
@@ -192,8 +206,8 @@ export default function POSPage() {
   const isValidPrice = (item) => {
     const price = parseFloat(item.sale_price);
     if (isNaN(price)) return false;
-    const min = parseFloat(item.min_selling_price || 0);
-    const max = parseFloat(item.max_selling_price || 999999);
+    const min = parseFloat(item.store_min_selling_price ?? item.min_selling_price ?? 0) || 0;
+    const max = parseFloat(item.store_max_selling_price ?? item.max_selling_price ?? 999999) || 999999;
     return price >= min && price <= max;
   };
   
@@ -201,7 +215,7 @@ export default function POSPage() {
 
   const handleQuickAddCustomer = async (e) => {
     e.preventDefault();
-    if (!newCustomer.phone) return toast.error('Phone number is required');
+    if (!newCustomer.phone) return toast.error(t('common.phone'));
     try {
       setAddingCustomer(true);
       const res = await customersAPI.create(newCustomer);
@@ -210,9 +224,9 @@ export default function POSPage() {
       setSelectedCustomer(created.id);
       setShowAddCustomer(false);
       setNewCustomer({ name: '', phone: '', notes: '' });
-      toast.success('Customer added successfully!');
+      toast.success(t('pos.add_customer'));
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to add customer');
+      toast.error(err.response?.data?.message || t('pos.sale_failed'));
     } finally {
       setAddingCustomer(false);
     }
@@ -221,71 +235,60 @@ export default function POSPage() {
   // -- Render Helpers --
   
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 120px)', gap: 'var(--spacing-lg)', margin: '-var(--spacing-lg) 0' }}>
+    <div className="pos-layout">
       
       {/* LEFT: Product Selection */}
-      <div className="card" style={{ flex: 2, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-md)' }}>
-          <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', padding: '0.5rem 1rem' }}>
-              <HiOutlineMagnifyingGlass size={20} color="var(--color-text-muted)" style={{ marginRight: '0.5rem' }} />
-              <form onSubmit={handleSearch} style={{ width: '100%' }}>
-                <input 
-                  type="text" 
-                  placeholder="Scan barcode or search by name, model, SKU..." 
-                  style={{ background: 'transparent', border: 'none', color: 'var(--color-text)', width: '100%', outline: 'none', fontSize: '1rem' }}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  autoFocus
-                />
-              </form>
-            </div>
+      <div className="card pos-products-panel">
+        <div className="pos-search-bar">
+          <div className="pos-search-input-wrap">
+            <HiOutlineMagnifyingGlass size={20} color="var(--color-text-muted)" />
+            <form onSubmit={handleSearch} style={{ width: '100%' }}>
+              <input 
+                type="text" 
+                placeholder={t('pos.search_products')}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                autoFocus
+              />
+            </form>
           </div>
           <button className="btn btn-primary" onClick={handleSearch} disabled={searching || !selectedStore}>
-            {searching ? '...' : 'Search'}
+            {searching ? '...' : t('common.search')}
           </button>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div className="pos-products-scroll">
           {!selectedStore ? (
-            <div style={{ textAlign: 'center', padding: 'var(--spacing-2xl)', color: 'var(--color-text-muted)' }}>
-              Please select a store to view inventory.
-            </div>
+            <div className="pos-empty-state">{t('pos.select_store')}</div>
           ) : products.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 'var(--spacing-2xl)', color: 'var(--color-text-muted)' }}>
-              {searching ? 'Loading...' : 'No available items found. Try a different search.'}
+            <div className="pos-empty-state">
+              {searching ? t('common.loading') + '...' : t('pos.no_products_found')}
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 'var(--spacing-md)' }}>
+            <div className="pos-products-grid">
               {products.map(item => (
                 <div 
                   key={item.product_id} 
-                  className="card" 
-                  style={{ padding: 'var(--spacing-sm)', cursor: 'pointer', transition: 'all 0.2s', border: '1px solid var(--color-border)', '&:hover': { borderColor: 'var(--color-primary)' }, display: 'flex', flexDirection: 'column' }}
+                  className="card pos-product-card"
                   onClick={() => setSelectedProduct(item)}
                 >
-                  <div style={{ width: '100%', height: 140, backgroundColor: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginBottom: 'var(--spacing-sm)' }}>
+                  <div className="pos-product-img">
                     {item.product_image ? (
-                      <img src={item.product_image} alt={item.product_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <img src={item.product_image} alt={item.product_name} />
                     ) : (
-                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)' }}>No Image</div>
+                      <span className="pos-product-img-placeholder">—</span>
                     )}
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.2rem' }}>
-                    <span style={{ fontWeight: 600, fontSize: '1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {item.product_name}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-sm)', display: 'flex', justifyContent: 'space-between' }}>
+                  <div className="pos-product-name">{item.product_name}</div>
+                  <div className="pos-product-meta">
                     <span>{item.brand}</span>
                     <span>{item.product_code}</span>
                   </div>
-                  
-                  <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontWeight: 700, color: 'var(--color-success)', fontSize: '1.1rem' }}>
-                      {parseFloat(item.store_selling_price || item.default_selling_price || 0).toLocaleString()} <span style={{fontSize:'0.7em'}}>EGP</span>
+                  <div className="pos-product-footer">
+                    <span className="pos-product-price">
+                      {parseFloat(item.store_selling_price || item.default_selling_price || 0).toLocaleString()} <span className="currency">{t('common.currency')}</span>
                     </span>
-                    <span className="badge badge-primary">{item.quantity} in stock</span>
+                    <span className="badge badge-info">{item.quantity} {t('pos.stock')}</span>
                   </div>
                 </div>
               ))}
@@ -295,38 +298,37 @@ export default function POSPage() {
       </div>
 
       {/* RIGHT: Cart & Checkout */}
-      <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', borderLeft: '3px solid var(--color-primary)', backgroundColor: 'var(--color-bg-secondary)' }}>
-        <h3 style={{ marginBottom: 'var(--spacing-md)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <HiOutlineShoppingBag /> Current Sale
+      <div className="card pos-cart-panel">
+        <h3 className="pos-cart-title">
+          <HiOutlineShoppingBag /> {t('pos.title')}
         </h3>
 
         {/* Store & Customer Selectors */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-md)' }}>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><HiOutlineBuildingStorefront /> Location</label>
+        <div className="pos-cart-selectors">
+          <div className="form-group">
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><HiOutlineBuildingStorefront /> {t('pos.store')}</label>
             <SearchableSelect
               options={stores.map(s => ({ value: s.id, label: s.name }))}
               value={selectedStore}
-              onChange={(e) => setSelectedStore(e.target.value)}
-              placeholder="Select Store..."
+              onChange={(e) => handleStoreChange(e.target.value)}
+              placeholder={t('pos.select_store')}
             />
           </div>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.3rem' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><HiOutlineUser /> Customer</span>
+          <div className="form-group">
+            <label className="form-label pos-customer-label">
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><HiOutlineUser /> {t('pos.customer')}</span>
               <button 
                 type="button" 
-                className="btn btn-sm btn-ghost" 
-                style={{ padding: '0 0.5rem', height: 'auto', fontSize: '0.8rem', color: 'var(--color-primary)' }}
+                className="btn btn-sm btn-ghost pos-quick-add-btn"
                 onClick={() => setShowAddCustomer(true)}
               >
-                + Quick Add
+                + {t('pos.quick_add_customer')}
               </button>
             </label>
             <SearchableSelect
               options={[
-                { value: '', label: '— Walk-in Customer —' },
-                ...customers.map(c => ({ value: c.id, label: `${c.name || 'Unnamed'} (${c.phone})` }))
+                { value: '', label: `— ${t('pos.walk_in')} —` },
+                ...customers.map(c => ({ value: c.id, label: `${c.name || t('common.name')} (${c.phone})` }))
               ]}
               value={selectedCustomer}
               onChange={(e) => setSelectedCustomer(e.target.value)}
@@ -335,40 +337,38 @@ export default function POSPage() {
         </div>
 
         {/* Cart Items */}
-        <div style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid var(--color-border)', borderBottom: '1px solid var(--color-border)', padding: 'var(--spacing-sm) 0', marginBottom: 'var(--spacing-md)' }}>
+        <div className="pos-cart-items">
           {cart.length === 0 ? (
-            <div style={{ textAlign: 'center', color: 'var(--color-text-muted)', marginTop: 'var(--spacing-2xl)' }}>
-              Cart is empty
-            </div>
+            <div className="pos-cart-empty">{t('pos.cart_empty')}</div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)' }}>
+            <div className="pos-cart-list">
               {cart.map((item, index) => {
                 const isValid = isValidPrice(item);
                 const minP = parseFloat(item.min_selling_price || 0);
                 const maxP = parseFloat(item.max_selling_price || 999999);
                 return (
-                  <div key={`${item.id}-${index}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem', background: 'var(--color-bg-base)', borderRadius: 'var(--radius-sm)' }}>
-                    <div style={{ flex: 1, marginRight: 'var(--spacing-sm)' }}>
-                      <div style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>{item.product_name || item.sku}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-                        Size {item.size_eu} • {item.color_name || 'N/A'}
+                  <div key={`${item.id}-${index}`} className="pos-cart-item">
+                    <div className="pos-cart-item-info">
+                      <div className="pos-cart-item-name">{item.product_name || item.sku}</div>
+                      <div className="pos-cart-item-variant">
+                        {t('pos.select_size')} {item.size_eu} • {item.color_name || '—'}
                       </div>
                       {!isValid && (
-                        <div style={{ fontSize: '0.7rem', color: 'var(--color-danger)', marginTop: 2 }}>
-                          Price must be between {minP} and {maxP < 999999 ? maxP : '∞'} EGP
+                        <div className="pos-cart-item-error">
+                          {minP} - {maxP < 999999 ? maxP : '∞'} {t('common.currency')}
                         </div>
                       )}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <div className="pos-cart-item-actions">
                       <input
                         type="number"
-                        className="form-input"
-                        style={{ width: 80, padding: '0.2rem 0.5rem', textAlign: 'right', borderColor: isValid ? undefined : 'var(--color-danger)', background: isValid ? undefined : 'rgba(var(--color-danger-rgb), 0.1)' }}
+                        className="form-input price-input"
+                        style={{ borderColor: isValid ? undefined : 'var(--color-danger)', background: isValid ? undefined : 'rgba(var(--color-danger-rgb), 0.1)' }}
                         value={item.sale_price}
                         onChange={e => updateCartItemPrice(index, e.target.value)}
                         step="0.01"
                       />
-                      <span style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginRight: '0.5rem' }}>EGP</span>
+                      <span className="currency-label">{t('common.currency')}</span>
                       <button className="btn btn-sm btn-danger" style={{ padding: '0.3rem' }} onClick={() => removeFromCart(index)}>
                         <HiOutlineTrash size={16} />
                       </button>
@@ -381,24 +381,23 @@ export default function POSPage() {
         </div>
 
         {/* Totals */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: 'var(--spacing-lg)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--color-text-secondary)' }}>
-            <span>Total Items</span>
-            <span>{cart.length} items</span>
+        <div className="pos-cart-totals">
+          <div className="pos-cart-totals-row">
+            <span>{t('pos.items_in_cart')}</span>
+            <span>{cart.length}</span>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.25rem', fontWeight: 700, marginTop: '0.5rem', borderTop: '1px dashed var(--color-border)', paddingTop: '0.5rem' }}>
-            <span>Total Due</span>
-            <span style={{ color: 'var(--color-success)' }}>{total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EGP</span>
+          <div className="pos-cart-totals-grand">
+            <span>{t('pos.total_amount')}</span>
+            <span style={{ color: 'var(--color-success)' }}>{total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {t('common.currency')}</span>
           </div>
         </div>
 
         <button 
-          className="btn btn-primary" 
-          style={{ width: '100%', padding: '1rem', fontSize: '1.1rem' }}
+          className="btn btn-primary pos-checkout-btn"
           disabled={!isCartValid}
           onClick={() => setShowCheckout(true)}
         >
-          Proceed to Pay — {total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EGP
+          {t('pos.checkout')} — {total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {t('common.currency')}
         </button>
       </div>
 
@@ -424,32 +423,32 @@ export default function POSPage() {
       {showAddCustomer && (
         <div className="modal-overlay" onClick={() => setShowAddCustomer(false)}>
           <div className="modal-content card" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ marginBottom: 'var(--spacing-md)' }}>Quick Add Customer</h2>
+            <h2 style={{ marginBottom: 'var(--spacing-md)' }}>{t('pos.quick_add_customer')}</h2>
             <form onSubmit={handleQuickAddCustomer}>
               <div className="form-group">
-                <label className="form-label">Name</label>
+                <label className="form-label">{t('common.name')}</label>
                 <input 
                   className="form-input" 
                   autoFocus
-                  placeholder="e.g. Ahmed Ali"
+                  placeholder={t('common.name')}
                   value={newCustomer.name}
                   onChange={e => setNewCustomer({ ...newCustomer, name: e.target.value })}
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Phone *</label>
+                <label className="form-label">{t('common.phone')} *</label>
                 <input 
                   className="form-input" 
                   required
-                  placeholder="e.g. 01012345678"
+                  placeholder={t('common.phone')}
                   value={newCustomer.phone}
                   onChange={e => setNewCustomer({ ...newCustomer, phone: e.target.value })}
                 />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--spacing-sm)', marginTop: 'var(--spacing-lg)' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowAddCustomer(false)}>Cancel</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowAddCustomer(false)}>{t('common.cancel')}</button>
                 <button type="submit" className="btn btn-primary" disabled={addingCustomer || !newCustomer.phone}>
-                  {addingCustomer ? 'Adding...' : 'Add Customer'}
+                  {addingCustomer ? t('pos.processing') : t('pos.add_customer')}
                 </button>
               </div>
             </form>

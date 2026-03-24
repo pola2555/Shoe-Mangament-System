@@ -18,6 +18,10 @@ router.use(auth);
 // Password change (own password — any authenticated user, must be before /:id routes)
 router.put('/change-password', validate(changePasswordSchema), controller.changePassword);
 
+// Roles & permissions lookup
+router.get('/roles', permission('users', 'read'), controller.listRoles);
+router.get('/permissions', permission('user_permissions', 'read'), controller.listPermissions);
+
 // User CRUD
 router.get('/', permission('users', 'read'), controller.list);
 router.get('/:id', permission('users', 'read'), controller.getById);
@@ -26,6 +30,10 @@ router.put('/:id', permission('users', 'write'), validate(updateUserSchema), con
 router.delete('/:id', permission('users', 'write'), controller.deactivate);
 
 // Permission management
-router.put('/:id/permissions', permission('users', 'write'), validate(setPermissionsSchema), controller.setPermissions);
+router.put('/:id/permissions', permission('user_permissions', 'write'), validate(setPermissionsSchema), controller.setPermissions);
+
+// Store assignment
+router.get('/:id/stores', permission('users', 'read'), controller.getStores);
+router.put('/:id/stores', permission('users', 'write'), controller.setStores);
 
 module.exports = router;

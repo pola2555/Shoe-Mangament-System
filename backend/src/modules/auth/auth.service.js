@@ -54,6 +54,11 @@ class AuthService {
       .where('user_id', user.id)
       .select('permission_code', 'access_level');
 
+    // Fetch assigned stores
+    const assignedStores = await db('user_stores')
+      .where('user_id', user.id)
+      .select('store_id');
+
     // Remove password hash from response
     delete user.password_hash;
 
@@ -64,6 +69,7 @@ class AuthService {
           acc[p.permission_code] = p.access_level;
           return acc;
         }, {}),
+        assigned_stores: assignedStores.map(s => s.store_id),
       },
       accessToken,
       refreshToken,
@@ -162,6 +168,12 @@ class AuthService {
       acc[p.permission_code] = p.access_level;
       return acc;
     }, {});
+
+    // Fetch assigned stores
+    const assignedStores = await db('user_stores')
+      .where('user_id', userId)
+      .select('store_id');
+    user.assigned_stores = assignedStores.map(s => s.store_id);
 
     return user;
   }

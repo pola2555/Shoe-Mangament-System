@@ -13,6 +13,14 @@ const { generateUUID } = require('../../utils/generateCodes');
  * - Permissions are managed as a replace-all operation (simpler than add/remove individual)
  */
 class UsersService {
+  async listRoles() {
+    return db('roles').select('id', 'name', 'description').orderBy('id');
+  }
+
+  async listPermissions() {
+    return db('permissions').select('id', 'code', 'description', 'category').orderBy('category', 'asc').orderBy('code', 'asc');
+  }
+
   async list(requestingUser) {
     let query = db('users')
       .join('roles', 'users.role_id', 'roles.id')
@@ -99,6 +107,12 @@ class UsersService {
       throw new AppError('User not found', 404);
     }
 
+    // If password is provided, hash it
+    if (data.password) {
+      data.password_hash = await bcrypt.hash(data.password, 12);
+      delete data.password;
+    }
+
     data.updated_at = new Date();
 
     const [user] = await db('users')
@@ -170,6 +184,32 @@ class UsersService {
       throw new AppError('User not found', 404);
     }
     return user;
+  }
+
+  async getStores(userId) {
+    return db('user_stores')
+      .join('stores', 'user_stores.store_id', 'stores.id')
+      .where('user_stores.user_id', userId)
+      .select('stores.id', 'stores.name');
+  }
+
+  async setStores(userId, storeIds) {
+    const user = await db('users').where('id', userId).first();
+    if (!user) {
+      throw new AppError('User not found', 404);
+    }
+
+    await db('user_stores').where('user_id', userId).del();
+
+    if (storeIds && storeIds.length > 0) {
+      const rows = storeIds.map((store_id) => ({
+        user_id: userId,
+        store_id,
+      }));
+      await db('user_stores').insert(rows);
+    }
+
+    return this.getStores(userId);
   }
 }
 

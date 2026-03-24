@@ -55,8 +55,20 @@ export function AuthProvider({ children }) {
     return userLevel === 'write';
   };
 
+  /**
+   * Filter a list of stores to only those the user is assigned to.
+   * Admins and users with all_stores permission see all stores.
+   */
+  const filterStores = (stores) => {
+    if (!user) return [];
+    if (user.role_name === 'admin' || user.permissions?.all_stores) return stores;
+    const assigned = user.assigned_stores || [];
+    if (assigned.length === 0) return stores; // no assignments = all stores (backwards compat)
+    return stores.filter(s => assigned.includes(s.id));
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, hasPermission }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, hasPermission, filterStores }}>
       {children}
     </AuthContext.Provider>
   );

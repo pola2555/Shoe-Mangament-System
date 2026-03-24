@@ -456,6 +456,28 @@ class PurchasesService {
         }
       }
 
+      // Phase 18: Dynamic Cost Updates & Notifications
+      const productRecord = await trx('products').where('id', box.product_id).first();
+      const unitCost = Number(box.cost_per_item) || 0;
+      const currentNetPrice = Number(productRecord.net_price) || 0;
+
+      if (unitCost > 0 && unitCost !== currentNetPrice) {
+        // 1. Update product net_price
+        await trx('products')
+          .where('id', productRecord.id)
+          .update({ net_price: unitCost, updated_at: new Date() });
+
+        // 2. Generate Notification with reference_id
+        await trx('notifications').insert({
+          id: generateUUID(),
+          type: 'price_update',
+          title: `Cost Price Changed: ${productRecord.product_code}`,
+          message: `The net purchase cost for ${productRecord.product_code} was officially updated from ${currentNetPrice} EGP to ${unitCost} EGP based on a newly completed purchase invoice box. Please review its selling boundaries to maintain margins.`,
+          reference_id: productRecord.id,
+          created_at: new Date()
+        });
+      }
+
       // Mark box as complete
       await trx('purchase_invoice_boxes')
         .where('id', boxId)

@@ -12,6 +12,7 @@ const createUserSchema = Joi.object({
 const updateUserSchema = Joi.object({
   email: Joi.string().email(),
   full_name: Joi.string().max(100).allow('', null),
+  password: Joi.string().min(6),
   role_id: Joi.number().integer().valid(1, 2, 3),
   store_id: Joi.string().uuid().allow(null),
   is_active: Joi.boolean(),

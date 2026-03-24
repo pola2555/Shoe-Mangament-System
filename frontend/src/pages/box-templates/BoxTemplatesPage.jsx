@@ -3,6 +3,7 @@ import { boxTemplatesAPI, productsAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
+import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
 
 export default function BoxTemplatesPage() {
@@ -13,6 +14,7 @@ export default function BoxTemplatesPage() {
   const [editingId, setEditingId] = useState(null);
   const { hasPermission } = useAuth();
   const canWrite = hasPermission('products', 'write');
+  const { t } = useTranslation();
 
   const emptyForm = { name: '', product_id: '', notes: '', items: [{ color_label: '', size: '', quantity: '' }] };
   const [form, setForm] = useState(emptyForm);
@@ -69,7 +71,7 @@ export default function BoxTemplatesPage() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this template?')) return;
+    if (!confirm(t('common.are_you_sure'))) return;
     try {
       await boxTemplatesAPI.delete(id);
       toast.success('Template deleted');
@@ -100,10 +102,10 @@ export default function BoxTemplatesPage() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Box Templates</h1>
+        <h1 className="page-title">{t('box_templates.title')}</h1>
         {canWrite && (
           <button className="btn btn-primary" onClick={() => { setEditingId(null); setForm(emptyForm); setShowForm(true); }}>
-            + New Template
+            + {t('box_templates.add_template')}
           </button>
         )}
       </div>
@@ -112,15 +114,15 @@ export default function BoxTemplatesPage() {
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
           <div className="modal-content card" style={{ maxWidth: 700, maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>{editingId ? 'Edit' : 'New'} Template</h2>
+            <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>{editingId ? t('common.edit') : t('common.create')} {t('sidebar.box_templates')}</h2>
             <form onSubmit={handleSubmit} className="product-form">
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label">Template Name *</label>
+                  <label className="form-label">{t('box_templates.template_name')} *</label>
                   <input className="form-input" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Linked Product <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>(optional)</span></label>
+                  <label className="form-label">{t('sidebar.products')} <span style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>(optional)</span></label>
                   <SearchableSelect
                     options={[
                       { value: '', label: 'Generic (any product)' },
@@ -132,7 +134,7 @@ export default function BoxTemplatesPage() {
                 </div>
               </div>
 
-              <h4 style={{ marginBottom: 'var(--spacing-sm)', marginTop: 'var(--spacing-md)' }}>Size Distribution</h4>
+              <h4 style={{ marginBottom: 'var(--spacing-sm)', marginTop: 'var(--spacing-md)' }}>{t('box_templates.sizes')}</h4>
               <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)' }}>
                 Use <strong>Color Label</strong> to group sizes by color (e.g. "Black", "White"). Items with the same label will be grouped together when the template is applied.
               </p>
@@ -141,9 +143,9 @@ export default function BoxTemplatesPage() {
                 <table className="table" style={{ minWidth: 400 }}>
                   <thead>
                     <tr>
-                      <th style={{ width: 150 }}>Color Label</th>
-                      <th style={{ width: 80 }}>Size (EU) *</th>
-                      <th style={{ width: 80 }}>Qty *</th>
+                      <th style={{ width: 150 }}>{t('products.color_name')}</th>
+                      <th style={{ width: 80 }}>{t('products.size')} *</th>
+                      <th style={{ width: 80 }}>{t('common.quantity')} *</th>
                       <th style={{ width: 40 }}></th>
                     </tr>
                   </thead>
@@ -172,15 +174,15 @@ export default function BoxTemplatesPage() {
                   </tbody>
                 </table>
               </div>
-              <button type="button" className="btn btn-sm btn-secondary" style={{ marginTop: 'var(--spacing-sm)' }} onClick={addItem}>+ Add Row</button>
+              <button type="button" className="btn btn-sm btn-secondary" style={{ marginTop: 'var(--spacing-sm)' }} onClick={addItem}>+ {t('common.add')}</button>
 
               <div className="form-group" style={{ marginTop: 'var(--spacing-md)' }}>
-                <label className="form-label">Notes</label>
+                <label className="form-label">{t('common.notes')}</label>
                 <textarea className="form-input" rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
               </div>
               <div className="form-actions">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">{editingId ? 'Update' : 'Create'}</button>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>{t('common.cancel')}</button>
+                <button type="submit" className="btn btn-primary">{editingId ? t('common.update') : t('common.create')}</button>
               </div>
             </form>
           </div>
@@ -191,7 +193,7 @@ export default function BoxTemplatesPage() {
       {loading ? <div className="loading-screen"><div className="spinner" /></div> : (
         templates.length === 0 ? (
           <div className="card" style={{ textAlign: 'center', color: 'var(--color-text-muted)', padding: 'var(--spacing-2xl)' }}>
-            No box templates yet. Create one to speed up box data entry.
+            {t('box_templates.no_templates')}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 'var(--spacing-lg)' }}>
@@ -212,7 +214,7 @@ export default function BoxTemplatesPage() {
                         <span className="badge badge-neutral" style={{ fontSize: '0.7em' }}>Generic</span>
                       )}
                     </div>
-                    <span className="badge badge-info">{totalItems} items</span>
+                    <span className="badge badge-info">{totalItems} {t('common.items')}</span>
                   </div>
 
                   {/* Color groups preview */}
@@ -235,8 +237,8 @@ export default function BoxTemplatesPage() {
 
                   {canWrite && (
                     <div style={{ display: 'flex', gap: 'var(--spacing-sm)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--spacing-sm)' }}>
-                      <button className="btn btn-sm btn-secondary" onClick={() => startEdit(tmpl)}>Edit</button>
-                      <button className="btn btn-sm btn-danger" onClick={() => handleDelete(tmpl.id)}>Delete</button>
+                      <button className="btn btn-sm btn-secondary" onClick={() => startEdit(tmpl)}>{t('common.edit')}</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => handleDelete(tmpl.id)}>{t('common.delete')}</button>
                     </div>
                   )}
                 </div>

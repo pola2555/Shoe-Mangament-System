@@ -7,11 +7,22 @@
   flex: 1;
   margin-left: var(--sidebar-width);
   padding: var(--spacing-xl);
-  transition: margin-left var(--transition-base);
+  transition: margin-left var(--transition-base), margin-right var(--transition-base);
   min-width: 0; /* Prevent flex overflow */
 }
 
 /* Adjust when sidebar is collapsed (via CSS class on parent) */
 .sidebar--collapsed ~ .layout__main {
   margin-left: var(--sidebar-collapsed-width);
+}
+
+/* RTL support */
+[dir="rtl"] .layout__main {
+  margin-left: 0;
+  margin-right: var(--sidebar-width);
+}
+
+[dir="rtl"] .sidebar--collapsed ~ .layout__main {
+  margin-left: 0;
+  margin-right: var(--sidebar-collapsed-width);
 }

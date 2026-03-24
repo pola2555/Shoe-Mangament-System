@@ -3,20 +3,24 @@ import { inventoryAPI, storesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
+import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
 
 // --- Tree View Components ---
 
-const InventoryTreeSizeRow = ({ sizeRow }) => (
+const InventoryTreeSizeRow = ({ sizeRow }) => {
+  const { t } = useTranslation();
+  return (
   <tr className="tree-row size-row" style={{ backgroundColor: 'transparent' }}>
     <td style={{ paddingLeft: '5.5rem', color: 'var(--color-text-secondary)' }}>EU {sizeRow.size_eu}</td>
     <td style={{ color: 'var(--color-text-muted)', fontSize: '0.9em' }}>{sizeRow.sku}</td>
     <td>{sizeRow.store_name}</td>
-    <td>{parseFloat(sizeRow.avg_cost).toFixed(2)} EGP</td>
+    <td>{parseFloat(sizeRow.avg_cost).toFixed(2)} {t('common.currency')}</td>
     <td><strong>{sizeRow.quantity}</strong></td>
     <td></td>
   </tr>
-);
+  );
+};
 
 const InventoryTreeColorRow = ({ color, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -86,7 +90,8 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ store_id: '', status: 'in_stock', search: '', size_min: '', size_max: '' });
   const [viewMode, setViewMode] = useState('summary'); // 'summary' or 'items'
-  const { hasPermission } = useAuth();
+  const { hasPermission, filterStores } = useAuth();
+  const { t } = useTranslation();
   const [treeData, setTreeData] = useState([]);
 
   useEffect(() => { fetchStores(); }, []);
@@ -95,7 +100,7 @@ export default function InventoryPage() {
   const fetchStores = async () => {
     try {
       const { data } = await storesAPI.list();
-      setStores(data.data);
+      setStores(filterStores(data.data));
     } catch { /* ignore */ }
   };
 
@@ -118,7 +123,7 @@ export default function InventoryPage() {
         setItems(data.data);
         setTreeData([]);
       }
-    } catch { toast.error('Failed to load inventory'); }
+    } catch { toast.error(t('inventory.no_inventory')); }
     finally { setLoading(false); }
   };
 
@@ -166,30 +171,30 @@ export default function InventoryPage() {
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">Inventory</h1>
+        <h1 className="page-title">{t('inventory.title')}</h1>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
           <button className={`btn ${viewMode === 'summary' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setViewMode('summary')}>Smart Tree View</button>
+            onClick={() => setViewMode('summary')}>{t('inventory.summary')}</button>
           <button className={`btn ${viewMode === 'items' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setViewMode('items')}>Raw Items</button>
+            onClick={() => setViewMode('items')}>{t('inventory.total_items')}</button>
         </div>
       </div>
 
       {/* Advanced Filters */}
-      <div className="card" style={{ marginBottom: 'var(--spacing-lg)' }}>
-        <form onSubmit={handleSearch} style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+      <div className="card filters-panel">
+        <form onSubmit={handleSearch} className="filters-grid" style={{ alignItems: 'flex-end' }}>
           
-          <div className="form-group" style={{ flex: '1 1 200px' }}>
-            <label className="form-label">Advanced Search</label>
-            <input className="form-input" placeholder="Search product, SKU, matching brand, size..." value={filters.search}
+          <div className="form-group">
+            <label className="form-label">{t('common.search')}</label>
+            <input className="form-input" placeholder={t('inventory.search_placeholder')} value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })} />
           </div>
 
-          <div className="form-group" style={{ minWidth: 160 }}>
-            <label className="form-label">Store Mapping</label>
+          <div className="form-group">
+            <label className="form-label">{t('inventory.store')}</label>
             <SearchableSelect
               options={[
-                { value: '', label: 'All Stores' },
+                { value: '', label: t('stores.all_stores') },
                 ...stores.map((s) => ({ value: s.id, label: s.name }))
               ]}
               value={filters.store_id}
@@ -197,29 +202,29 @@ export default function InventoryPage() {
             />
           </div>
 
-          <div style={{ display: 'flex', gap: 'var(--spacing-sm)', minWidth: 160 }}>
+          <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
             <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Size Min</label>
-              <input type="number" step="0.5" className="form-input" placeholder="e.eu 38" value={filters.size_min}
+              <label className="form-label">{t('products.size')} Min</label>
+              <input type="number" step="0.5" className="form-input" placeholder="38" value={filters.size_min}
                 onChange={(e) => setFilters({ ...filters, size_min: e.target.value })} />
             </div>
             <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Size Max</label>
-              <input type="number" step="0.5" className="form-input" placeholder="e.g 46" value={filters.size_max}
+              <label className="form-label">{t('products.size')} Max</label>
+              <input type="number" step="0.5" className="form-input" placeholder="46" value={filters.size_max}
                 onChange={(e) => setFilters({ ...filters, size_max: e.target.value })} />
             </div>
           </div>
 
           {viewMode === 'items' && (
-            <div className="form-group" style={{ minWidth: 140 }}>
-              <label className="form-label">Status</label>
+            <div className="form-group">
+              <label className="form-label">{t('inventory.status')}</label>
               <SearchableSelect
                 options={[
-                  { value: '', label: 'All' },
-                  { value: 'in_stock', label: 'In Stock' },
-                  { value: 'sold', label: 'Sold' },
-                  { value: 'damaged', label: 'Damaged' },
-                  { value: 'in_transfer', label: 'In Transfer' }
+                  { value: '', label: t('common.all') },
+                  { value: 'in_stock', label: t('inventory.in_stock') },
+                  { value: 'sold', label: t('inventory.sold') },
+                  { value: 'damaged', label: t('inventory.damaged') },
+                  { value: 'in_transfer', label: t('inventory.in_transfer') }
                 ]}
                 value={filters.status}
                 onChange={(e) => setFilters({ ...filters, status: e.target.value })}
@@ -228,7 +233,7 @@ export default function InventoryPage() {
           )}
           
           <div className="form-group">
-            <button type="submit" className="btn btn-primary" style={{ paddingLeft: 'var(--spacing-xl)', paddingRight: 'var(--spacing-xl)' }}>Search</button>
+            <button type="submit" className="btn btn-primary" style={{ paddingLeft: 'var(--spacing-xl)', paddingRight: 'var(--spacing-xl)' }}>{t('common.search')}</button>
           </div>
         </form>
       </div>
@@ -240,16 +245,16 @@ export default function InventoryPage() {
               <tr>
                 {viewMode === 'summary' ? (
                   <>
-                    <th style={{ width: '35%' }}>Hierarchy (Product ➔ Color ➔ Size)</th>
-                    <th>SKU</th>
-                    <th>Store</th>
-                    <th>Avg Cost</th>
-                    <th>Qty</th>
-                    <th>Image</th>
+                    <th style={{ width: '35%' }}>{t('inventory.product')} ➔ {t('inventory.color')} ➔ {t('inventory.size')}</th>
+                    <th>{t('inventory.sku')}</th>
+                    <th>{t('inventory.store')}</th>
+                    <th>{t('inventory.avg_cost')}</th>
+                    <th>{t('inventory.quantity')}</th>
+                    <th></th>
                   </>
                 ) : (
                   <>
-                    <th>SKU</th><th>Product</th><th>Color</th><th>Size</th><th>Store</th><th>Cost</th><th>Source</th><th>Status</th>
+                    <th>{t('inventory.sku')}</th><th>{t('inventory.product')}</th><th>{t('inventory.color')}</th><th>{t('inventory.size')}</th><th>{t('inventory.store')}</th><th>{t('inventory.avg_cost')}</th><th>{t('common.type')}</th><th>{t('inventory.status')}</th>
                   </>
                 )}
               </tr>
@@ -258,7 +263,7 @@ export default function InventoryPage() {
               {items.length === 0 ? (
                 <tr><td colSpan={viewMode === 'summary' ? 6 : 8} style={{ textAlign: 'center', padding: 'var(--spacing-2xl)', color: 'var(--color-text-muted)' }}>
                   <div style={{ fontSize: '2rem', marginBottom: 'var(--spacing-sm)' }}>📦</div>
-                  No inventory matches your search criteria.
+                  {t('inventory.no_inventory')}
                 </td></tr>
               ) : viewMode === 'summary' ? (
                 treeData.map((product) => (
@@ -272,7 +277,7 @@ export default function InventoryPage() {
                     <td>{item.color_name}</td>
                     <td>EU {item.size_eu}</td>
                     <td>{item.store_name}</td>
-                    <td>{parseFloat(item.cost).toFixed(2)} EGP</td>
+                    <td>{parseFloat(item.cost).toFixed(2)} {t('common.currency')}</td>
                     <td><span className={`badge ${item.source === 'purchase' ? 'badge-info' : 'badge-neutral'}`}>{item.source}</span></td>
                     <td><span className={`badge ${item.status === 'in_stock' ? 'badge-success' : item.status === 'sold' ? 'badge-neutral' : 'badge-danger'}`}>{item.status}</span></td>
                   </tr>

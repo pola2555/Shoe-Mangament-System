@@ -4,6 +4,202 @@
   gap: var(--spacing-lg);
 }
 
+/* Welcome Banner */
+.welcome-banner {
+  padding: var(--spacing-xl) var(--spacing-2xl);
+  background: linear-gradient(135deg, var(--color-primary), #6366f1);
+  border: none;
+}
+
+.welcome-text h1 {
+  font-size: var(--font-size-2xl);
+  font-weight: 800;
+  color: #fff;
+  margin: 0 0 4px 0;
+}
+
+.welcome-text p {
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.75);
+  margin: 0;
+}
+
+/* Section Title */
+.section-title {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-md) 0;
+}
+
+/* Snapshot Cards */
+.snapshot-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-md);
+}
+
+.snapshot-card {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.snapshot-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.snapshot-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.snapshot-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.snapshot-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.snapshot-value {
+  font-size: var(--font-size-xl);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.snapshot-value small {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+/* Quick Actions */
+.quick-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--spacing-md);
+}
+
+.quick-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.quick-action-btn:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-primary);
+}
+
+.qa-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Pending Tasks */
+.pending-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.pending-card {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+}
+
+.pending-icon {
+  flex-shrink: 0;
+}
+
+.pending-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.pending-count {
+  font-size: var(--font-size-2xl);
+  font-weight: 800;
+  color: var(--color-text-primary);
+  line-height: 1;
+}
+
+.pending-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pending-details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: var(--spacing-md);
+}
+
+/* Recent Sales + Activity */
+.recent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-lg);
+}
+
+.recent-grid .card-header {
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.recent-grid .card-header h3 {
+  margin: 0;
+  font-size: var(--font-size-md);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
+}
+
+/* Keep legacy styles that ReportsPage imports */
 .dashboard-ribbon {
   display: flex;
   flex-wrap: wrap;
@@ -31,12 +227,6 @@
 .ribbon-group select, .ribbon-group input {
   min-width: 140px;
   height: 38px;
-}
-
-.dashboard-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xl);
 }
 
 .metrics-grid {
@@ -144,4 +334,34 @@
 .leaderboard-card .table th {
   background-color: transparent;
   border-bottom: 1px solid var(--color-border);
+}
+
+/* ============================================================
+   RESPONSIVE – DASHBOARD
+   ============================================================ */
+@media (max-width: 1024px) {
+  .snapshot-grid { grid-template-columns: repeat(2, 1fr); }
+  .quick-actions-grid { grid-template-columns: repeat(3, 1fr); }
+  .recent-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  .dashboard-ribbon { flex-direction: column; align-items: stretch; padding: var(--spacing-sm); }
+  .ribbon-group select, .ribbon-group input { min-width: 0; width: 100%; }
+  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  .metric-val { font-size: var(--font-size-xl); }
+  .leaderboards-grid { grid-template-columns: 1fr; }
+  .welcome-banner { padding: var(--spacing-lg); }
+  .welcome-text h1 { font-size: var(--font-size-xl); }
+  .quick-actions-grid { grid-template-columns: repeat(2, 1fr); }
+  .pending-grid { grid-template-columns: 1fr; }
+  .pending-details-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 480px) {
+  .snapshot-grid { grid-template-columns: 1fr; }
+  .quick-actions-grid { grid-template-columns: repeat(2, 1fr); }
+  .metrics-grid { grid-template-columns: 1fr; }
+  .metric-card { padding: var(--spacing-md); }
+  .chart-wrapper { min-height: 220px; }
 }

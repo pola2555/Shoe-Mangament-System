@@ -1,6 +1,24 @@
 const usersService = require('./users.service');
 
 class UsersController {
+  async listRoles(req, res, next) {
+    try {
+      const roles = await usersService.listRoles();
+      res.json({ success: true, data: roles });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async listPermissions(req, res, next) {
+    try {
+      const permissions = await usersService.listPermissions();
+      res.json({ success: true, data: permissions });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async list(req, res, next) {
     try {
       const users = await usersService.list(req.user);
@@ -59,6 +77,24 @@ class UsersController {
     try {
       await usersService.changePassword(req.user.id, req.body.currentPassword, req.body.newPassword);
       res.json({ success: true, message: 'Password changed successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getStores(req, res, next) {
+    try {
+      const stores = await usersService.getStores(req.params.id);
+      res.json({ success: true, data: stores });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async setStores(req, res, next) {
+    try {
+      const stores = await usersService.setStores(req.params.id, req.body.store_ids);
+      res.json({ success: true, data: stores });
     } catch (error) {
       next(error);
     }

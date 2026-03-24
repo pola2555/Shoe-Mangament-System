@@ -20,22 +20,55 @@ exports.seed = async function (knex) {
   ]);
 
   // ============================================================
-  // 2. PERMISSIONS
+  // 2. PERMISSIONS (33 granular codes)
   // ============================================================
   await knex('permissions').del();
   await knex('permissions').insert([
-    { code: 'users', description: 'User management', category: 'administration' },
+    // Administration
+    { code: 'users', description: 'User account management', category: 'administration' },
+    { code: 'user_permissions', description: 'Permission assignment', category: 'administration' },
+    { code: 'user_password_reset', description: 'Admin password resets', category: 'administration' },
     { code: 'stores', description: 'Store management', category: 'administration' },
-    { code: 'all_stores', description: 'Access data from all stores', category: 'administration' },
-    { code: 'products', description: 'Product catalog management', category: 'catalog' },
+    { code: 'all_stores', description: 'Cross-store data access', category: 'administration' },
+    // Catalog
+    { code: 'products', description: 'Core product info management', category: 'catalog' },
+    { code: 'product_variants', description: 'Size/color variant management', category: 'catalog' },
+    { code: 'product_images', description: 'Product image management', category: 'catalog' },
+    { code: 'product_prices', description: 'Store price overrides', category: 'catalog' },
+    { code: 'box_templates', description: 'Box template management', category: 'catalog' },
+    // Operations
     { code: 'inventory', description: 'Inventory management', category: 'operations' },
+    { code: 'transfers', description: 'Transfer creation and viewing', category: 'operations' },
+    { code: 'transfer_actions', description: 'Ship, receive, cancel transfers', category: 'operations' },
+    // Procurement
     { code: 'purchases', description: 'Purchase invoice management', category: 'procurement' },
-    { code: 'transfers', description: 'Store-to-store transfers', category: 'operations' },
-    { code: 'sales', description: 'Point of sale', category: 'sales' },
-    { code: 'returns', description: 'Customer and supplier returns', category: 'sales' },
-    { code: 'dealers', description: 'Wholesale dealer management', category: 'wholesale' },
+    { code: 'purchase_boxes', description: 'Box management within invoices', category: 'procurement' },
+    { code: 'purchase_images', description: 'Invoice document management', category: 'procurement' },
+    { code: 'suppliers', description: 'Supplier management', category: 'procurement' },
+    { code: 'supplier_payments', description: 'Supplier payment management', category: 'procurement' },
+    // Sales
+    { code: 'pos', description: 'Point of sale operations', category: 'sales' },
+    { code: 'pos_store_access', description: 'Sell in assigned stores', category: 'sales' },
+    { code: 'sales', description: 'Sales history viewing', category: 'sales' },
+    { code: 'sale_payments', description: 'Sale payment management', category: 'sales' },
+    { code: 'customers', description: 'Customer management', category: 'sales' },
+    // Returns
+    { code: 'customer_returns', description: 'Customer return processing', category: 'returns' },
+    { code: 'supplier_returns', description: 'Supplier return processing', category: 'returns' },
+    // Wholesale
+    { code: 'dealers', description: 'Dealer management', category: 'wholesale' },
+    { code: 'dealer_invoices', description: 'Dealer invoice management', category: 'wholesale' },
+    { code: 'dealer_payments', description: 'Dealer payment management', category: 'wholesale' },
+    // Finance
     { code: 'expenses', description: 'Expense tracking', category: 'finance' },
+    { code: 'expense_categories', description: 'Expense category access', category: 'finance' },
     { code: 'reports', description: 'Reports and analytics', category: 'finance' },
+    // Notifications
+    { code: 'notifications', description: 'Notification management', category: 'notifications' },
+    // Audit
+    { code: 'audit_log', description: 'Activity history viewing', category: 'audit' },
+    // Dashboard
+    { code: 'dashboard_admin', description: 'Dashboard pending tasks, recent sales & activity', category: 'administration' },
   ]);
 
   // ============================================================

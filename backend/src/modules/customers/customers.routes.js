@@ -8,11 +8,11 @@ const { createCustomerSchema, updateCustomerSchema } = require('./customers.vali
 const router = Router();
 router.use(auth);
 
-router.get('/search', permission('sales', 'read'), controller.search);
-router.get('/', permission('sales', 'read'), controller.list);
-router.get('/:id', permission('sales', 'read'), controller.getById);
-router.post('/', permission('sales', 'write'), validate(createCustomerSchema), controller.create);
-router.put('/:id', permission('sales', 'write'), validate(updateCustomerSchema), controller.update);
-router.delete('/:id', permission('sales', 'write'), controller.delete);
+router.get('/search', permission('customers', 'read'), controller.search);
+router.get('/', permission('customers', 'read'), controller.list);
+router.get('/:id', permission('customers', 'read'), controller.getById);
+router.post('/', permission('customers', 'write'), validate(createCustomerSchema), controller.create);
+router.put('/:id', permission('customers', 'write'), validate(updateCustomerSchema), controller.update);
+router.delete('/:id', permission('customers', 'write'), controller.delete);
 
 module.exports = router;

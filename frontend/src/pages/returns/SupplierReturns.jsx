@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { suppliersAPI, inventoryAPI, returnsAPI } from '../../api';
 import SearchableSelect from '../../components/common/SearchableSelect';
+import { useTranslation } from '../../i18n/i18nContext';
 import { HiOutlineMagnifyingGlass, HiOutlineArrowUturnLeft } from 'react-icons/hi2';
 
 export default function SupplierReturns() {
+  const { t } = useTranslation();
   const [suppliers, setSuppliers] = useState([]);
   const [selectedSupplier, setSelectedSupplier] = useState('');
   
@@ -36,7 +38,7 @@ export default function SupplierReturns() {
       const res = await suppliersAPI.list();
       setSuppliers(res.data.data);
     } catch (err) {
-      toast.error('Failed to load suppliers');
+      toast.error(t('returns.failed_load_suppliers'));
     }
   };
 
@@ -53,7 +55,7 @@ export default function SupplierReturns() {
       setInventory(res.data.data);
       setSelectedItemIds(new Set());
     } catch (err) {
-      toast.error('Failed to load supplier inventory');
+      toast.error(t('returns.failed_load_inventory'));
     } finally {
       setLoadingInventory(false);
     }
@@ -83,7 +85,7 @@ export default function SupplierReturns() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (selectedItemIds.size === 0) return toast.error('Please select at least one item to return');
+    if (selectedItemIds.size === 0) return toast.error(t('returns.select_at_least_one'));
     
     try {
       setSubmitting(true);
@@ -95,7 +97,7 @@ export default function SupplierReturns() {
       };
 
       await returnsAPI.createSupplierReturn(payload);
-      toast.success('Supplier return processed successfully');
+      toast.success(t('returns.supplier_return_success'));
       
       // Reset
       setReason('');
@@ -105,7 +107,7 @@ export default function SupplierReturns() {
       fetchSupplierInventory(selectedSupplier);
       
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to process supplier return');
+      toast.error(err.response?.data?.message || t('returns.failed_process_supplier'));
     } finally {
       setSubmitting(false);
     }
@@ -130,30 +132,30 @@ export default function SupplierReturns() {
       
       {/* Supplier Selection */}
       <div className="card" style={{ padding: 'var(--spacing-lg)' }}>
-        <h3 style={{ marginBottom: 'var(--spacing-md)' }}>Select Supplier</h3>
-        <div style={{ maxWidth: 400 }}>
+        <h3 style={{ marginBottom: 'var(--spacing-md)' }}>{t('returns.select_supplier')}</h3>
+        <div style={{ maxWidth: 400, width: '100%' }}>
           <SearchableSelect
             options={suppliers.map(s => ({ value: s.id, label: s.name }))}
             value={selectedSupplier}
             onChange={(e) => setSelectedSupplier(e.target.value)}
-            placeholder="Search Supplier..."
+            placeholder={t('returns.search_supplier')}
           />
         </div>
       </div>
 
-      {loadingInventory && <div style={{ textAlign: 'center', padding: 'var(--spacing-xl)' }}>Loading inventory...</div>}
+      {loadingInventory && <div style={{ textAlign: 'center', padding: 'var(--spacing-xl)' }}>{t('returns.loading_inventory')}</div>}
 
       {/* Inventory & Return Form */}
       {selectedSupplier && !loadingInventory && (
         <form className="card" onSubmit={handleSubmit} style={{ padding: 'var(--spacing-lg)' }}>
           
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
-            <h4 style={{ margin: 0 }}>Select Items to Return from {suppliers.find(s => s.id === selectedSupplier)?.name}</h4>
-            <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', padding: '0.3rem 0.8rem', width: 300 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)', flexWrap: 'wrap', gap: 'var(--spacing-sm)' }}>
+            <h4 style={{ margin: 0 }}>{t('returns.select_items_from')} {suppliers.find(s => s.id === selectedSupplier)?.name}</h4>
+            <div style={{ display: 'flex', alignItems: 'center', background: 'var(--color-bg-secondary)', borderRadius: 'var(--radius-md)', padding: '0.3rem 0.8rem', width: 300, maxWidth: '100%', flex: '1 1 200px', minWidth: 0 }}>
               <HiOutlineMagnifyingGlass color="var(--color-text-muted)" style={{ marginRight: '0.5rem' }} />
               <input 
                 type="text" 
-                placeholder="Filter by product, SKU, or color..."
+                placeholder={t('returns.filter_placeholder')}
                 style={{ background: 'transparent', border: 'none', color: 'var(--color-text)', width: '100%', outline: 'none', fontSize: '0.9rem' }}
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
@@ -164,11 +166,11 @@ export default function SupplierReturns() {
           <div className="table-container" style={{ maxHeight: 400, overflow: 'auto', marginBottom: 'var(--spacing-lg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
             {inventory.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 'var(--spacing-2xl)', color: 'var(--color-text-muted)' }}>
-                No active inventory found from this supplier.
+                {t('returns.no_inventory_found')}
               </div>
             ) : filteredInventory.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 'var(--spacing-md)', color: 'var(--color-text-muted)' }}>
-                No items match your filter.
+                {t('returns.no_filter_match')}
               </div>
             ) : (
               <table className="table" style={{ margin: 0 }}>
@@ -182,11 +184,11 @@ export default function SupplierReturns() {
                         style={{ width: 16, height: 16, cursor: 'pointer' }}
                       />
                     </th>
-                    <th>Product</th>
-                    <th>Color</th>
-                    <th>Size</th>
-                    <th>Cost (Unit Price)</th>
-                    <th>Received At</th>
+                    <th>{t('sales.product')}</th>
+                    <th>{t('sales.color')}</th>
+                    <th>{t('sales.size')}</th>
+                    <th>{t('returns.cost_unit_price')}</th>
+                    <th>{t('returns.received_at')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -205,7 +207,7 @@ export default function SupplierReturns() {
                         {item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
                         {item.color_name}</span></td>
                       <td>EU {item.size_eu}</td>
-                      <td>{parseFloat(item.cost).toLocaleString()} EGP</td>
+                      <td>{parseFloat(item.cost).toLocaleString()} {t('common.currency')}</td>
                       <td>{new Date(item.created_at).toLocaleDateString()}</td>
                     </tr>
                   ))}
@@ -214,13 +216,13 @@ export default function SupplierReturns() {
             )}
           </div>
 
-          <h4 style={{ marginBottom: 'var(--spacing-md)' }}>Return Details</h4>
+          <h4 style={{ marginBottom: 'var(--spacing-md)' }}>{t('returns.return_details')}</h4>
           <div className="form-group">
-            <label className="form-label">Return Reason</label>
+            <label className="form-label">{t('returns.return_reason')}</label>
             <input 
               type="text" 
               className="form-input" 
-              placeholder="e.g. Defective, Wrong Size, Poor Quality..."
+              placeholder={t('returns.supplier_reason_placeholder')}
               value={reason}
               onChange={e => setReason(e.target.value)}
               required
@@ -228,7 +230,7 @@ export default function SupplierReturns() {
           </div>
           
           <div className="form-group">
-            <label className="form-label">Additional Notes</label>
+            <label className="form-label">{t('returns.additional_notes')}</label>
             <textarea 
               className="form-input" 
               rows="2"
@@ -237,16 +239,16 @@ export default function SupplierReturns() {
             />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--spacing-xl)', paddingTop: 'var(--spacing-md)', borderTop: '2px dashed var(--color-border)' }}>
-            <div>
-              <span style={{ fontSize: '1.2rem', color: 'var(--color-text-secondary)' }}>Items Selected: </span>
-              <span style={{ fontSize: '1.2rem', fontWeight: 600, marginRight: '1rem' }}>{selectedItemIds.size}</span>
-              <span style={{ fontSize: '1.2rem', color: 'var(--color-text-secondary)' }}>Supplier Credit Estimate: </span>
-              <span style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-success)' }}>{totalCost.toLocaleString()} EGP</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--spacing-xl)', paddingTop: 'var(--spacing-md)', borderTop: '2px dashed var(--color-border)', flexWrap: 'wrap', gap: 'var(--spacing-md)' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--spacing-sm)', alignItems: 'baseline' }}>
+              <span style={{ fontSize: '1.1rem', color: 'var(--color-text-secondary)' }}>{t('returns.items_selected')} </span>
+              <span style={{ fontSize: '1.1rem', fontWeight: 600, marginRight: '0.5rem' }}>{selectedItemIds.size}</span>
+              <span style={{ fontSize: '1.1rem', color: 'var(--color-text-secondary)' }}>{t('returns.supplier_credit_estimate')} </span>
+              <span style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--color-success)' }}>{totalCost.toLocaleString()} {t('common.currency')}</span>
             </div>
-            <button type="submit" className="btn btn-primary" style={{ padding: '0.8rem 2rem', fontSize: '1.1rem' }} disabled={submitting || selectedItemIds.size === 0}>
+            <button type="submit" className="btn btn-primary" style={{ padding: '0.7rem 1.5rem', fontSize: '1rem' }} disabled={submitting || selectedItemIds.size === 0}>
               <HiOutlineArrowUturnLeft style={{ marginRight: '0.5rem' }} />
-              {submitting ? 'Processing...' : 'Return to Supplier'}
+              {submitting ? t('returns.processing') : t('returns.return_to_supplier')}
             </button>
           </div>
 

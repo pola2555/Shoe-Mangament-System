@@ -12,8 +12,8 @@ router.use(auth);
 
 router.get('/', permission('sales', 'read'), controller.list);
 router.get('/:id', permission('sales', 'read'), controller.getById);
-router.post('/', permission('sales', 'write'), validate(createSaleSchema), controller.create);
-router.post('/:id/payments', permission('sales', 'write'), validate(addPaymentSchema), controller.addPayment);
-router.post('/:id/payments/:paymentId/images', permission('sales', 'write'), upload.single('image'), controller.uploadPaymentImage);
+router.post('/', permission('pos', 'write'), validate(createSaleSchema), controller.create);
+router.post('/:id/payments', permission('sale_payments', 'write'), validate(addPaymentSchema), controller.addPayment);
+router.post('/:id/payments/:paymentId/images', permission('sale_payments', 'write'), upload.single('image'), controller.uploadPaymentImage);
 
 module.exports = router;

@@ -30,20 +30,20 @@ router.put('/:id/colors/:colorId', permission('products', 'write'), validate(upd
 router.delete('/:id/colors/:colorId', permission('products', 'write'), controller.deleteColor);
 
 // --- Images (nested under color) ---
-router.post('/:id/colors/:colorId/images', permission('products', 'write'), upload.single('image'), controller.uploadImage);
-router.put('/:id/images/:imageId/primary', permission('products', 'write'), controller.setPrimaryImage);
-router.delete('/:id/images/:imageId', permission('products', 'write'), controller.deleteImage);
+router.post('/:id/colors/:colorId/images', permission('product_images', 'write'), upload.single('image'), controller.uploadImage);
+router.put('/:id/images/:imageId/primary', permission('product_images', 'write'), controller.setPrimaryImage);
+router.delete('/:id/images/:imageId', permission('product_images', 'write'), controller.deleteImage);
 
 // --- Variants (nested under product) ---
-router.get('/:id/variants', permission('products', 'read'), controller.listVariants);
-router.post('/:id/variants', permission('products', 'write'), validate(createVariantSchema), controller.createVariant);
-router.post('/:id/variants/bulk', permission('products', 'write'), validate(bulkCreateVariantsSchema), controller.bulkCreateVariants);
-router.put('/:id/variants/:variantId', permission('products', 'write'), validate(updateVariantSchema), controller.updateVariant);
-router.delete('/:id/variants/:variantId', permission('products', 'write'), controller.deleteVariant);
+router.get('/:id/variants', permission('product_variants', 'read'), controller.listVariants);
+router.post('/:id/variants', permission('product_variants', 'write'), validate(createVariantSchema), controller.createVariant);
+router.post('/:id/variants/bulk', permission('product_variants', 'write'), validate(bulkCreateVariantsSchema), controller.bulkCreateVariants);
+router.put('/:id/variants/:variantId', permission('product_variants', 'write'), validate(updateVariantSchema), controller.updateVariant);
+router.delete('/:id/variants/:variantId', permission('product_variants', 'write'), controller.deleteVariant);
 
 // --- Store Prices ---
-router.get('/:id/prices', permission('products', 'read'), controller.getStorePrices);
-router.put('/:id/prices/:storeId', permission('products', 'write'), validate(setStorePriceSchema), controller.setStorePrice);
-router.delete('/:id/prices/:storeId', permission('products', 'write'), controller.deleteStorePrice);
+router.get('/:id/prices', permission('product_prices', 'read'), controller.getStorePrices);
+router.put('/:id/prices/:storeId', permission('product_prices', 'write'), validate(setStorePriceSchema), controller.setStorePrice);
+router.delete('/:id/prices/:storeId', permission('product_prices', 'write'), controller.deleteStorePrice);
 
 module.exports = router;

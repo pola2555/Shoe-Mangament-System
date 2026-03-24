@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { inventoryAPI } from '../../api';
 import toast from 'react-hot-toast';
+import { useTranslation } from '../../i18n/i18nContext';
+import './POS.css';
 
 export default function ProductSelectorModal({ product, storeId, cartItemIds, onClose, onAddToCart }) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState([]);
 
@@ -21,7 +24,7 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
       });
       setItems(res.data.data);
     } catch (err) {
-      toast.error('Failed to load product variants');
+      toast.error(t('pos.failed_to_load_variants'));
       onClose();
     } finally {
       setLoading(false);
@@ -44,15 +47,15 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
   const price = parseFloat(product.store_selling_price || product.default_selling_price || 0);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay pos-selector-modal" onClick={onClose}>
       <div className="modal-content card" style={{ maxWidth: 800, width: '90%' }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-lg)' }}>
-          <div style={{ display: 'flex', gap: 'var(--spacing-md)', alignItems: 'center' }}>
+        <div className="pos-selector-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-lg)' }}>
+          <div className="pos-selector-product-info" style={{ display: 'flex', gap: 'var(--spacing-md)', alignItems: 'center' }}>
             <div style={{ width: 80, height: 80, borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
               {product.product_image ? (
                 <img src={product.product_image} alt={product.product_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
-                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>No Image</div>
+                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>{t('products.no_image')}</div>
               )}
             </div>
             <div>
@@ -63,17 +66,17 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
                 <span>{product.product_code}</span>
               </div>
               <div style={{ marginTop: '0.5rem', fontWeight: 600, color: 'var(--color-success)', fontSize: '1.2rem' }}>
-                {price.toLocaleString()} EGP
+                {price.toLocaleString()} {t('common.currency')}
               </div>
             </div>
           </div>
-          <button className="btn btn-secondary btn-sm" onClick={onClose}>Close</button>
+          <button className="btn btn-secondary btn-sm" onClick={onClose}>{t('common.close')}</button>
         </div>
 
         {loading ? (
-          <div style={{ padding: 'var(--spacing-xl)', textAlign: 'center', color: 'var(--color-text-muted)' }}>Loading available items...</div>
+          <div style={{ padding: 'var(--spacing-xl)', textAlign: 'center', color: 'var(--color-text-muted)' }}>{t('common.loading')}...</div>
         ) : items.length === 0 ? (
-          <div style={{ padding: 'var(--spacing-xl)', textAlign: 'center', color: 'var(--color-text-muted)' }}>No items currently in stock for this product.</div>
+          <div style={{ padding: 'var(--spacing-xl)', textAlign: 'center', color: 'var(--color-text-muted)' }}>{t('pos.no_products_found')}</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)', maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
             {Object.entries(groupedItems).map(([color, data]) => (
@@ -114,7 +117,7 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
                         >
                           <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.1rem' }}>EU {size}</div>
                           <div style={{ fontSize: '0.75rem', color: isSoldOut ? 'var(--color-danger)' : 'var(--color-text-secondary)' }}>
-                            {isSoldOut ? 'In Cart / Out' : `${availableItems.length} available`}
+                            {isSoldOut ? t('pos.out_of_stock') : `${availableItems.length} ${t('pos.available')}`}
                           </div>
                         </div>
                       );

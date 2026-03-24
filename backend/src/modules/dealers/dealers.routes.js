@@ -13,8 +13,8 @@ router.get('/:id', permission('dealers', 'read'), controller.getById);
 router.post('/', permission('dealers', 'write'), validate(createDealerSchema), controller.create);
 router.put('/:id', permission('dealers', 'write'), validate(updateDealerSchema), controller.update);
 router.delete('/:id', permission('dealers', 'write'), controller.delete);
-router.post('/invoices', permission('dealers', 'write'), validate(createWholesaleInvoiceSchema), controller.createInvoice);
-router.get('/invoices/:invoiceId', permission('dealers', 'read'), controller.getInvoice);
-router.post('/payments', permission('dealers', 'write'), validate(createDealerPaymentSchema), controller.createPayment);
+router.post('/invoices', permission('dealer_invoices', 'write'), validate(createWholesaleInvoiceSchema), controller.createInvoice);
+router.get('/invoices/:invoiceId', permission('dealer_invoices', 'read'), controller.getInvoice);
+router.post('/payments', permission('dealer_payments', 'write'), validate(createDealerPaymentSchema), controller.createPayment);
 
 module.exports = router;

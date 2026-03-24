@@ -5,6 +5,7 @@ const morgan = require('morgan');
 const path = require('path');
 const env = require('./config/env');
 const errorHandler = require('./middleware/errorHandler');
+const activityLogger = require('./middleware/activityLogger');
 
 // Module routes
 const authRoutes = require('./modules/auth/auth.routes');
@@ -22,6 +23,9 @@ const dealerRoutes = require('./modules/dealers/dealers.routes');
 const expenseRoutes = require('./modules/expenses/expenses.routes');
 const reportRoutes = require('./modules/reports/reports.routes');
 const returnsRoutes = require('./modules/returns/returns.routes');
+const notificationsRoutes = require('./modules/notifications/notifications.routes');
+const auditLogRoutes = require('./modules/audit-log/audit-log.routes');
+const backupRoutes = require('./modules/backup/backup.routes');
 
 const app = express();
 
@@ -34,6 +38,9 @@ app.use(morgan('dev'));                              // Request logging
 
 // Serve uploaded files statically (local storage)
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+// --- Activity Logging (intercepts all write operations) ---
+app.use(activityLogger);
 
 // --- API Routes ---
 app.use('/api/auth', authRoutes);
@@ -51,6 +58,9 @@ app.use('/api/dealers', dealerRoutes);
 app.use('/api/expenses', expenseRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/returns', returnsRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/audit-log', auditLogRoutes);
+app.use('/api/backup', backupRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
