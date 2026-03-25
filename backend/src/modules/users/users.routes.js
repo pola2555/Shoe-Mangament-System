@@ -8,6 +8,7 @@ const {
   updateUserSchema,
   changePasswordSchema,
   setPermissionsSchema,
+  setStoresSchema,
 } = require('./users.validation');
 
 const router = Router();
@@ -34,6 +35,6 @@ router.put('/:id/permissions', permission('user_permissions', 'write'), validate
 
 // Store assignment
 router.get('/:id/stores', permission('users', 'read'), controller.getStores);
-router.put('/:id/stores', permission('users', 'write'), controller.setStores);
+router.put('/:id/stores', permission('users', 'write'), validate(setStoresSchema), controller.setStores);
 
 module.exports = router;

@@ -6,7 +6,12 @@ const backupController = require('./backup.controller');
 const router = Router();
 router.use(auth);
 
-// Only admin-level users with full reports/admin access
-router.get('/download', permission('reports', 'full'), backupController.download);
+// Backup is admin-only
+router.get('/download', (req, res, next) => {
+  if (req.user.role_name !== 'admin') {
+    return res.status(403).json({ success: false, message: 'Only admins can download backups' });
+  }
+  next();
+}, backupController.download);
 
 module.exports = router;

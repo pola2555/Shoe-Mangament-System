@@ -3,7 +3,7 @@ const AppError = require('../../utils/AppError');
 const { generateUUID } = require('../../utils/generateCodes');
 
 class ExpensesService {
-  async list({ store_id, category_id, from_date, to_date } = {}) {
+  async list({ store_id, category_id, from_date, to_date } = {}, requestingUser) {
     let query = db('expenses')
       .join('stores', 'expenses.store_id', 'stores.id')
       .join('expense_categories', 'expenses.category_id', 'expense_categories.id')
@@ -16,12 +16,17 @@ class ExpensesService {
       )
       .orderBy('expense_date', 'desc');
 
-    if (store_id) query = query.where('expenses.store_id', store_id);
+    // Store scoping for non-admin users
+    if (requestingUser && requestingUser.role_name !== 'admin' && !requestingUser.permissions?.all_stores) {
+      query = query.where('expenses.store_id', requestingUser.store_id);
+    } else if (store_id) {
+      query = query.where('expenses.store_id', store_id);
+    }
     if (category_id) query = query.where('expenses.category_id', category_id);
     if (from_date) query = query.where('expenses.expense_date', '>=', from_date);
     if (to_date) query = query.where('expenses.expense_date', '<=', to_date);
 
-    return query;
+    return query.limit(500);
   }
 
   async getCategories() {
@@ -29,15 +34,28 @@ class ExpensesService {
   }
 
   async create(data, userId) {
+    const safeData = {
+      id: generateUUID(),
+      store_id: data.store_id,
+      category_id: data.category_id,
+      amount: data.amount,
+      description: data.description,
+      expense_date: data.expense_date,
+      created_by: userId,
+    };
     const [expense] = await db('expenses')
-      .insert({ id: generateUUID(), ...data, created_by: userId })
+      .insert(safeData)
       .returning('*');
     return expense;
   }
 
   async update(id, data) {
-    data.updated_at = new Date();
-    const [expense] = await db('expenses').where('id', id).update(data).returning('*');
+    const safeData = { updated_at: new Date() };
+    if (data.category_id !== undefined) safeData.category_id = data.category_id;
+    if (data.amount !== undefined) safeData.amount = data.amount;
+    if (data.description !== undefined) safeData.description = data.description;
+    if (data.expense_date !== undefined) safeData.expense_date = data.expense_date;
+    const [expense] = await db('expenses').where('id', id).update(safeData).returning('*');
     if (!expense) throw new AppError('Expense not found', 404);
     return expense;
   }

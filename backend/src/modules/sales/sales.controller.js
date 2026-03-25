@@ -6,7 +6,12 @@ const { getFileUrl } = require('../../middleware/upload');
 class SalesController {
   async list(req, res, next) {
     try {
-      const sales = await salesService.list(req.query);
+      const filters = { ...req.query };
+      // Enforce store scoping for non-admin users
+      if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
+        filters.store_id = req.user.store_id;
+      }
+      const sales = await salesService.list(filters);
       res.json({ success: true, data: sales });
     } catch (error) { next(error); }
   }
@@ -14,6 +19,10 @@ class SalesController {
   async getById(req, res, next) {
     try {
       const sale = await salesService.getById(req.params.id);
+      // Enforce store scoping for non-admin users
+      if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores && sale.store_id !== req.user.store_id) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
       res.json({ success: true, data: sale });
     } catch (error) { next(error); }
   }
@@ -27,6 +36,12 @@ class SalesController {
 
   async addPayment(req, res, next) {
     try {
+      // Verify store access before allowing payment
+      const sale = await db('sales').where('id', req.params.id).first();
+      if (!sale) return res.status(404).json({ success: false, message: 'Sale not found' });
+      if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores && sale.store_id !== req.user.store_id) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
       const payment = await salesService.addPayment(req.params.id, req.body);
       res.status(201).json({ success: true, data: payment });
     } catch (error) { next(error); }
@@ -35,6 +50,15 @@ class SalesController {
   async uploadPaymentImage(req, res, next) {
     try {
       if (!req.file) return res.status(400).json({ success: false, message: 'No file' });
+      // Verify sale and payment exist and are related
+      const sale = await db('sales').where('id', req.params.id).first();
+      if (!sale) return res.status(404).json({ success: false, message: 'Sale not found' });
+      // Enforce store scoping
+      if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores && sale.store_id !== req.user.store_id) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+      const payment = await db('sale_payments').where({ id: req.params.paymentId, sale_id: req.params.id }).first();
+      if (!payment) return res.status(404).json({ success: false, message: 'Payment not found for this sale' });
       const imageUrl = getFileUrl('payments', req.file.filename);
       const [image] = await db('attached_images').insert({
         id: generateUUID(),

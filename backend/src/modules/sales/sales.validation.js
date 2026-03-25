@@ -6,11 +6,11 @@ const createSaleSchema = Joi.object({
   items: Joi.array().items(
     Joi.object({
       id: Joi.string().uuid().required(),
-      sale_price: Joi.number().precision(2).min(0).allow(null, '')
+      sale_price: Joi.number().precision(2).min(0).max(999999999).allow(null)
     })
-  ).min(1).required(),
-  discount_amount: Joi.number().precision(2).min(0).default(0),
-  notes: Joi.string().allow('', null),
+  ).min(1).max(200).required(),
+  discount_amount: Joi.number().precision(2).min(0).max(999999999).default(0),
+  notes: Joi.string().max(500).allow('', null),
   payments: Joi.array().items(
     Joi.object({
       amount: Joi.number().precision(2).min(0.01).required(),

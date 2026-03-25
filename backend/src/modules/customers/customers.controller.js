@@ -17,6 +17,9 @@ class CustomersController {
 
   async search(req, res, next) {
     try {
+      if (!req.query.phone) {
+        return res.status(400).json({ success: false, message: 'Phone parameter is required' });
+      }
       const customers = await customersService.searchByPhone(req.query.phone);
       res.json({ success: true, data: customers });
     } catch (error) { next(error); }

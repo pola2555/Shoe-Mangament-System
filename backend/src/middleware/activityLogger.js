@@ -136,14 +136,19 @@ function resolveActivityInfo(req) {
 function buildDetails(req, body, info) {
   const details = {};
 
-  // Include relevant body fields (but never passwords)
+  // Include only safe, non-sensitive body fields via a denylist
   if (req.body) {
-    const safeBody = { ...req.body };
-    delete safeBody.password;
-    delete safeBody.currentPassword;
-    delete safeBody.newPassword;
-    delete safeBody.password_hash;
-    delete safeBody.refreshToken;
+    const sensitiveFields = new Set([
+      'password', 'currentPassword', 'newPassword', 'password_hash',
+      'refreshToken', 'token', 'access_token', 'refresh_token',
+      'authorization', 'cookie', 'secret', 'api_key',
+      'credit_card', 'card_number', 'cvv', 'ssn',
+    ]);
+
+    const safeBody = {};
+    for (const [key, value] of Object.entries(req.body)) {
+      if (!sensitiveFields.has(key)) safeBody[key] = value;
+    }
 
     // Only include a subset of keys to keep details small
     const keys = Object.keys(safeBody);

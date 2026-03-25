@@ -35,7 +35,13 @@ export default function POSPage() {
   const [selectedCustomer, setSelectedCustomer] = useState(() => localStorage.getItem('pos_customer') || ''); // Empty = Walk-in
   const [cart, setCart] = useState(() => {
     const saved = localStorage.getItem('pos_cart');
-    return saved ? JSON.parse(saved) : [];
+    if (!saved) return [];
+    try {
+      return JSON.parse(saved);
+    } catch {
+      localStorage.removeItem('pos_cart');
+      return [];
+    }
   });
 
   // Quick Add Customer
@@ -180,7 +186,21 @@ export default function POSPage() {
         }]
       };
 
-      await salesAPI.create(payload);
+      const res = await salesAPI.create(payload);
+
+      // Upload payment proof image if provided
+      if (paymentDetails.image && res.data?.data?.payments?.length) {
+        const sale = res.data.data;
+        const paymentId = sale.payments[0].id;
+        const formData = new FormData();
+        formData.append('image', paymentDetails.image);
+        try {
+          await salesAPI.uploadPaymentImage(sale.id, paymentId, formData);
+        } catch {
+          toast.error(t('pos.image_upload_failed'));
+        }
+      }
+
       toast.success(t('pos.sale_completed'));
       
       // Reset POS

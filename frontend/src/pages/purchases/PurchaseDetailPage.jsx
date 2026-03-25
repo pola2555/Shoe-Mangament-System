@@ -188,7 +188,6 @@ export default function PurchaseDetailPage() {
             quantity: parseInt(s.quantity),
           }))
         );
-        console.log('handleAddBox itemsToSave:', itemsToSave);
         if (itemsToSave.length > 0) {
           await purchasesAPI.setBoxItems(newBox.id, itemsToSave);
         }
@@ -369,7 +368,6 @@ export default function PurchaseDetailPage() {
           quantity: parseInt(s.quantity),
         }))
       );
-      console.log('handleSaveBoxAll mapped items:', items, 'from colorGroups:', colorGroups);
       await purchasesAPI.setBoxItems(editingBoxId, items);
       
       toast.success(t('common.success'));
@@ -921,7 +919,9 @@ export default function PurchaseDetailPage() {
               ) : (
                 <div className="card">
                   <h3 style={{ marginBottom: 'var(--spacing-md)' }}>{t('purchases.add_payment')} - {invoice.supplier_name}</h3>
-                  <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)' }} dangerouslySetInnerHTML={{ __html: t('suppliers.payment_allocation_note') }} />
+                  <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)' }}>
+                    {t('suppliers.payment_allocation_note')}
+                  </p>
                   <form onSubmit={handleCreatePayment} className="product-form">
                     <div className="form-row">
                       <div className="form-group">

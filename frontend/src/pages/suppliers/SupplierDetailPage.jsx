@@ -119,9 +119,9 @@ export default function SupplierDetailPage() {
         <div className="modal-overlay" onClick={() => setShowPaymentForm(false)}>
           <div className="modal-content card" onClick={(e) => e.stopPropagation()}>
             <h2 style={{ marginBottom: 'var(--spacing-md)' }}>{t('suppliers.record_payment')}</h2>
-            <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)' }}
-              dangerouslySetInnerHTML={{ __html: t('suppliers.payment_allocation_note') }}
-            />
+            <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)' }}>
+              {t('suppliers.payment_allocation_note')}
+            </p>
             <form onSubmit={handleCreatePayment} className="product-form">
               <div className="form-row">
                 <div className="form-group">

@@ -6,12 +6,13 @@ class CustomersService {
   async list({ search } = {}) {
     let query = db('customers').orderBy('name', 'asc');
     if (search) {
+      const safeSearch = search.replace(/[%_\\]/g, '\\$&');
       query = query.where(function () {
-        this.where('phone', 'ilike', `%${search}%`)
-          .orWhere('name', 'ilike', `%${search}%`);
+        this.where('phone', 'ilike', `%${safeSearch}%`)
+          .orWhere('name', 'ilike', `%${safeSearch}%`);
       });
     }
-    return query;
+    return query.limit(500);
   }
 
   async getById(id) {
@@ -29,23 +30,33 @@ class CustomersService {
   }
 
   async searchByPhone(phone) {
-    return db('customers').where('phone', 'ilike', `%${phone}%`).limit(10);
+    const safePhone = phone.replace(/[%_\\]/g, '\\$&');
+    return db('customers').where('phone', 'ilike', `%${safePhone}%`).limit(10);
   }
 
   async create(data) {
     const existing = await db('customers').where('phone', data.phone).first();
     if (existing) throw new AppError('Customer with this phone already exists', 409);
 
+    const safeData = { id: generateUUID() };
+    if (data.phone !== undefined) safeData.phone = data.phone;
+    if (data.name !== undefined) safeData.name = data.name;
+    if (data.notes !== undefined) safeData.notes = data.notes;
+
     const [customer] = await db('customers')
-      .insert({ id: generateUUID(), ...data })
+      .insert(safeData)
       .returning('*');
     return customer;
   }
 
   async update(id, data) {
-    data.updated_at = new Date();
+    const safeData = { updated_at: new Date() };
+    if (data.phone !== undefined) safeData.phone = data.phone;
+    if (data.name !== undefined) safeData.name = data.name;
+    if (data.notes !== undefined) safeData.notes = data.notes;
+
     const [customer] = await db('customers')
-      .where('id', id).update(data).returning('*');
+      .where('id', id).update(safeData).returning('*');
     if (!customer) throw new AppError('Customer not found', 404);
     return customer;
   }

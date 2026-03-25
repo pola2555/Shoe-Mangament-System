@@ -15,7 +15,7 @@ const TABS = ['overview', 'sales_analytics', 'products_analytics', 'inventory_an
 export default function ReportsPage() {
   const { user, filterStores } = useAuth();
   const { t } = useTranslation();
-  const isAdmin = user?.role_name === 'System Administrator';
+  const isAdmin = user?.role_name === 'admin' || user?.role_name === 'System Administrator';
 
   const [activeTab, setActiveTab] = useState('overview');
   const [stores, setStores] = useState([]);

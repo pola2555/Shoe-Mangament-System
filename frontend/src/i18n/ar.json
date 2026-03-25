@@ -215,7 +215,9 @@
     "amount_received": "المبلغ المستلم",
     "change_due": "المبلغ المتبقي",
     "confirm_payment": "تأكيد الدفع",
-    "reference_placeholder": "رقم المعاملة، رقم الإيصال..."
+    "reference_placeholder": "رقم المعاملة، رقم الإيصال...",
+    "payment_proof": "صورة إثبات الدفع",
+    "image_upload_failed": "تم إنشاء البيع لكن فشل رفع صورة الدفع"
   },
   "sales": {
     "title": "سجل المبيعات",
@@ -834,7 +836,10 @@
   "notifications": {
     "title": "الإشعارات",
     "no_notifications": "لا توجد إشعارات",
-    "mark_read": "تحديد كمقروء"
+    "mark_read": "تحديد كمقروء",
+    "unread": "غير مقروءة",
+    "price_update_title": "تغيير سعر التكلفة: {product_code}",
+    "price_update_message": "تم تحديث صافي سعر الشراء للمنتج {product_code} من {old_price} جنيه إلى {new_price} جنيه بناءً على صندوق فاتورة شراء مكتمل حديثاً. يرجى مراجعة حدود البيع للحفاظ على هوامش الربح."
   },
   "validation": {
     "field_required": "هذا الحقل مطلوب",

@@ -55,13 +55,23 @@ class ProductsController {
 
   async updateColor(req, res, next) {
     try {
-      const color = await productsService.updateColor(req.params.colorId, req.body);
-      res.json({ success: true, data: color });
+      // Verify color belongs to this product
+      const color = await require('../../config/database')('product_colors')
+        .where({ id: req.params.colorId, product_id: req.params.id })
+        .first();
+      if (!color) return res.status(404).json({ success: false, message: 'Color not found for this product' });
+      const updated = await productsService.updateColor(req.params.colorId, req.body);
+      res.json({ success: true, data: updated });
     } catch (error) { next(error); }
   }
 
   async deleteColor(req, res, next) {
     try {
+      // Verify color belongs to this product
+      const color = await require('../../config/database')('product_colors')
+        .where({ id: req.params.colorId, product_id: req.params.id })
+        .first();
+      if (!color) return res.status(404).json({ success: false, message: 'Color not found for this product' });
       await productsService.deleteColor(req.params.colorId);
       res.json({ success: true, message: 'Color deleted' });
     } catch (error) { next(error); }
@@ -73,6 +83,11 @@ class ProductsController {
       if (!req.file) {
         return res.status(400).json({ success: false, message: 'No image file provided' });
       }
+      // Verify color belongs to this product
+      const color = await require('../../config/database')('product_colors')
+        .where({ id: req.params.colorId, product_id: req.params.id })
+        .first();
+      if (!color) return res.status(404).json({ success: false, message: 'Color not found for this product' });
       const imageUrl = getFileUrl('products', req.file.filename);
       const image = await productsService.addImage(
         req.params.colorId,
@@ -85,13 +100,29 @@ class ProductsController {
 
   async setPrimaryImage(req, res, next) {
     try {
-      const image = await productsService.setPrimaryImage(req.params.imageId);
-      res.json({ success: true, data: image });
+      // Verify image belongs to this product
+      const db = require('../../config/database');
+      const image = await db('product_color_images')
+        .join('product_colors', 'product_color_images.product_color_id', 'product_colors.id')
+        .where('product_color_images.id', req.params.imageId)
+        .where('product_colors.product_id', req.params.id)
+        .first();
+      if (!image) return res.status(404).json({ success: false, message: 'Image not found for this product' });
+      const result = await productsService.setPrimaryImage(req.params.imageId);
+      res.json({ success: true, data: result });
     } catch (error) { next(error); }
   }
 
   async deleteImage(req, res, next) {
     try {
+      // Verify image belongs to this product
+      const db = require('../../config/database');
+      const image = await db('product_color_images')
+        .join('product_colors', 'product_color_images.product_color_id', 'product_colors.id')
+        .where('product_color_images.id', req.params.imageId)
+        .where('product_colors.product_id', req.params.id)
+        .first();
+      if (!image) return res.status(404).json({ success: false, message: 'Image not found for this product' });
       await productsService.deleteImage(req.params.imageId);
       res.json({ success: true, message: 'Image deleted' });
     } catch (error) { next(error); }
@@ -125,13 +156,23 @@ class ProductsController {
 
   async updateVariant(req, res, next) {
     try {
-      const variant = await productsService.updateVariant(req.params.variantId, req.body);
-      res.json({ success: true, data: variant });
+      // Verify variant belongs to this product
+      const variant = await require('../../config/database')('product_variants')
+        .where({ id: req.params.variantId, product_id: req.params.id })
+        .first();
+      if (!variant) return res.status(404).json({ success: false, message: 'Variant not found for this product' });
+      const updated = await productsService.updateVariant(req.params.variantId, req.body);
+      res.json({ success: true, data: updated });
     } catch (error) { next(error); }
   }
 
   async deleteVariant(req, res, next) {
     try {
+      // Verify variant belongs to this product
+      const variant = await require('../../config/database')('product_variants')
+        .where({ id: req.params.variantId, product_id: req.params.id })
+        .first();
+      if (!variant) return res.status(404).json({ success: false, message: 'Variant not found for this product' });
       await productsService.deleteVariant(req.params.variantId);
       res.json({ success: true, message: 'Variant deleted' });
     } catch (error) { next(error); }
@@ -147,6 +188,12 @@ class ProductsController {
 
   async setStorePrice(req, res, next) {
     try {
+      // Verify user has access to this store (non-admins must be assigned to it)
+      if (req.user.role_name !== 'admin') {
+        const userStore = await require('../../config/database')('user_stores')
+          .where({ user_id: req.user.id, store_id: req.params.storeId }).first();
+        if (!userStore) return res.status(403).json({ success: false, message: 'You do not have access to this store' });
+      }
       const price = await productsService.setStorePrice(
         req.params.id,
         req.params.storeId,
@@ -158,6 +205,12 @@ class ProductsController {
 
   async deleteStorePrice(req, res, next) {
     try {
+      // Verify user has access to this store (non-admins must be assigned to it)
+      if (req.user.role_name !== 'admin') {
+        const userStore = await require('../../config/database')('user_stores')
+          .where({ user_id: req.user.id, store_id: req.params.storeId }).first();
+        if (!userStore) return res.status(403).json({ success: false, message: 'You do not have access to this store' });
+      }
       await productsService.deleteStorePrice(req.params.id, req.params.storeId);
       res.json({ success: true, message: 'Store price removed' });
     } catch (error) { next(error); }

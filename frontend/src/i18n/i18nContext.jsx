@@ -35,7 +35,7 @@ export function I18nProvider({ children }) {
     }
     if (params && typeof value === 'string') {
       Object.entries(params).forEach(([k, v]) => {
-        value = value.replace(new RegExp(`\\{${k}\\}`, 'g'), v);
+        value = value.replaceAll(`{${k}}`, v);
       });
     }
     return value;

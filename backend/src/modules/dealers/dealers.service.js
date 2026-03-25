@@ -9,7 +9,7 @@ const { generateUUID, generateDocumentNumber } = require('../../utils/generateCo
  */
 class DealersService {
   async list() {
-    const dealers = await db('dealers').orderBy('name', 'asc');
+    const dealers = await db('dealers').orderBy('name', 'asc').limit(500);
     for (const d of dealers) {
       const inv = await db('wholesale_invoices').where('dealer_id', d.id).sum('total_amount as total').first();
       const paid = await db('wholesale_invoices').where('dealer_id', d.id).sum('paid_amount as total').first();
@@ -37,13 +37,27 @@ class DealersService {
   }
 
   async create(data) {
-    const [dealer] = await db('dealers').insert({ id: generateUUID(), ...data, is_active: true }).returning('*');
+    const safeData = {
+      id: generateUUID(),
+      is_active: true,
+      name: data.name,
+      phone: data.phone || null,
+      email: data.email || null,
+      address: data.address || null,
+      notes: data.notes || null,
+    };
+    const [dealer] = await db('dealers').insert(safeData).returning('*');
     return dealer;
   }
 
   async update(id, data) {
-    data.updated_at = new Date();
-    const [dealer] = await db('dealers').where('id', id).update(data).returning('*');
+    const safeData = { updated_at: new Date() };
+    if (data.name !== undefined) safeData.name = data.name;
+    if (data.phone !== undefined) safeData.phone = data.phone;
+    if (data.email !== undefined) safeData.email = data.email;
+    if (data.address !== undefined) safeData.address = data.address;
+    if (data.notes !== undefined) safeData.notes = data.notes;
+    const [dealer] = await db('dealers').where('id', id).update(safeData).returning('*');
     if (!dealer) throw new AppError('Dealer not found', 404);
     return dealer;
   }
@@ -67,7 +81,10 @@ class DealersService {
       await trx('wholesale_invoices').insert({
         id: invoiceId,
         invoice_number: invoiceNumber,
-        ...invoiceData,
+        dealer_id: invoiceData.dealer_id,
+        total_amount: invoiceData.total_amount,
+        invoice_date: invoiceData.invoice_date,
+        notes: invoiceData.notes || null,
         paid_amount: 0,
         status: 'pending',
         created_by: userId,
@@ -121,30 +138,40 @@ class DealersService {
     let remaining = data.total_amount;
 
     await db.transaction(async (trx) => {
-      await trx('dealer_payments').insert({ id: paymentId, ...data, created_by: userId });
+      await trx('dealer_payments').insert({
+        id: paymentId,
+        dealer_id: data.dealer_id,
+        total_amount: data.total_amount,
+        payment_method: data.payment_method,
+        payment_date: data.payment_date,
+        reference_no: data.reference_no || null,
+        notes: data.notes || null,
+        created_by: userId,
+      });
 
       const invoices = await trx('wholesale_invoices')
         .where('dealer_id', data.dealer_id)
         .whereIn('status', ['pending', 'partial'])
-        .orderBy('invoice_date', 'asc');
+        .orderBy('invoice_date', 'asc')
+        .forUpdate();
 
       for (const invoice of invoices) {
         if (remaining <= 0) break;
-        const owed = parseFloat(invoice.total_amount) - parseFloat(invoice.paid_amount);
+        const owed = Math.round((parseFloat(invoice.total_amount) - parseFloat(invoice.paid_amount)) * 100) / 100;
         if (owed <= 0) continue;
-        const alloc = Math.min(remaining, owed);
+        const alloc = Math.round(Math.min(remaining, owed) * 100) / 100;
 
         await trx('dealer_payment_allocations').insert({
           id: generateUUID(), payment_id: paymentId, invoice_id: invoice.id, allocated_amount: alloc,
         });
 
-        const newPaid = parseFloat(invoice.paid_amount) + alloc;
+        const newPaid = Math.round((parseFloat(invoice.paid_amount) + alloc) * 100) / 100;
         await trx('wholesale_invoices').where('id', invoice.id).update({
           paid_amount: newPaid,
-          status: newPaid >= parseFloat(invoice.total_amount) ? 'paid' : 'partial',
+          status: newPaid >= Math.round(parseFloat(invoice.total_amount) * 100) / 100 ? 'paid' : 'partial',
           updated_at: new Date(),
         });
-        remaining -= alloc;
+        remaining = Math.round((remaining - alloc) * 100) / 100;
       }
     });
 

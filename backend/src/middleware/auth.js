@@ -18,7 +18,7 @@ async function auth(req, res, next) {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, env.jwt.secret);
+    const decoded = jwt.verify(token, env.jwt.secret, { algorithms: ['HS256'] });
 
     // Fetch full user from DB to ensure they're still active
     const user = await db('users')

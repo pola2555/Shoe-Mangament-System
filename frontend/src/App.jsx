@@ -137,7 +137,7 @@ function AppRoutes() {
         <Route path="users" element={<PermissionRoute perm="users"><UsersPage /></PermissionRoute>} />
         <Route path="sales" element={<PermissionRoute perm="sales"><SalesPage /></PermissionRoute>} />
         <Route path="activity-log" element={<PermissionRoute perm="audit_log"><ActivityLogPage /></PermissionRoute>} />
-        <Route path="settings" element={<SettingsPage />} />
+        <Route path="settings" element={<PermissionRoute perm="settings"><SettingsPage /></PermissionRoute>} />
       </Route>
 
       {/* Catch-all */}

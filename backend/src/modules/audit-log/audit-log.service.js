@@ -2,6 +2,8 @@ const db = require('../../config/database');
 
 class AuditLogService {
   async list({ page = 1, limit = 50, user_id, module, action, entity_type, store_id, date_from, date_to, search }) {
+    const safePage = Math.max(1, parseInt(page, 10) || 1);
+    const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
     let query = db('activity_log')
       .leftJoin('users', 'activity_log.user_id', 'users.id')
       .leftJoin('stores', 'activity_log.store_id', 'stores.id')
@@ -29,22 +31,25 @@ class AuditLogService {
     if (store_id) query = query.where('activity_log.store_id', store_id);
     if (date_from) query = query.where('activity_log.created_at', '>=', date_from);
     if (date_to) query = query.where('activity_log.created_at', '<=', date_to + ' 23:59:59');
-    if (search) query = query.whereRaw("activity_log.details::text ILIKE ?", [`%${search}%`]);
+    if (search) {
+      const safeSearch = search.replace(/[%_\\]/g, '\\$&');
+      query = query.whereRaw("activity_log.details::text ILIKE ?", [`%${safeSearch}%`]);
+    }
 
-    const offset = (page - 1) * limit;
+    const offset = (safePage - 1) * safeLimit;
 
     const [countResult] = await query.clone().clearSelect().clearOrder().count('activity_log.id as total');
     const total = parseInt(countResult.total, 10);
 
-    const data = await query.limit(limit).offset(offset);
+    const data = await query.limit(safeLimit).offset(offset);
 
     return {
       data,
       pagination: {
-        page: parseInt(page, 10),
-        limit: parseInt(limit, 10),
+        page: safePage,
+        limit: safeLimit,
         total,
-        totalPages: Math.ceil(total / limit),
+        totalPages: Math.ceil(total / safeLimit),
       },
     };
   }

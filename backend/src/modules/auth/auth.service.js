@@ -83,7 +83,7 @@ class AuthService {
     // Verify refresh token JWT
     let decoded;
     try {
-      decoded = jwt.verify(refreshTokenStr, env.jwt.refreshSecret);
+      decoded = jwt.verify(refreshTokenStr, env.jwt.refreshSecret, { algorithms: ['HS256'] });
     } catch {
       throw new AppError('Invalid or expired refresh token', 401);
     }
@@ -119,10 +119,15 @@ class AuthService {
       throw new AppError('User not found or deactivated', 401);
     }
 
-    // Generate new access token
-    const accessToken = this._generateAccessToken(user);
+    // Rotate refresh token: revoke old one, issue new one
+    await db('refresh_tokens')
+      .where('token', refreshTokenStr)
+      .update({ is_revoked: true });
 
-    return { accessToken };
+    const accessToken = this._generateAccessToken(user);
+    const refreshToken = await this._generateRefreshToken(user.id);
+
+    return { accessToken, refreshToken };
   }
 
   /**
@@ -184,7 +189,7 @@ class AuthService {
     return jwt.sign(
       { userId: user.id, role: user.role_name },
       env.jwt.secret,
-      { expiresIn: env.jwt.expiresIn }
+      { expiresIn: env.jwt.expiresIn, algorithm: 'HS256' }
     );
   }
 
@@ -192,7 +197,7 @@ class AuthService {
     const token = jwt.sign(
       { userId },
       env.jwt.refreshSecret,
-      { expiresIn: env.jwt.refreshExpiresIn }
+      { expiresIn: env.jwt.refreshExpiresIn, algorithm: 'HS256' }
     );
 
     // Parse expiration to store in DB

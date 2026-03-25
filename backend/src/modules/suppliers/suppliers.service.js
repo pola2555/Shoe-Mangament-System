@@ -12,7 +12,7 @@ const { generateUUID } = require('../../utils/generateCodes');
  */
 class SuppliersService {
   async list() {
-    const suppliers = await db('suppliers').orderBy('name', 'asc');
+    const suppliers = await db('suppliers').orderBy('name', 'asc').limit(500);
 
     // Compute balance for each supplier
     for (const s of suppliers) {
@@ -70,16 +70,28 @@ class SuppliersService {
   }
 
   async create(data) {
+    const safeData = { id: generateUUID() };
+    if (data.name !== undefined) safeData.name = data.name;
+    if (data.phone !== undefined) safeData.phone = data.phone;
+    if (data.email !== undefined) safeData.email = data.email;
+    if (data.address !== undefined) safeData.address = data.address;
+    if (data.notes !== undefined) safeData.notes = data.notes;
     const [supplier] = await db('suppliers')
-      .insert({ id: generateUUID(), ...data })
+      .insert(safeData)
       .returning('*');
     return supplier;
   }
 
   async update(id, data) {
-    data.updated_at = new Date();
+    const safeData = { updated_at: new Date() };
+    if (data.name !== undefined) safeData.name = data.name;
+    if (data.phone !== undefined) safeData.phone = data.phone;
+    if (data.email !== undefined) safeData.email = data.email;
+    if (data.address !== undefined) safeData.address = data.address;
+    if (data.notes !== undefined) safeData.notes = data.notes;
+    if (data.is_active !== undefined) safeData.is_active = data.is_active;
     const [supplier] = await db('suppliers')
-      .where('id', id).update(data).returning('*');
+      .where('id', id).update(safeData).returning('*');
     if (!supplier) throw new AppError('Supplier not found', 404);
     return supplier;
   }

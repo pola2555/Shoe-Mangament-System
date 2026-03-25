@@ -29,15 +29,48 @@ const backupRoutes = require('./modules/backup/backup.routes');
 
 const app = express();
 
+// --- Global Rate Limiting ---
+const rateLimit = require('express-rate-limit');
+const globalLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 200, // 200 requests per minute per IP
+  message: { success: false, message: 'Too many requests, please slow down' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/', globalLimiter);
+
 // --- Core Middleware ---
-app.use(helmet());                                  // Security headers
-app.use(cors());                                    // CORS for frontend
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'"],
+    },
+  },
+}));
+app.use(cors({                                      // CORS — restrict to frontend origin
+  origin: env.cors.origin,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  maxAge: 600,
+}));
 app.use(express.json({ limit: '10mb' }));           // JSON body parser
 app.use(express.urlencoded({ extended: true }));     // URL-encoded parser
 app.use(morgan('dev'));                              // Request logging
 
-// Serve uploaded files statically (local storage)
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// Serve uploaded files statically (local storage) with security headers
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
+  setHeaders: (res) => {
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Cache-Control', 'public, max-age=86400');
+  },
+}));
 
 // --- Activity Logging (intercepts all write operations) ---
 app.use(activityLogger);

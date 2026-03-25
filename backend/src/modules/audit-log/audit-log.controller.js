@@ -23,13 +23,17 @@ class AuditLogController {
   async logAccess(req, res, next) {
     try {
       const { action, module: mod, details } = req.body;
+      // Validate input sizes to prevent log pollution
+      const safeAction = typeof action === 'string' ? action.slice(0, 50) : 'unauthorized_access';
+      const safeMod = typeof mod === 'string' ? mod.slice(0, 50) : 'auth';
+      const safeDetails = (details && typeof details === 'object') ? details : null;
       await logActivity({
         userId: req.user.id,
-        action: action || 'unauthorized_access',
-        module: mod || 'auth',
+        action: safeAction,
+        module: safeMod,
         entityId: null,
         entityType: 'page',
-        details: details || null,
+        details: safeDetails,
         storeId: req.user.store_id || null,
         ipAddress: req.ip,
       });

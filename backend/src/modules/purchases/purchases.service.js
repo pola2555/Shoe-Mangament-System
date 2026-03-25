@@ -30,7 +30,7 @@ class PurchasesService {
     if (supplier_id) query = query.where('purchase_invoices.supplier_id', supplier_id);
     if (status) query = query.where('purchase_invoices.status', status);
 
-    return query;
+    return query.limit(500);
   }
 
   async getInvoiceById(id) {
@@ -96,7 +96,11 @@ class PurchasesService {
       await trx('purchase_invoices').insert({
         id: invoiceId,
         invoice_number: invoiceNumber,
-        ...invoiceData,
+        supplier_id: invoiceData.supplier_id,
+        total_amount: invoiceData.total_amount,
+        discount_amount: invoiceData.discount_amount || 0,
+        invoice_date: invoiceData.invoice_date,
+        notes: invoiceData.notes || null,
         paid_amount: 0,
         status: 'pending',
         created_by: userId,
@@ -107,7 +111,12 @@ class PurchasesService {
           await trx('purchase_invoice_boxes').insert({
             id: generateUUID(),
             invoice_id: invoiceId,
-            ...box,
+            product_id: box.product_id || null,
+            box_template_id: box.box_template_id || null,
+            cost_per_item: box.cost_per_item,
+            total_items: box.total_items,
+            destination_store_id: box.destination_store_id || null,
+            notes: box.notes || null,
             detail_status: box.product_id ? 'partial' : 'pending',
           });
         }
@@ -134,11 +143,12 @@ class PurchasesService {
         const toApply = Math.min(unallocated, invoiceTotal);
 
         if (toApply > 0) {
-          // Find payments with unallocated balance (FIFO by payment_date)
+          // Find payments with unallocated balance (FIFO by payment_date, locked for update)
           const payments = await trx('supplier_payments')
             .where('supplier_id', invoiceData.supplier_id)
             .orderBy('payment_date', 'asc')
-            .orderBy('created_at', 'asc');
+            .orderBy('created_at', 'asc')
+            .forUpdate();
 
           let remaining = toApply;
 
@@ -155,7 +165,7 @@ class PurchasesService {
 
             if (paymentUnallocated <= 0) continue;
 
-            const allocAmount = Math.min(remaining, paymentUnallocated);
+            const allocAmount = Math.round(Math.min(remaining, paymentUnallocated) * 100) / 100;
 
             await trx('supplier_payment_allocations').insert({
               id: generateUUID(),
@@ -164,7 +174,7 @@ class PurchasesService {
               allocated_amount: allocAmount,
             });
 
-            remaining -= allocAmount;
+            remaining = Math.round((remaining - allocAmount) * 100) / 100;
           }
 
           // Update the invoice's paid_amount and status
@@ -187,18 +197,16 @@ class PurchasesService {
   }
 
   async updateInvoice(id, data) {
-    data.updated_at = new Date();
-    
     await db.transaction(async (trx) => {
       const existing = await trx('purchase_invoices').where('id', id).first();
       if (!existing) throw new AppError('Invoice not found', 404);
       
       const newTotal = data.total_amount !== undefined ? parseFloat(data.total_amount) : parseFloat(existing.total_amount);
       const newDiscount = data.discount_amount !== undefined ? parseFloat(data.discount_amount) : parseFloat(existing.discount_amount || 0);
-      const netTotal = newTotal - newDiscount;
-      const paid = parseFloat(existing.paid_amount) || 0;
+      const netTotal = Math.round((newTotal - newDiscount) * 100) / 100;
+      const paid = Math.round((parseFloat(existing.paid_amount) || 0) * 100) / 100;
       
-      if (paid >= netTotal && netTotal > 0) {
+      if (netTotal <= 0 || paid >= netTotal) {
         data.status = 'paid';
       } else if (paid > 0 && paid < netTotal) {
         data.status = 'partial';
@@ -206,7 +214,16 @@ class PurchasesService {
         data.status = 'pending';
       }
       
-      await trx('purchase_invoices').where('id', id).update(data);
+      const safeData = { updated_at: new Date() };
+      if (data.total_amount !== undefined) safeData.total_amount = data.total_amount;
+      if (data.discount_amount !== undefined) safeData.discount_amount = data.discount_amount;
+      if (data.invoice_number !== undefined) safeData.invoice_number = data.invoice_number;
+      if (data.invoice_date !== undefined) safeData.invoice_date = data.invoice_date;
+      if (data.notes !== undefined) safeData.notes = data.notes;
+      if (data.supplier_id !== undefined) safeData.supplier_id = data.supplier_id;
+      safeData.status = data.status;
+      
+      await trx('purchase_invoices').where('id', id).update(safeData);
     });
 
     return this.getInvoiceById(id);
@@ -268,20 +285,26 @@ class PurchasesService {
     const invoice = await db('purchase_invoices').where('id', invoiceId).first();
     if (!invoice) throw new AppError('Invoice not found', 404);
 
-    // Validate box total doesn't exceed invoice limit
+    // Validate box total doesn't exceed invoice net limit
     const newBoxCost = (Number(data.total_items) || 0) * (Number(data.cost_per_item) || 0);
     const existingBoxes = await db('purchase_invoice_boxes').where('invoice_id', invoiceId).select('total_items', 'cost_per_item');
     const existingTotal = existingBoxes.reduce((sum, b) => sum + ((Number(b.total_items) || 0) * (Number(b.cost_per_item) || 0)), 0);
 
-    if (existingTotal + newBoxCost > Number(invoice.total_amount)) {
-      throw new AppError(`Cannot add box. Accumulated box cost (${existingTotal + newBoxCost}) would exceed the invoice's total limit (${invoice.total_amount}).`, 400);
+    const invoiceNet = Number(invoice.total_amount) - (Number(invoice.discount_amount) || 0);
+    if (existingTotal + newBoxCost > invoiceNet) {
+      throw new AppError(`Cannot add box. Accumulated box cost (${existingTotal + newBoxCost}) would exceed the invoice's net total (${invoiceNet}).`, 400);
     }
 
     const [box] = await db('purchase_invoice_boxes')
       .insert({
         id: generateUUID(),
         invoice_id: invoiceId,
-        ...data,
+        product_id: data.product_id || null,
+        box_template_id: data.box_template_id || null,
+        cost_per_item: data.cost_per_item,
+        total_items: data.total_items,
+        destination_store_id: data.destination_store_id || null,
+        notes: data.notes || null,
         detail_status: data.product_id ? 'partial' : 'pending',
       })
       .returning('*');
@@ -313,21 +336,29 @@ class PurchasesService {
             existingTotal += (Number(b.total_items) || 0) * (Number(b.cost_per_item) || 0);
           }
         }
-        if (existingTotal + newBoxCost > Number(invoice.total_amount)) {
-          throw new AppError(`Cannot update box. Accumulated box cost (${existingTotal + newBoxCost}) would exceed the invoice's total limit (${invoice.total_amount}).`, 400);
+        const invoiceNet = Number(invoice.total_amount) - (Number(invoice.discount_amount) || 0);
+        if (existingTotal + newBoxCost > invoiceNet) {
+          throw new AppError(`Cannot update box. Accumulated box cost (${existingTotal + newBoxCost}) would exceed the invoice's net total (${invoiceNet}).`, 400);
         }
       }
     }
 
-    data.updated_at = new Date();
+    const safeBoxData = { updated_at: new Date() };
+    if (data.product_id !== undefined) safeBoxData.product_id = data.product_id;
+    if (data.destination_store_id !== undefined) safeBoxData.destination_store_id = data.destination_store_id;
+    if (data.total_items !== undefined) safeBoxData.total_items = data.total_items;
+    if (data.cost_per_item !== undefined) safeBoxData.cost_per_item = data.cost_per_item;
+    if (data.color_id !== undefined) safeBoxData.color_id = data.color_id;
+    if (data.label !== undefined) safeBoxData.label = data.label;
+    if (data.detail_status !== undefined) safeBoxData.detail_status = data.detail_status;
     // Re-evaluate detail_status
-    const merged = { ...existing, ...data };
+    const merged = { ...existing, ...safeBoxData };
     if (merged.product_id) {
-      data.detail_status = 'partial';
+      safeBoxData.detail_status = 'partial';
     }
 
     const [box] = await db('purchase_invoice_boxes')
-      .where('id', boxId).update(data).returning('*');
+      .where('id', boxId).update(safeBoxData).returning('*');
     return box;
   }
 
@@ -428,7 +459,8 @@ class PurchasesService {
           const product = await trx('products').where('id', box.product_id).first();
           const color = await trx('product_colors').where('id', item.product_color_id).first();
           const colorAbbr = color.color_name.substring(0, 3).toUpperCase();
-          const sku = `${product.product_code}-${colorAbbr}-${item.size_eu}`;
+          const code = product.product_code || 'NOCODE';
+          const sku = `${code}-${colorAbbr}-${item.size_eu}`;
 
           [variant] = await trx('product_variants').insert({
             id: generateUUID(),
@@ -473,6 +505,9 @@ class PurchasesService {
           type: 'price_update',
           title: `Cost Price Changed: ${productRecord.product_code}`,
           message: `The net purchase cost for ${productRecord.product_code} was officially updated from ${currentNetPrice} EGP to ${unitCost} EGP based on a newly completed purchase invoice box. Please review its selling boundaries to maintain margins.`,
+          title_key: 'notifications.price_update_title',
+          message_key: 'notifications.price_update_message',
+          params: JSON.stringify({ product_code: productRecord.product_code, old_price: currentNetPrice, new_price: unitCost }),
           reference_id: productRecord.id,
           created_at: new Date()
         });
@@ -499,24 +534,31 @@ class PurchasesService {
       // 1. Create payment record
       await trx('supplier_payments').insert({
         id: paymentId,
-        ...data,
+        supplier_id: data.supplier_id,
+        total_amount: data.total_amount,
+        payment_method: data.payment_method,
+        payment_date: data.payment_date,
+        reference_no: data.reference_no || null,
+        notes: data.notes || null,
         created_by: userId,
       });
 
-      // 2. FIFO: Fetch unpaid/partial invoices oldest first
+      // 2. FIFO: Fetch unpaid/partial invoices oldest first (with row lock)
       const invoices = await trx('purchase_invoices')
         .where('supplier_id', data.supplier_id)
         .whereIn('status', ['pending', 'partial'])
-        .orderBy('invoice_date', 'asc');
+        .orderBy('invoice_date', 'asc')
+        .forUpdate();
 
       // 3. Allocate payment across invoices
       for (const invoice of invoices) {
         if (remaining <= 0) break;
 
-        const owed = parseFloat(invoice.total_amount) - parseFloat(invoice.paid_amount);
+        const netTotal = parseFloat(invoice.total_amount) - (parseFloat(invoice.discount_amount) || 0);
+        const owed = netTotal - parseFloat(invoice.paid_amount);
         if (owed <= 0) continue;
 
-        const allocAmount = Math.min(remaining, owed);
+        const allocAmount = Math.round(Math.min(remaining, owed) * 100) / 100;
 
         await trx('supplier_payment_allocations').insert({
           id: generateUUID(),
@@ -525,8 +567,8 @@ class PurchasesService {
           allocated_amount: allocAmount,
         });
 
-        const newPaidAmount = parseFloat(invoice.paid_amount) + allocAmount;
-        const newStatus = newPaidAmount >= parseFloat(invoice.total_amount) ? 'paid' : 'partial';
+        const newPaidAmount = Math.round((parseFloat(invoice.paid_amount) + allocAmount) * 100) / 100;
+        const newStatus = newPaidAmount >= netTotal ? 'paid' : 'partial';
 
         await trx('purchase_invoices')
           .where('id', invoice.id)
@@ -536,7 +578,7 @@ class PurchasesService {
             updated_at: new Date(),
           });
 
-        remaining -= allocAmount;
+        remaining = Math.round((remaining - allocAmount) * 100) / 100;
       }
     });
 
@@ -573,7 +615,7 @@ class PurchasesService {
       .orderBy('payment_date', 'desc');
 
     if (supplier_id) query = query.where('supplier_payments.supplier_id', supplier_id);
-    return query;
+    return query.limit(500);
   }
 }
 

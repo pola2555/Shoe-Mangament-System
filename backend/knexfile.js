@@ -31,7 +31,7 @@ module.exports = {
       database: env.db.name,
       user: env.db.user,
       password: env.db.password,
-      ssl: { rejectUnauthorized: false },
+      ssl: { rejectUnauthorized: true },
     },
     pool: {
       min: 2,

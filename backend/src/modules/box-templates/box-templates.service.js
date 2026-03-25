@@ -24,7 +24,7 @@ class BoxTemplatesService {
 
     if (product_id) query = query.where('box_templates.product_id', product_id);
 
-    const templates = await query;
+    const templates = await query.limit(500);
 
     // Attach items to each template
     for (const tmpl of templates) {
@@ -59,7 +59,13 @@ class BoxTemplatesService {
   }
 
   async create(data) {
-    const { items, ...templateData } = data;
+    const { items, ...rest } = data;
+    // Whitelist allowed fields
+    const templateData = {
+      name: rest.name,
+      product_id: rest.product_id || null,
+      notes: rest.notes || null,
+    };
     const id = generateUUID();
 
     await db.transaction(async (trx) => {
@@ -83,7 +89,12 @@ class BoxTemplatesService {
     const existing = await db('box_templates').where('id', id).first();
     if (!existing) throw new AppError('Box template not found', 404);
 
-    const { items, ...templateData } = data;
+    const { items, ...rest } = data;
+    // Whitelist allowed fields
+    const templateData = {};
+    if (rest.name !== undefined) templateData.name = rest.name;
+    if (rest.product_id !== undefined) templateData.product_id = rest.product_id;
+    if (rest.notes !== undefined) templateData.notes = rest.notes;
 
     await db.transaction(async (trx) => {
       if (Object.keys(templateData).length > 0) {

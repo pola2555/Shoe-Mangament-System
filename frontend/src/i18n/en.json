@@ -215,7 +215,9 @@
     "amount_received": "Amount Received",
     "change_due": "Change Due",
     "confirm_payment": "Confirm Payment",
-    "reference_placeholder": "Transaction ID, Receipt No..."
+    "reference_placeholder": "Transaction ID, Receipt No...",
+    "payment_proof": "Payment Proof Image",
+    "image_upload_failed": "Sale created but payment image upload failed"
   },
   "sales": {
     "title": "Sales History",
@@ -834,7 +836,10 @@
   "notifications": {
     "title": "Notifications",
     "no_notifications": "No notifications",
-    "mark_read": "Mark as Read"
+    "mark_read": "Mark as Read",
+    "unread": "Unread",
+    "price_update_title": "Cost Price Changed: {product_code}",
+    "price_update_message": "The net purchase cost for {product_code} was updated from {old_price} EGP to {new_price} EGP based on a newly completed purchase invoice box. Please review its selling boundaries to maintain margins."
   },
   "validation": {
     "field_required": "This field is required",

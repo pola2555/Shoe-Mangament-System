@@ -7,7 +7,7 @@ const listInventorySchema = Joi.object({
   status: Joi.string().valid('in_stock', 'sold', 'returned', 'damaged', 'in_transfer'),
   source: Joi.string().valid('purchase', 'manual'),
   search: Joi.string().max(100),
-}).unknown(true);
+});
 
 const manualEntrySchema = Joi.object({
   variant_id: Joi.string().uuid().required(),
@@ -17,4 +17,8 @@ const manualEntrySchema = Joi.object({
   notes: Joi.string().allow('', null),
 });
 
-module.exports = { listInventorySchema, manualEntrySchema };
+const markDamagedSchema = Joi.object({
+  notes: Joi.string().max(500).allow('', null),
+});
+
+module.exports = { listInventorySchema, manualEntrySchema, markDamagedSchema };

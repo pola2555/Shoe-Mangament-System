@@ -7,10 +7,16 @@ export default function CheckoutModal({ total, onClose, onConfirm }) {
   const [method, setMethod] = useState('cash');
   const [amountReceived, setAmountReceived] = useState('');
   const [reference, setReference] = useState('');
+  const [image, setImage] = useState(null);
 
   const handleConfirm = (e) => {
     e.preventDefault();
-    onConfirm({ method, reference });
+    onConfirm({ method, reference, image });
+  };
+
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) setImage(file);
   };
 
   const change = amountReceived ? Math.max(0, parseFloat(amountReceived) - total) : 0;
@@ -61,17 +67,33 @@ export default function CheckoutModal({ total, onClose, onConfirm }) {
               </div>
             </div>
           ) : (
-            <div className="form-group">
-              <label className="form-label">{t('common.reference_no')} ({t('common.optional')})</label>
-              <input 
-                type="text" 
-                className="form-input" 
-                value={reference} 
-                onChange={(e) => setReference(e.target.value)} 
-                placeholder={t('pos.reference_placeholder')}
-                autoFocus
-              />
-            </div>
+            <>
+              <div className="form-group">
+                <label className="form-label">{t('common.reference_no')} ({t('common.optional')})</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={reference} 
+                  onChange={(e) => setReference(e.target.value)} 
+                  placeholder={t('pos.reference_placeholder')}
+                  autoFocus
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">{t('pos.payment_proof')} ({t('common.optional')})</label>
+                <input
+                  type="file"
+                  className="form-input"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleImageChange}
+                />
+                {image && (
+                  <div style={{ marginTop: 'var(--spacing-xs)', fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                    {image.name}
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
           <div className="form-actions" style={{ marginTop: 'var(--spacing-xl)' }}>

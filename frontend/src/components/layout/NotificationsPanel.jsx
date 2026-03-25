@@ -86,7 +86,7 @@ export default function NotificationsPanel({ collapsed }) {
           <div className="notifications-header">
             <h4>{t('notifications.title')}</h4>
             {unread.length > 0 && (
-              <span className="notif-count">{unread.length} Unread</span>
+              <span className="notif-count">{unread.length} {t('notifications.unread')}</span>
             )}
           </div>
           
@@ -94,7 +94,11 @@ export default function NotificationsPanel({ collapsed }) {
             {unread.length === 0 ? (
               <div className="notifications-empty">{t('notifications.no_notifications')}</div>
             ) : (
-              unread.map(n => (
+              unread.map(n => {
+                const params = typeof n.params === 'string' ? JSON.parse(n.params) : (n.params || {});
+                const displayTitle = n.title_key ? t(n.title_key, params) : n.title;
+                const displayMessage = n.message_key ? t(n.message_key, params) : n.message;
+                return (
                 <div 
                   key={n.id} 
                   className={`notification-item type-${n.type}`}
@@ -102,14 +106,15 @@ export default function NotificationsPanel({ collapsed }) {
                 >
                   <div className="notif-indicator"></div>
                   <div className="notif-content">
-                    <h5>{n.title}</h5>
-                    <p>{n.message}</p>
+                    <h5>{displayTitle}</h5>
+                    <p>{displayMessage}</p>
                     <span className="notif-time">
                       {new Date(n.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                     </span>
                   </div>
                 </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

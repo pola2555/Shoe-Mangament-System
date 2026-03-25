@@ -90,7 +90,8 @@ exports.seed = async function (knex) {
   await knex('user_permissions').del();
   await knex('users').del();
 
-  const passwordHash = await bcrypt.hash('admin123', 12);
+  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+  const passwordHash = await bcrypt.hash(adminPassword, 12);
   const [adminUser] = await knex('users').insert({
     username: 'admin',
     email: 'admin@shoe-erp.com',

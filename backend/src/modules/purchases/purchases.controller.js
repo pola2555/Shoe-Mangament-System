@@ -38,7 +38,7 @@ class PurchasesController {
       if (!req.file) {
         return res.status(400).json({ success: false, message: 'No image file provided' });
       }
-      const fileUrl = getFileUrl(req, req.file.filename, 'invoices');
+      const fileUrl = getFileUrl('invoices', req.file.filename);
       const invoice = await purchasesService.uploadPrimaryImage(req.params.id, fileUrl);
       res.json({ success: true, data: invoice });
     } catch (error) { next(error); }
@@ -91,6 +91,9 @@ class PurchasesController {
   async uploadInvoiceImage(req, res, next) {
     try {
       if (!req.file) return res.status(400).json({ success: false, message: 'No file provided' });
+      // Verify invoice exists
+      const invoice = await db('purchase_invoices').where('id', req.params.id).first();
+      if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
       const imageUrl = getFileUrl('invoices', req.file.filename);
       const [image] = await db('attached_images').insert({
         id: generateUUID(),
@@ -105,7 +108,14 @@ class PurchasesController {
 
   async deleteInvoiceImage(req, res, next) {
     try {
-      await db('attached_images').where({ id: req.params.imageId, entity_type: 'purchase_invoice' }).del();
+      // Verify image belongs to the specified invoice
+      const image = await db('attached_images').where({
+        id: req.params.imageId,
+        entity_type: 'purchase_invoice',
+        entity_id: req.params.id,
+      }).first();
+      if (!image) return res.status(404).json({ success: false, message: 'Image not found' });
+      await db('attached_images').where('id', req.params.imageId).del();
       res.json({ success: true, message: 'Image deleted' });
     } catch (error) { next(error); }
   }
@@ -136,7 +146,11 @@ class PurchasesController {
   async uploadPaymentImage(req, res, next) {
     try {
       if (!req.file) return res.status(400).json({ success: false, message: 'No file provided' });
+      // Verify payment exists
+      const payment = await db('supplier_payments').where('id', req.params.id).first();
+      if (!payment) return res.status(404).json({ success: false, message: 'Payment not found' });
       const imageUrl = getFileUrl('payments', req.file.filename);
+      // Note: supplier payments are global (not store-scoped) — permission middleware controls access
       const [image] = await db('attached_images').insert({
         id: generateUUID(),
         entity_type: 'supplier_payment',

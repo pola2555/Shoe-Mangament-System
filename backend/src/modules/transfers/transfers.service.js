@@ -12,7 +12,7 @@ const { generateUUID, generateDocumentNumber } = require('../../utils/generateCo
  * When cancelled: items revert to 'in_stock' at original store
  */
 class TransfersService {
-  async list({ from_store_id, to_store_id, status } = {}) {
+  async list({ from_store_id, to_store_id, status, store_id } = {}) {
     let query = db('store_transfers')
       .join('stores as from_s', 'store_transfers.from_store_id', 'from_s.id')
       .join('stores as to_s', 'store_transfers.to_store_id', 'to_s.id')
@@ -28,9 +28,16 @@ class TransfersService {
     if (from_store_id) query = query.where('store_transfers.from_store_id', from_store_id);
     if (to_store_id) query = query.where('store_transfers.to_store_id', to_store_id);
     if (status) query = query.where('store_transfers.status', status);
+    // store_id scoping: show transfers where user's store is either source or destination
+    if (store_id) {
+      query = query.where(function() {
+        this.where('store_transfers.from_store_id', store_id)
+            .orWhere('store_transfers.to_store_id', store_id);
+      });
+    }
 
     // Add item count
-    const transfers = await query;
+    const transfers = await query.limit(500);
     for (const t of transfers) {
       const count = await db('transfer_items').where('transfer_id', t.id).count('id as count').first();
       t.item_count = parseInt(count.count);
@@ -95,9 +102,10 @@ class TransfersService {
         created_by: userId,
       });
 
-      // Validate and lock items
-      for (const itemId of data.item_ids) {
-        const item = await trx('inventory_items').where('id', itemId).first();
+      // Validate and lock items (deduplicate to prevent double-counting)
+      const uniqueItemIds = [...new Set(data.item_ids)];
+      for (const itemId of uniqueItemIds) {
+        const item = await trx('inventory_items').where('id', itemId).forUpdate().first();
         if (!item) throw new AppError(`Inventory item ${itemId} not found`, 404);
         if (item.status !== 'in_stock') throw new AppError(`Item ${itemId} is not in stock (status: ${item.status})`, 400);
         if (item.store_id !== data.from_store_id) throw new AppError(`Item ${itemId} is not at the source store`, 400);
@@ -118,30 +126,33 @@ class TransfersService {
   }
 
   async ship(id) {
-    const transfer = await db('store_transfers').where('id', id).first();
-    if (!transfer) throw new AppError('Transfer not found', 404);
-    if (transfer.status !== 'pending') throw new AppError('Can only ship a pending transfer', 400);
+    await db.transaction(async (trx) => {
+      const transfer = await trx('store_transfers').where('id', id).forUpdate().first();
+      if (!transfer) throw new AppError('Transfer not found', 404);
+      if (transfer.status !== 'pending') throw new AppError('Can only ship a pending transfer', 400);
 
-    await db('store_transfers')
-      .where('id', id)
-      .update({ status: 'shipped', shipped_at: new Date(), updated_at: new Date() });
+      await trx('store_transfers')
+        .where('id', id)
+        .update({ status: 'shipped', shipped_at: new Date(), updated_at: new Date() });
+    });
 
     return this.getById(id);
   }
 
   async receive(id) {
-    const transfer = await db('store_transfers').where('id', id).first();
-    if (!transfer) throw new AppError('Transfer not found', 404);
-    if (transfer.status !== 'shipped' && transfer.status !== 'pending') {
-      throw new AppError('Can only receive a pending or shipped transfer', 400);
-    }
-
     await db.transaction(async (trx) => {
+      const transfer = await trx('store_transfers').where('id', id).forUpdate().first();
+      if (!transfer) throw new AppError('Transfer not found', 404);
+      if (transfer.status !== 'shipped' && transfer.status !== 'pending') {
+        throw new AppError('Can only receive a pending or shipped transfer', 400);
+      }
+
       const items = await trx('transfer_items').where('transfer_id', id);
 
       for (const ti of items) {
         await trx('inventory_items')
           .where('id', ti.inventory_item_id)
+          .forUpdate()
           .update({
             store_id: transfer.to_store_id,
             status: 'in_stock',
@@ -158,17 +169,18 @@ class TransfersService {
   }
 
   async cancel(id) {
-    const transfer = await db('store_transfers').where('id', id).first();
-    if (!transfer) throw new AppError('Transfer not found', 404);
-    if (transfer.status === 'received') throw new AppError('Cannot cancel a received transfer', 400);
-    if (transfer.status === 'cancelled') throw new AppError('Already cancelled', 400);
-
     await db.transaction(async (trx) => {
+      const transfer = await trx('store_transfers').where('id', id).forUpdate().first();
+      if (!transfer) throw new AppError('Transfer not found', 404);
+      if (transfer.status === 'received') throw new AppError('Cannot cancel a received transfer', 400);
+      if (transfer.status === 'cancelled') throw new AppError('Already cancelled', 400);
+
       const items = await trx('transfer_items').where('transfer_id', id);
 
       for (const ti of items) {
         await trx('inventory_items')
           .where('id', ti.inventory_item_id)
+          .forUpdate()
           .update({ status: 'in_stock', updated_at: new Date() });
       }
 

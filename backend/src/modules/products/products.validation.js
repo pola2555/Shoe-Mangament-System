@@ -9,7 +9,7 @@ const createProductSchema = Joi.object({
   default_selling_price: Joi.number().precision(2).min(0).allow(null),
   min_selling_price: Joi.number().precision(2).min(0).allow(null),
   max_selling_price: Joi.number().precision(2).min(0).allow(null),
-  description: Joi.string().allow('', null),
+  description: Joi.string().max(2000).allow('', null),
 });
 
 const updateProductSchema = Joi.object({
@@ -20,7 +20,7 @@ const updateProductSchema = Joi.object({
   default_selling_price: Joi.number().precision(2).min(0).allow(null),
   min_selling_price: Joi.number().precision(2).min(0).allow(null),
   max_selling_price: Joi.number().precision(2).min(0).allow(null),
-  description: Joi.string().allow('', null),
+  description: Joi.string().max(2000).allow('', null),
   is_active: Joi.boolean(),
 }).min(1);
 
@@ -54,7 +54,7 @@ const bulkCreateVariantsSchema = Joi.object({
       size_uk: Joi.string().max(10).allow('', null),
       size_cm: Joi.number().precision(1).min(0).allow(null),
     })
-  ).min(1).required(),
+  ).min(1).max(100).required(),
 });
 
 const updateVariantSchema = Joi.object({

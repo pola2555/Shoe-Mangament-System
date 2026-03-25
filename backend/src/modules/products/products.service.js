@@ -19,16 +19,20 @@ class ProductsService {
   // ================================================================
 
   async list({ search, brand, is_active } = {}) {
-    let query = db('products').orderBy('created_at', 'desc');
+    let query = db('products').orderBy('created_at', 'desc').limit(500);
 
     if (search) {
+      const safeSearch = search.replace(/[%_\\]/g, '\\$&');
       query = query.where(function () {
-        this.where('product_code', 'ilike', `%${search}%`)
-          .orWhere('model_name', 'ilike', `%${search}%`)
-          .orWhere('brand', 'ilike', `%${search}%`);
+        this.where('product_code', 'ilike', `%${safeSearch}%`)
+          .orWhere('model_name', 'ilike', `%${safeSearch}%`)
+          .orWhere('brand', 'ilike', `%${safeSearch}%`);
       });
     }
-    if (brand) query = query.where('brand', 'ilike', `%${brand}%`);
+    if (brand) {
+      const safeBrand = brand.replace(/[%_\\]/g, '\\$&');
+      query = query.where('brand', 'ilike', `%${safeBrand}%`);
+    }
     if (is_active !== undefined) query = query.where('is_active', is_active);
 
     const products = await query;
@@ -120,10 +124,17 @@ class ProductsService {
   }
 
   async update(id, data) {
-    data.updated_at = new Date();
+    // Whitelist allowed fields to prevent mass assignment
+    const allowed = ['model_name', 'product_code', 'brand', 'category', 'description',
+      'default_selling_price', 'min_selling_price', 'max_selling_price', 'net_price', 'is_active'];
+    const safeData = {};
+    for (const key of allowed) {
+      if (data[key] !== undefined) safeData[key] = data[key];
+    }
+    safeData.updated_at = new Date();
     const [product] = await db('products')
       .where('id', id)
-      .update(data)
+      .update(safeData)
       .returning('*');
     if (!product) throw new AppError('Product not found', 404);
     return product;
@@ -150,15 +161,25 @@ class ProductsService {
   async createColor(productId, data) {
     await this._ensureProductExists(productId);
     const [color] = await db('product_colors')
-      .insert({ id: generateUUID(), product_id: productId, ...data })
+      .insert({
+        id: generateUUID(),
+        product_id: productId,
+        color_name: data.color_name,
+        hex_code: data.hex_code || null,
+      })
       .returning('*');
     return color;
   }
 
   async updateColor(colorId, data) {
+    const safeData = {};
+    if (data.color_name !== undefined) safeData.color_name = data.color_name;
+    if (data.hex_code !== undefined) safeData.hex_code = data.hex_code;
+    if (data.is_active !== undefined) safeData.is_active = data.is_active;
+    safeData.updated_at = new Date();
     const [color] = await db('product_colors')
       .where('id', colorId)
-      .update(data)
+      .update(safeData)
       .returning('*');
     if (!color) throw new AppError('Color not found', 404);
     return color;
@@ -314,9 +335,15 @@ class ProductsService {
   }
 
   async updateVariant(variantId, data) {
+    const safeData = {};
+    if (data.size_us !== undefined) safeData.size_us = data.size_us;
+    if (data.size_uk !== undefined) safeData.size_uk = data.size_uk;
+    if (data.size_cm !== undefined) safeData.size_cm = data.size_cm;
+    if (data.is_active !== undefined) safeData.is_active = data.is_active;
+    safeData.updated_at = new Date();
     const [variant] = await db('product_variants')
       .where('id', variantId)
-      .update(data)
+      .update(safeData)
       .returning('*');
     if (!variant) throw new AppError('Variant not found', 404);
     return variant;
@@ -344,6 +371,11 @@ class ProductsService {
     const store = await db('stores').where('id', storeId).first();
     if (!store) throw new AppError('Store not found', 404);
 
+    const safeData = {};
+    if (data.selling_price !== undefined) safeData.selling_price = data.selling_price;
+    if (data.min_selling_price !== undefined) safeData.min_selling_price = data.min_selling_price;
+    if (data.max_selling_price !== undefined) safeData.max_selling_price = data.max_selling_price;
+
     // Upsert: insert or update
     const existing = await db('store_product_prices')
       .where({ product_id: productId, store_id: storeId })
@@ -352,7 +384,7 @@ class ProductsService {
     if (existing) {
       const [price] = await db('store_product_prices')
         .where('id', existing.id)
-        .update({ ...data, updated_at: new Date() })
+        .update({ ...safeData, updated_at: new Date() })
         .returning('*');
       return price;
     }
@@ -362,7 +394,7 @@ class ProductsService {
         id: generateUUID(),
         product_id: productId,
         store_id: storeId,
-        ...data,
+        ...safeData,
       })
       .returning('*');
     return price;

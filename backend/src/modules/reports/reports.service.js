@@ -92,12 +92,15 @@ class ReportsService {
     );
 
     // Recent 5 activity
-    const recentActivity = await db('activity_log')
-      .leftJoin('users', 'activity_log.user_id', 'users.id')
-      .select('activity_log.id', 'activity_log.action', 'activity_log.module',
-        'activity_log.details', 'activity_log.created_at', 'users.full_name as user_name')
-      .orderBy('activity_log.created_at', 'desc')
-      .limit(5);
+    const recentActivity = await applyStore(
+      db('activity_log')
+        .leftJoin('users', 'activity_log.user_id', 'users.id')
+        .select('activity_log.id', 'activity_log.action', 'activity_log.module',
+          'activity_log.details', 'activity_log.created_at', 'users.full_name as user_name')
+        .orderBy('activity_log.created_at', 'desc')
+        .limit(5),
+      'activity_log.store_id'
+    );
 
     return {
       pending_transfers: pendingTransfers,
@@ -113,7 +116,7 @@ class ReportsService {
 
   async getDashboardStats(filters = {}) {
     const { startDate, endDate, store_id, limit = 5 } = filters;
-    const lmt = parseInt(limit, 10) || 5;
+    const lmt = Math.min(50, Math.max(1, parseInt(limit, 10) || 5));
 
     const applyDateFilter = (query, dateColumn = 'created_at') => {
       if (startDate) query.where(dateColumn, '>=', startDate);
@@ -391,7 +394,7 @@ class ReportsService {
   // ============================================================
   async getProductAnalytics(filters = {}) {
     const { startDate, endDate, store_id, limit = 20 } = filters;
-    const lmt = parseInt(limit, 10) || 20;
+    const lmt = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
 
     const applyFilters = (query, dateCol = 'sales.created_at', storeCol = 'sales.store_id') => {
       if (startDate) query.where(dateCol, '>=', startDate);
@@ -671,7 +674,7 @@ class ReportsService {
   // ============================================================
   async getCustomerAnalytics(filters = {}) {
     const { startDate, endDate, store_id, limit = 20 } = filters;
-    const lmt = parseInt(limit, 10) || 20;
+    const lmt = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
 
     const applyFilters = (query, dateCol = 'sales.created_at', storeCol = 'sales.store_id') => {
       if (startDate) query.where(dateCol, '>=', startDate);

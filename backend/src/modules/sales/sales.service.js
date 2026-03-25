@@ -36,10 +36,11 @@ class SalesService {
     }
 
     if (search) {
+      const safeSearch = search.replace(/[%_\\]/g, '\\$&');
       query = query.where(function() {
-        this.where('sales.sale_number', 'ilike', `%${search}%`)
-            .orWhere('customers.phone', 'ilike', `%${search}%`)
-            .orWhere('customers.name', 'ilike', `%${search}%`);
+        this.where('sales.sale_number', 'ilike', `%${safeSearch}%`)
+            .orWhere('customers.phone', 'ilike', `%${safeSearch}%`)
+            .orWhere('customers.name', 'ilike', `%${safeSearch}%`);
       });
     }
 
@@ -113,7 +114,7 @@ class SalesService {
       for (const reqItem of data.items) {
         const itemId = reqItem.id;
         const item = await trx('inventory_items')
-          .where('id', itemId).first();
+          .where('id', itemId).forUpdate().first();
 
         if (!item) throw new AppError(`Item ${itemId} not found`, 404);
         if (item.status !== 'in_stock') throw new AppError(`Item ${itemId} is not available (status: ${item.status})`, 400);
@@ -135,6 +136,9 @@ class SalesService {
 
         if (reqItem.sale_price !== undefined && reqItem.sale_price !== null && reqItem.sale_price !== '') {
           sellingPrice = parseFloat(reqItem.sale_price);
+          if (isNaN(sellingPrice) || sellingPrice < 0) {
+            throw new AppError(`Invalid sale price for ${product.model_name}`, 400);
+          }
           
           // Validate against min/max bounds if they exist
           if (product.min_selling_price && sellingPrice < parseFloat(product.min_selling_price)) {
@@ -153,7 +157,7 @@ class SalesService {
           cost_at_sale: parseFloat(item.cost),
         });
 
-        totalAmount += sellingPrice;
+        totalAmount = Math.round((totalAmount + sellingPrice) * 100) / 100;
 
         // Mark item as sold
         await trx('inventory_items')
@@ -161,8 +165,10 @@ class SalesService {
           .update({ status: 'sold', sold_at: new Date(), updated_at: new Date() });
       }
 
-      const discountAmount = data.discount_amount || 0;
-      const finalAmount = totalAmount - discountAmount;
+      const discountAmount = Math.round((parseFloat(data.discount_amount) || 0) * 100) / 100;
+      if (discountAmount < 0) throw new AppError('Discount amount cannot be negative', 400);
+      if (discountAmount > totalAmount) throw new AppError('Discount cannot exceed the total amount', 400);
+      const finalAmount = Math.round((totalAmount - discountAmount) * 100) / 100;
 
       // Create sale
       await trx('sales').insert({
@@ -199,10 +205,24 @@ class SalesService {
     const sale = await db('sales').where('id', saleId).first();
     if (!sale) throw new AppError('Sale not found', 404);
 
+    // Validate payment amount
+    const amount = parseFloat(paymentData.amount);
+    if (isNaN(amount) || amount <= 0) throw new AppError('Payment amount must be positive', 400);
+
+    // Prevent overpayment
+    const existingPayments = await db('sale_payments').where('sale_id', saleId).sum('amount as total').first();
+    const totalPaid = Math.round((parseFloat(existingPayments.total || 0)) * 100) / 100;
+    const saleTotal = Math.round(parseFloat(sale.final_amount) * 100) / 100;
+    if (Math.round((totalPaid + amount) * 100) / 100 > saleTotal) {
+      throw new AppError(`Payment would exceed sale total. Remaining: ${(saleTotal - totalPaid).toFixed(2)}`, 400);
+    }
+
     const [payment] = await db('sale_payments').insert({
       id: generateUUID(),
       sale_id: saleId,
-      ...paymentData,
+      amount: amount,
+      payment_method: paymentData.payment_method,
+      reference_no: paymentData.reference_no || null,
     }).returning('*');
 
     return payment;

@@ -107,17 +107,24 @@ class UsersService {
       throw new AppError('User not found', 404);
     }
 
+    // Whitelist allowed fields
+    const safeData = {};
+    if (data.email !== undefined) safeData.email = data.email;
+    if (data.full_name !== undefined) safeData.full_name = data.full_name;
+    if (data.role_id !== undefined) safeData.role_id = data.role_id;
+    if (data.store_id !== undefined) safeData.store_id = data.store_id;
+    if (data.is_active !== undefined) safeData.is_active = data.is_active;
+
     // If password is provided, hash it
     if (data.password) {
-      data.password_hash = await bcrypt.hash(data.password, 12);
-      delete data.password;
+      safeData.password_hash = await bcrypt.hash(data.password, 12);
     }
 
-    data.updated_at = new Date();
+    safeData.updated_at = new Date();
 
     const [user] = await db('users')
       .where('id', id)
-      .update(data)
+      .update(safeData)
       .returning(['id', 'username', 'email', 'full_name', 'role_id', 'store_id', 'is_active', 'updated_at']);
 
     return user;
@@ -136,6 +143,9 @@ class UsersService {
 
     const password_hash = await bcrypt.hash(newPassword, 12);
     await db('users').where('id', userId).update({ password_hash, updated_at: new Date() });
+
+    // Revoke all refresh tokens so compromised sessions are invalidated
+    await db('refresh_tokens').where('user_id', userId).update({ is_revoked: true });
   }
 
   /**

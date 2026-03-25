@@ -48,11 +48,12 @@ class InventoryService {
     if (source) query = query.where('inventory_items.source', source);
     if (product_id) query = query.where('products.id', product_id);
     if (search) {
+      const safeSearch = search.replace(/[%_\\]/g, '\\$&');
       query = query.where(function () {
-        this.where('product_variants.sku', 'ilike', `%${search}%`)
-          .orWhere('products.model_name', 'ilike', `%${search}%`)
-          .orWhere('products.product_code', 'ilike', `%${search}%`)
-          .orWhere('products.brand', 'ilike', `%${search}%`);
+        this.where('product_variants.sku', 'ilike', `%${safeSearch}%`)
+          .orWhere('products.model_name', 'ilike', `%${safeSearch}%`)
+          .orWhere('products.product_code', 'ilike', `%${safeSearch}%`)
+          .orWhere('products.brand', 'ilike', `%${safeSearch}%`);
       });
     }
     if (size_min) query = query.where('product_variants.size_eu', '>=', size_min);
@@ -123,14 +124,15 @@ class InventoryService {
     if (store_id) query = query.where('inventory_items.store_id', store_id);
 
     if (search) {
+      const safeSearch = search.replace(/[%_\\]/g, '\\$&');
       query = query.where(function () {
-        this.where('products.model_name', 'ilike', `%${search}%`)
-          .orWhere('products.product_code', 'ilike', `%${search}%`)
-          .orWhere('products.brand', 'ilike', `%${search}%`)
-          .orWhere('product_colors.color_name', 'ilike', `%${search}%`)
-          .orWhere('product_variants.sku', 'ilike', `%${search}%`)
-          .orWhere(db.raw('CAST(product_variants.size_eu AS TEXT)'), 'ilike', `%${search}%`)
-          .orWhere(db.raw('CAST(inventory_items.cost AS TEXT)'), 'ilike', `%${search}%`);
+        this.where('products.model_name', 'ilike', `%${safeSearch}%`)
+          .orWhere('products.product_code', 'ilike', `%${safeSearch}%`)
+          .orWhere('products.brand', 'ilike', `%${safeSearch}%`)
+          .orWhere('product_colors.color_name', 'ilike', `%${safeSearch}%`)
+          .orWhere('product_variants.sku', 'ilike', `%${safeSearch}%`)
+          .orWhere(db.raw('CAST(product_variants.size_eu AS TEXT)'), 'ilike', `%${safeSearch}%`)
+          .orWhere(db.raw('CAST(inventory_items.cost AS TEXT)'), 'ilike', `%${safeSearch}%`);
       });
     }
 

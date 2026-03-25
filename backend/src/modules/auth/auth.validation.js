@@ -4,8 +4,9 @@ const loginSchema = Joi.object({
   username: Joi.string().required().messages({
     'any.required': 'Username is required',
   }),
-  password: Joi.string().required().messages({
+  password: Joi.string().max(128).required().messages({
     'any.required': 'Password is required',
+    'string.max': 'Password is too long',
   }),
 });
 

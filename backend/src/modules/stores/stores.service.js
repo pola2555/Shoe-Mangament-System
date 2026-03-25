@@ -19,17 +19,27 @@ class StoresService {
   }
 
   async create(data) {
+    const safeData = { id: generateUUID() };
+    if (data.name !== undefined) safeData.name = data.name;
+    if (data.address !== undefined) safeData.address = data.address;
+    if (data.phone !== undefined) safeData.phone = data.phone;
+    if (data.is_warehouse !== undefined) safeData.is_warehouse = data.is_warehouse;
     const [store] = await db('stores')
-      .insert({ id: generateUUID(), ...data })
+      .insert(safeData)
       .returning('*');
     return store;
   }
 
   async update(id, data) {
-    data.updated_at = new Date();
+    const safeData = { updated_at: new Date() };
+    if (data.name !== undefined) safeData.name = data.name;
+    if (data.address !== undefined) safeData.address = data.address;
+    if (data.phone !== undefined) safeData.phone = data.phone;
+    if (data.is_warehouse !== undefined) safeData.is_warehouse = data.is_warehouse;
+    if (data.is_active !== undefined) safeData.is_active = data.is_active;
     const [store] = await db('stores')
       .where('id', id)
-      .update(data)
+      .update(safeData)
       .returning('*');
     if (!store) {
       throw new AppError('Store not found', 404);

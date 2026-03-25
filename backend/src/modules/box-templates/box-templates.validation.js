@@ -3,7 +3,7 @@ const Joi = require('joi');
 const createBoxTemplateSchema = Joi.object({
   name: Joi.string().max(100).required(),
   product_id: Joi.string().uuid().allow(null),
-  notes: Joi.string().allow('', null),
+  notes: Joi.string().max(500).allow('', null),
   items: Joi.array().items(
     Joi.object({
       size: Joi.string().max(10).required(),
@@ -16,7 +16,7 @@ const createBoxTemplateSchema = Joi.object({
 const updateBoxTemplateSchema = Joi.object({
   name: Joi.string().max(100),
   product_id: Joi.string().uuid().allow(null),
-  notes: Joi.string().allow('', null),
+  notes: Joi.string().max(500).allow('', null),
   items: Joi.array().items(
     Joi.object({
       size: Joi.string().max(10).required(),
