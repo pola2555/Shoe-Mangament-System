@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authAPI } from '../api';
 
 const AuthContext = createContext(null);
@@ -7,12 +7,23 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const applyUserPreferences = useCallback((u) => {
+    if (u) {
+      window.dispatchEvent(new CustomEvent('user-preferences', {
+        detail: { theme: u.theme, locale: u.locale }
+      }));
+    }
+  }, []);
+
   // On mount: check if we have a stored token and fetch user profile
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
     if (token) {
       authAPI.me()
-        .then(({ data }) => setUser(data.data))
+        .then(({ data }) => {
+          setUser(data.data);
+          applyUserPreferences(data.data);
+        })
         .catch(() => {
           localStorage.removeItem('accessToken');
           localStorage.removeItem('refreshToken');
@@ -21,13 +32,14 @@ export function AuthProvider({ children }) {
     } else {
       setLoading(false);
     }
-  }, []);
+  }, [applyUserPreferences]);
 
   const login = async (username, password) => {
     const { data } = await authAPI.login(username, password);
     localStorage.setItem('accessToken', data.data.accessToken);
     localStorage.setItem('refreshToken', data.data.refreshToken);
     setUser(data.data.user);
+    applyUserPreferences(data.data.user);
     return data.data.user;
   };
 
@@ -68,7 +80,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, hasPermission, filterStores }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, hasPermission, filterStores, applyUserPreferences }}>
       {children}
     </AuthContext.Provider>
   );

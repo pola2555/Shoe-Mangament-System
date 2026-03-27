@@ -1,6 +1,9 @@
 {
   "name": "PT Shoe ERP",
   "short_name": "PT ERP",
+  "description": "Multi-Store Shoe Retail Management System",
+  "start_url": "/",
+  "scope": "/",
   "icons": [
     {
       "src": "/android-chrome-192x192.png",
@@ -10,10 +13,12 @@
     {
       "src": "/android-chrome-512x512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ],
   "theme_color": "#1a1a2e",
   "background_color": "#1a1a2e",
-  "display": "standalone"
+  "display": "standalone",
+  "orientation": "portrait"
 }

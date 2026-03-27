@@ -156,6 +156,8 @@ class AuthService {
         'users.role_id',
         'users.last_login_at',
         'users.created_at',
+        'users.theme',
+        'users.locale',
         'roles.name as role_name',
         'stores.name as store_name'
       )
@@ -181,6 +183,18 @@ class AuthService {
     user.assigned_stores = assignedStores.map(s => s.store_id);
 
     return user;
+  }
+
+  async updatePreferences(userId, prefs) {
+    const allowed = {};
+    if (prefs.theme && ['dark', 'light'].includes(prefs.theme)) allowed.theme = prefs.theme;
+    if (prefs.locale && ['en', 'ar'].includes(prefs.locale)) allowed.locale = prefs.locale;
+
+    if (Object.keys(allowed).length > 0) {
+      await db('users').where('id', userId).update(allowed);
+    }
+
+    return allowed;
   }
 
   // --- Private helpers ---

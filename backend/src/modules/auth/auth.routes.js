@@ -23,5 +23,6 @@ router.post('/refresh', authLimiter, validate(refreshSchema), controller.refresh
 // Protected routes
 router.post('/logout', auth, controller.logout);
 router.get('/me', auth, controller.me);
+router.put('/preferences', auth, controller.updatePreferences);
 
 module.exports = router;

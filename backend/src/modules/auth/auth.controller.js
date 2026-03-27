@@ -43,6 +43,15 @@ class AuthController {
       next(error);
     }
   }
+
+  async updatePreferences(req, res, next) {
+    try {
+      const updated = await authService.updatePreferences(req.user.id, req.body);
+      res.json({ success: true, data: updated });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new AuthController();

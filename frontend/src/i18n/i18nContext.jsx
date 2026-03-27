@@ -15,6 +15,12 @@ export function I18nProvider({ children }) {
     localStorage.setItem('locale', locale);
   }, [locale, dir]);
 
+  useEffect(() => {
+    const handler = (e) => { if (e.detail?.locale && translations[e.detail.locale]) setLocaleState(e.detail.locale); };
+    window.addEventListener('user-preferences', handler);
+    return () => window.removeEventListener('user-preferences', handler);
+  }, []);
+
   const setLocale = useCallback((lang) => {
     if (translations[lang]) setLocaleState(lang);
   }, []);

@@ -5,6 +5,7 @@ export const authAPI = {
   refresh: (refreshToken) => api.post('/auth/refresh', { refreshToken }),
   logout: (refreshToken) => api.post('/auth/logout', { refreshToken }),
   me: () => api.get('/auth/me'),
+  updatePreferences: (prefs) => api.put('/auth/preferences', prefs),
 };
 
 export const storesAPI = {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { useTranslation } from '../../i18n/i18nContext';
 import { useAuth } from '../../context/AuthContext';
+import { authAPI } from '../../api';
 import toast from 'react-hot-toast';
 import {
   HiOutlineLanguage,
@@ -63,13 +64,13 @@ export default function SettingsPage() {
           <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
             <button
               className={`btn ${locale === 'en' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setLocale('en')}
+              onClick={() => { setLocale('en'); authAPI.updatePreferences({ locale: 'en' }).catch(() => {}); }}
             >
               {t('settings.english')}
             </button>
             <button
               className={`btn ${locale === 'ar' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setLocale('ar')}
+              onClick={() => { setLocale('ar'); authAPI.updatePreferences({ locale: 'ar' }).catch(() => {}); }}
               style={{ fontFamily: "'Noto Sans Arabic', 'Segoe UI', sans-serif" }}
             >
               {t('settings.arabic')}
@@ -93,14 +94,14 @@ export default function SettingsPage() {
           <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
             <button
               className={`btn ${theme === 'dark' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => theme !== 'dark' && toggleTheme()}
+              onClick={() => { if (theme !== 'dark') { toggleTheme(); authAPI.updatePreferences({ theme: 'dark' }).catch(() => {}); } }}
             >
               <HiOutlineMoon size={18} />
               {t('settings.dark_mode')}
             </button>
             <button
               className={`btn ${theme === 'light' ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => theme !== 'light' && toggleTheme()}
+              onClick={() => { if (theme !== 'light') { toggleTheme(); authAPI.updatePreferences({ theme: 'light' }).catch(() => {}); } }}
             >
               <HiOutlineSun size={18} />
               {t('settings.light_mode')}
