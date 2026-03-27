@@ -2,6 +2,7 @@ const salesService = require('./sales.service');
 const db = require('../../config/database');
 const { generateUUID } = require('../../utils/generateCodes');
 const { getUploadedUrl } = require('../../middleware/upload');
+const { userHasStoreAccess } = require('../../middleware/auth');
 
 class SalesController {
   async list(req, res, next) {
@@ -9,7 +10,11 @@ class SalesController {
       const filters = { ...req.query };
       // Enforce store scoping for non-admin users
       if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
-        filters.store_id = req.user.store_id;
+        if (req.user.assigned_stores?.length > 0) {
+          filters.store_ids = req.user.assigned_stores;
+        } else {
+          filters.store_id = req.user.store_id;
+        }
       }
       const sales = await salesService.list(filters);
       res.json({ success: true, data: sales });
@@ -20,7 +25,7 @@ class SalesController {
     try {
       const sale = await salesService.getById(req.params.id);
       // Enforce store scoping for non-admin users
-      if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores && sale.store_id !== req.user.store_id) {
+      if (!userHasStoreAccess(req.user, sale.store_id)) {
         return res.status(403).json({ success: false, message: 'Access denied' });
       }
       res.json({ success: true, data: sale });
@@ -39,7 +44,7 @@ class SalesController {
       // Verify store access before allowing payment
       const sale = await db('sales').where('id', req.params.id).first();
       if (!sale) return res.status(404).json({ success: false, message: 'Sale not found' });
-      if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores && sale.store_id !== req.user.store_id) {
+      if (!userHasStoreAccess(req.user, sale.store_id)) {
         return res.status(403).json({ success: false, message: 'Access denied' });
       }
       const payment = await salesService.addPayment(req.params.id, req.body);
@@ -54,7 +59,7 @@ class SalesController {
       const sale = await db('sales').where('id', req.params.id).first();
       if (!sale) return res.status(404).json({ success: false, message: 'Sale not found' });
       // Enforce store scoping
-      if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores && sale.store_id !== req.user.store_id) {
+      if (!userHasStoreAccess(req.user, sale.store_id)) {
         return res.status(403).json({ success: false, message: 'Access denied' });
       }
       const payment = await db('sale_payments').where({ id: req.params.paymentId, sale_id: req.params.id }).first();

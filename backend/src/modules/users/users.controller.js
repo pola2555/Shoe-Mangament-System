@@ -39,7 +39,7 @@ class UsersController {
       if (!isSelf && !isAdmin) {
         // Non-admin: only allow viewing users in same store
         const target = await usersService.getById(targetId);
-        if (!hasAllStores && target.store_id !== req.user.store_id) {
+        if (!hasAllStores && !req.user.assigned_stores?.includes(target.store_id) && target.store_id !== req.user.store_id) {
           return res.status(403).json({ success: false, message: 'Access denied' });
         }
         return res.json({ success: true, data: target });

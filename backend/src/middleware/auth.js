@@ -50,6 +50,12 @@ async function auth(req, res, next) {
       return acc;
     }, {});
 
+    // Fetch assigned stores
+    const assignedStores = await db('user_stores')
+      .where('user_id', user.id)
+      .select('store_id');
+    user.assigned_stores = assignedStores.map(s => s.store_id);
+
     req.user = user;
     next();
   } catch (error) {
@@ -63,4 +69,19 @@ async function auth(req, res, next) {
   }
 }
 
+/**
+ * Check if a user has access to a specific store.
+ * Admins and users with all_stores permission always have access.
+ * Otherwise checks assigned_stores first, then falls back to store_id.
+ */
+function userHasStoreAccess(user, storeId) {
+  if (!storeId) return true;
+  if (user.role_name === 'admin' || user.permissions?.all_stores) return true;
+  if (user.assigned_stores && user.assigned_stores.length > 0) {
+    return user.assigned_stores.includes(storeId);
+  }
+  return user.store_id === storeId;
+}
+
 module.exports = auth;
+module.exports.userHasStoreAccess = userHasStoreAccess;

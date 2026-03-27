@@ -1,5 +1,6 @@
 const expensesService = require('./expenses.service');
 const db = require('../../config/database');
+const { userHasStoreAccess } = require('../../middleware/auth');
 
 class ExpensesController {
   async list(req, res, next) {
@@ -13,7 +14,7 @@ class ExpensesController {
   async create(req, res, next) {
     try {
       // Verify user has access to the target store
-      if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores && req.body.store_id !== req.user.store_id) {
+      if (!userHasStoreAccess(req.user, req.body.store_id)) {
         return res.status(403).json({ success: false, message: 'Access denied: cannot create expense for another store' });
       }
       res.status(201).json({ success: true, data: await expensesService.create(req.body, req.user.id) });
@@ -26,7 +27,7 @@ class ExpensesController {
       if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
         const expense = await db('expenses').where('id', req.params.id).first();
         if (!expense) return res.status(404).json({ success: false, message: 'Expense not found' });
-        if (expense.store_id !== req.user.store_id) {
+        if (!userHasStoreAccess(req.user, expense.store_id)) {
           return res.status(403).json({ success: false, message: 'Access denied' });
         }
       }
@@ -40,7 +41,7 @@ class ExpensesController {
       if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
         const expense = await db('expenses').where('id', req.params.id).first();
         if (!expense) return res.status(404).json({ success: false, message: 'Expense not found' });
-        if (expense.store_id !== req.user.store_id) {
+        if (!userHasStoreAccess(req.user, expense.store_id)) {
           return res.status(403).json({ success: false, message: 'Access denied' });
         }
       }
@@ -53,7 +54,11 @@ class ExpensesController {
       const filters = { ...req.query };
       // Enforce store scoping for non-admin users
       if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
-        filters.store_id = req.user.store_id;
+        if (req.user.assigned_stores?.length > 0) {
+          filters.store_ids = req.user.assigned_stores;
+        } else {
+          filters.store_id = req.user.store_id;
+        }
       }
       res.json({ success: true, data: await expensesService.summary(filters) });
     }

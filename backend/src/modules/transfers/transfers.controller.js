@@ -1,17 +1,7 @@
 const transfersService = require('./transfers.service');
 const db = require('../../config/database');
 const AppError = require('../../utils/AppError');
-
-// Helper: verify user has access to the given store
-async function verifyStoreAccess(user, storeId) {
-  if (user.role_name === 'admin' || user.permissions.all_stores) return;
-  const assignment = await db('user_stores')
-    .where({ user_id: user.id, store_id: storeId })
-    .first();
-  if (!assignment && user.store_id !== storeId) {
-    throw new AppError('Access denied: you are not assigned to this store', 403);
-  }
-}
+const { userHasStoreAccess } = require('../../middleware/auth');
 
 class TransfersController {
   async list(req, res, next) {
@@ -19,7 +9,11 @@ class TransfersController {
       const filters = { ...req.query };
       // Non-admin users only see transfers involving their store
       if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
-        filters.store_id = req.user.store_id;
+        if (req.user.assigned_stores?.length > 0) {
+          filters.store_ids = req.user.assigned_stores;
+        } else {
+          filters.store_id = req.user.store_id;
+        }
       }
       const transfers = await transfersService.list(filters);
       res.json({ success: true, data: transfers });
@@ -30,9 +24,8 @@ class TransfersController {
     try {
       const transfer = await transfersService.getById(req.params.id);
       // Verify user has access to source or destination store
-      if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
-        await verifyStoreAccess(req.user, transfer.from_store_id).catch(() => null)
-          || await verifyStoreAccess(req.user, transfer.to_store_id);
+      if (!userHasStoreAccess(req.user, transfer.from_store_id) && !userHasStoreAccess(req.user, transfer.to_store_id)) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
       }
       res.json({ success: true, data: transfer });
     } catch (error) { next(error); }
@@ -40,7 +33,9 @@ class TransfersController {
 
   async create(req, res, next) {
     try {
-      await verifyStoreAccess(req.user, req.body.from_store_id);
+      if (!userHasStoreAccess(req.user, req.body.from_store_id)) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
       const transfer = await transfersService.create(req.body, req.user.id);
       res.status(201).json({ success: true, data: transfer });
     } catch (error) { next(error); }
@@ -50,7 +45,9 @@ class TransfersController {
     try {
       // Verify user has access to source store
       const existing = await transfersService.getById(req.params.id);
-      await verifyStoreAccess(req.user, existing.from_store_id);
+      if (!userHasStoreAccess(req.user, existing.from_store_id)) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
       const transfer = await transfersService.ship(req.params.id);
       res.json({ success: true, data: transfer });
     } catch (error) { next(error); }
@@ -60,7 +57,9 @@ class TransfersController {
     try {
       // Verify user has access to the destination store
       const transfer = await transfersService.getById(req.params.id);
-      await verifyStoreAccess(req.user, transfer.to_store_id);
+      if (!userHasStoreAccess(req.user, transfer.to_store_id)) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
       const result = await transfersService.receive(req.params.id);
       res.json({ success: true, data: result });
     } catch (error) { next(error); }
@@ -70,7 +69,9 @@ class TransfersController {
     try {
       // Verify user has access to source store
       const existing = await transfersService.getById(req.params.id);
-      await verifyStoreAccess(req.user, existing.from_store_id);
+      if (!userHasStoreAccess(req.user, existing.from_store_id)) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
       const transfer = await transfersService.cancel(req.params.id);
       res.json({ success: true, data: transfer });
     } catch (error) { next(error); }

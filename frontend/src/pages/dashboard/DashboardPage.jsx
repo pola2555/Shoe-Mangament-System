@@ -15,6 +15,7 @@ export default function DashboardPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const isAdminSection = hasPermission('dashboard_admin', 'read');
+  const canViewReports = hasPermission('reports', 'read');
 
   const [snapshot, setSnapshot] = useState(null);
   const [adminData, setAdminData] = useState(null);
@@ -24,16 +25,23 @@ export default function DashboardPage() {
     let active = true;
     setLoading(true);
 
-    const promises = [reportsAPI.dashboardHome()];
+    const promises = [];
+    if (canViewReports) promises.push(reportsAPI.dashboardHome());
     if (isAdminSection) promises.push(reportsAPI.dashboardAdmin());
 
+    if (promises.length === 0) {
+      setLoading(false);
+      return;
+    }
+
     Promise.all(promises)
-      .then(([homeRes, adminRes]) => {
+      .then((results) => {
         if (!active) return;
-        setSnapshot(homeRes.data.data);
-        if (adminRes) setAdminData(adminRes.data.data);
+        let idx = 0;
+        if (canViewReports) setSnapshot(results[idx++]?.data?.data);
+        if (isAdminSection) setAdminData(results[idx++]?.data?.data);
       })
-      .catch(console.error)
+      .catch(() => {})
       .finally(() => { if (active) setLoading(false); });
 
     return () => { active = false; };

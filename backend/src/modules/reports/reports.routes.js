@@ -9,7 +9,11 @@ router.use(auth);
 // Enforce store scoping for non-admin users on all report endpoints
 function enforceStoreScope(req, res, next) {
   if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
-    req.query.store_id = req.user.store_id;
+    if (req.user.assigned_stores?.length > 0) {
+      req.query.store_ids = req.user.assigned_stores;
+    } else {
+      req.query.store_id = req.user.store_id;
+    }
   }
   next();
 }
