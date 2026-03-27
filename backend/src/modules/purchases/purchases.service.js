@@ -460,7 +460,17 @@ class PurchasesService {
           const color = await trx('product_colors').where('id', item.product_color_id).first();
           const colorAbbr = color.color_name.substring(0, 3).toUpperCase();
           const code = product.product_code || 'NOCODE';
-          const sku = `${code}-${colorAbbr}-${item.size_eu}`;
+          let sku = `${code}-${colorAbbr}-${item.size_eu}`;
+
+          // Ensure SKU is unique — append suffix if collision
+          const existing = await trx('product_variants').where('sku', sku).first();
+          if (existing) {
+            const count = await trx('product_variants')
+              .where('sku', 'like', `${sku}%`)
+              .count('id as cnt')
+              .first();
+            sku = `${sku}-${Number(count.cnt) + 1}`;
+          }
 
           [variant] = await trx('product_variants').insert({
             id: generateUUID(),

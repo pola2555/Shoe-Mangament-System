@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pt-erp-v1';
+const CACHE_NAME = 'pt-erp-v2';
 const PRECACHE = ['/', '/index.html'];
 
 self.addEventListener('install', (e) => {
