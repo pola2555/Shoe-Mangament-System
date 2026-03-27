@@ -1,5 +1,5 @@
 const productsService = require('./products.service');
-const { getFileUrl } = require('../../middleware/upload');
+const { getUploadedUrl } = require('../../middleware/upload');
 
 class ProductsController {
   // --- Products ---
@@ -88,7 +88,7 @@ class ProductsController {
         .where({ id: req.params.colorId, product_id: req.params.id })
         .first();
       if (!color) return res.status(404).json({ success: false, message: 'Color not found for this product' });
-      const imageUrl = getFileUrl('products', req.file.filename);
+      const imageUrl = getUploadedUrl('products', req.file);
       const image = await productsService.addImage(
         req.params.colorId,
         imageUrl,

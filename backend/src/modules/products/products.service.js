@@ -1,6 +1,7 @@
 const db = require('../../config/database');
 const AppError = require('../../utils/AppError');
 const { generateUUID } = require('../../utils/generateCodes');
+const { deleteFile } = require('../../middleware/upload');
 
 /**
  * Products service — CRUD for products, colors, images, variants, and store pricing.
@@ -254,6 +255,9 @@ class ProductsService {
     if (!image) throw new AppError('Image not found', 404);
 
     await db('product_color_images').where('id', imageId).del();
+
+    // Clean up the actual file from storage
+    try { await deleteFile(image.image_url); } catch { /* best effort */ }
 
     // If deleted image was primary, make the first remaining image primary
     if (image.is_primary) {

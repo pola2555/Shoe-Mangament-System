@@ -1,5 +1,5 @@
 const purchasesService = require('./purchases.service');
-const { getFileUrl } = require('../../middleware/upload');
+const { getUploadedUrl, deleteFile } = require('../../middleware/upload');
 const db = require('../../config/database');
 const { generateUUID } = require('../../utils/generateCodes');
 
@@ -38,7 +38,7 @@ class PurchasesController {
       if (!req.file) {
         return res.status(400).json({ success: false, message: 'No image file provided' });
       }
-      const fileUrl = getFileUrl('invoices', req.file.filename);
+      const fileUrl = getUploadedUrl('invoices', req.file);
       const invoice = await purchasesService.uploadPrimaryImage(req.params.id, fileUrl);
       res.json({ success: true, data: invoice });
     } catch (error) { next(error); }
@@ -94,7 +94,7 @@ class PurchasesController {
       // Verify invoice exists
       const invoice = await db('purchase_invoices').where('id', req.params.id).first();
       if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
-      const imageUrl = getFileUrl('invoices', req.file.filename);
+      const imageUrl = getUploadedUrl('invoices', req.file);
       const [image] = await db('attached_images').insert({
         id: generateUUID(),
         entity_type: 'purchase_invoice',
@@ -116,6 +116,8 @@ class PurchasesController {
       }).first();
       if (!image) return res.status(404).json({ success: false, message: 'Image not found' });
       await db('attached_images').where('id', req.params.imageId).del();
+      // Clean up the actual file from storage
+      try { await deleteFile(image.image_url); } catch { /* best effort */ }
       res.json({ success: true, message: 'Image deleted' });
     } catch (error) { next(error); }
   }
@@ -149,7 +151,7 @@ class PurchasesController {
       // Verify payment exists
       const payment = await db('supplier_payments').where('id', req.params.id).first();
       if (!payment) return res.status(404).json({ success: false, message: 'Payment not found' });
-      const imageUrl = getFileUrl('payments', req.file.filename);
+      const imageUrl = getUploadedUrl('payments', req.file);
       // Note: supplier payments are global (not store-scoped) — permission middleware controls access
       const [image] = await db('attached_images').insert({
         id: generateUUID(),

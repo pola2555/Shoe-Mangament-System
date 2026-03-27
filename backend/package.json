@@ -13,6 +13,8 @@
     "seed": "knex seed:run"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1018.0",
+    "@aws-sdk/lib-storage": "^3.1018.0",
     "@supabase/supabase-js": "^2.45.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -25,6 +27,7 @@
     "knex": "^3.1.0",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
+    "multer-s3": "^3.0.1",
     "pg": "^8.12.0",
     "uuid": "^10.0.0"
   },

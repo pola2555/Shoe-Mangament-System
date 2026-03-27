@@ -1,7 +1,7 @@
 const salesService = require('./sales.service');
 const db = require('../../config/database');
 const { generateUUID } = require('../../utils/generateCodes');
-const { getFileUrl } = require('../../middleware/upload');
+const { getUploadedUrl } = require('../../middleware/upload');
 
 class SalesController {
   async list(req, res, next) {
@@ -59,7 +59,7 @@ class SalesController {
       }
       const payment = await db('sale_payments').where({ id: req.params.paymentId, sale_id: req.params.id }).first();
       if (!payment) return res.status(404).json({ success: false, message: 'Payment not found for this sale' });
-      const imageUrl = getFileUrl('payments', req.file.filename);
+      const imageUrl = getUploadedUrl('payments', req.file);
       const [image] = await db('attached_images').insert({
         id: generateUUID(),
         entity_type: 'sale_payment',

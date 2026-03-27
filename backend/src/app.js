@@ -64,13 +64,15 @@ app.use(express.json({ limit: '10mb' }));           // JSON body parser
 app.use(express.urlencoded({ extended: true }));     // URL-encoded parser
 app.use(morgan('dev'));                              // Request logging
 
-// Serve uploaded files statically (local storage) with security headers
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
-  setHeaders: (res) => {
-    res.set('X-Content-Type-Options', 'nosniff');
-    res.set('Cache-Control', 'public, max-age=86400');
-  },
-}));
+// Serve uploaded files statically (local storage only) with security headers
+if (env.storage.type === 'local') {
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
+    setHeaders: (res) => {
+      res.set('X-Content-Type-Options', 'nosniff');
+      res.set('Cache-Control', 'public, max-age=86400');
+    },
+  }));
+}
 
 // --- Activity Logging (intercepts all write operations) ---
 app.use(activityLogger);
