@@ -82,7 +82,7 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
             {Object.entries(groupedItems).map(([color, data]) => (
               <div key={color} style={{ background: 'var(--color-bg-base)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: 'var(--spacing-md)' }}>
-                  <div style={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: data.hex || '#ccc', border: '1px solid #444' }}></div>
+                  <div style={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: data.hex || '#ccc', border: '1px solid var(--color-border)' }}></div>
                   <h3 style={{ fontSize: '1.1rem', margin: 0 }}>{color}</h3>
                 </div>
                 

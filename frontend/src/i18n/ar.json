@@ -217,7 +217,9 @@
     "confirm_payment": "تأكيد الدفع",
     "reference_placeholder": "رقم المعاملة، رقم الإيصال...",
     "payment_proof": "صورة إثبات الدفع",
-    "image_upload_failed": "تم إنشاء البيع لكن فشل رفع صورة الدفع"
+    "image_upload_failed": "تم إنشاء البيع لكن فشل رفع صورة الدفع",
+    "products_tab": "المنتجات",
+    "cart_tab": "السلة"
   },
   "sales": {
     "title": "سجل المبيعات",

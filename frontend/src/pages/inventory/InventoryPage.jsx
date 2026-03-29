@@ -27,13 +27,13 @@ const InventoryTreeColorRow = ({ color, defaultExpanded = false }) => {
   
   return (
     <Fragment>
-      <tr className="tree-row color-row" onClick={() => setExpanded(!expanded)} style={{ cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.015)' }}>
+      <tr className="tree-row color-row" onClick={() => setExpanded(!expanded)} style={{ cursor: 'pointer', backgroundColor: 'var(--color-row-alt)' }}>
         <td style={{ paddingLeft: '3rem' }}>
           <button className="btn-icon" style={{ padding: '0 8px', marginRight: 12, background: 'none', border:'none', color: 'inherit', cursor: 'pointer' }}>
             {expanded ? '▼' : '▶'}
           </button>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            {color.hex && <span className="color-swatch-sm" style={{ backgroundColor: color.hex, width: 14, height: 14, borderRadius: '50%', display: 'inline-block', border: '1px solid rgba(255,255,255,0.2)' }} />}
+            {color.hex && <span className="color-swatch-sm" style={{ backgroundColor: color.hex, width: 14, height: 14, borderRadius: '50%', display: 'inline-block', border: '1px solid var(--color-subtle-border)' }} />}
             <strong>{color.name}</strong>
           </span>
         </td>
@@ -55,9 +55,9 @@ const InventoryTreeProductRow = ({ product, defaultExpanded = false }) => {
   
   return (
     <Fragment>
-      <tr className="tree-row product-row" onClick={() => setExpanded(!expanded)} style={{ cursor: 'pointer', backgroundColor: 'rgba(255,255,255,0.03)' }}>
+      <tr className="tree-row product-row" onClick={() => setExpanded(!expanded)} style={{ cursor: 'pointer', backgroundColor: 'var(--color-row-alt-strong)' }}>
         <td style={{ fontSize: '1.05em' }}>
-          <button className="btn btn-sm btn-secondary" style={{ padding: '2px 8px', marginRight: 12, background: 'rgba(255,255,255,0.1)', border: 'none' }}>
+          <button className="btn btn-sm btn-secondary" style={{ padding: '2px 8px', marginRight: 12, background: 'var(--color-row-alt-strong)', border: 'none' }}>
             {expanded ? '▼' : '▶'}
           </button>
           <strong>{product.code}</strong> — {product.name}

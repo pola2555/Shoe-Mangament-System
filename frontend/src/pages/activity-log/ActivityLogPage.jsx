@@ -94,7 +94,7 @@ function DetailsTooltip({ details, action, module: mod, entityType }) {
         <div style={{
           position: 'absolute', bottom: '100%', left: 0, zIndex: 100,
           background: 'var(--color-bg-primary)', border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-lg)', boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+          borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-md)',
           padding: 'var(--spacing-md)', minWidth: 280, maxWidth: 400,
           marginBottom: 8
         }}>

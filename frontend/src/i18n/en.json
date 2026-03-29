@@ -217,7 +217,9 @@
     "confirm_payment": "Confirm Payment",
     "reference_placeholder": "Transaction ID, Receipt No...",
     "payment_proof": "Payment Proof Image",
-    "image_upload_failed": "Sale created but payment image upload failed"
+    "image_upload_failed": "Sale created but payment image upload failed",
+    "products_tab": "Products",
+    "cart_tab": "Cart"
   },
   "sales": {
     "title": "Sales History",

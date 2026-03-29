@@ -56,6 +56,9 @@ export default function POSPage() {
   // Product Selection Modal
   const [selectedProduct, setSelectedProduct] = useState(null);
 
+  // Mobile tab: 'products' or 'cart'
+  const [mobileTab, setMobileTab] = useState('products');
+
   // Initialize
   useEffect(() => {
     fetchInitialData();
@@ -256,9 +259,28 @@ export default function POSPage() {
   
   return (
     <div className="pos-layout">
+
+      {/* Mobile Tab Bar */}
+      <div className="pos-mobile-tabs">
+        <button
+          className={`pos-mobile-tab ${mobileTab === 'products' ? 'pos-mobile-tab--active' : ''}`}
+          onClick={() => setMobileTab('products')}
+        >
+          <HiOutlineMagnifyingGlass size={18} />
+          {t('pos.products_tab')}
+        </button>
+        <button
+          className={`pos-mobile-tab ${mobileTab === 'cart' ? 'pos-mobile-tab--active' : ''}`}
+          onClick={() => setMobileTab('cart')}
+        >
+          <HiOutlineShoppingBag size={18} />
+          {t('pos.cart_tab')}
+          {cart.length > 0 && <span className="pos-mobile-tab-badge">{cart.length}</span>}
+        </button>
+      </div>
       
       {/* LEFT: Product Selection */}
-      <div className="card pos-products-panel">
+      <div className={`card pos-products-panel ${mobileTab === 'products' ? 'pos-panel--active' : ''}`}>
         <div className="pos-search-bar">
           <div className="pos-search-input-wrap">
             <HiOutlineMagnifyingGlass size={20} color="var(--color-text-muted)" />
@@ -318,7 +340,7 @@ export default function POSPage() {
       </div>
 
       {/* RIGHT: Cart & Checkout */}
-      <div className="card pos-cart-panel">
+      <div className={`card pos-cart-panel ${mobileTab === 'cart' ? 'pos-panel--active' : ''}`}>
         <h3 className="pos-cart-title">
           <HiOutlineShoppingBag /> {t('pos.title')}
         </h3>
@@ -420,6 +442,15 @@ export default function POSPage() {
           {t('pos.checkout')} — {total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {t('common.currency')}
         </button>
       </div>
+
+      {/* Mobile floating cart button (shown on products tab) */}
+      {cart.length > 0 && mobileTab === 'products' && (
+        <button className="pos-mobile-fab" onClick={() => setMobileTab('cart')}>
+          <HiOutlineShoppingBag size={24} />
+          <span className="pos-mobile-fab-badge">{cart.length}</span>
+          <span className="pos-mobile-fab-total">{total.toLocaleString()} {t('common.currency')}</span>
+        </button>
+      )}
 
       {showCheckout && (
         <CheckoutModal
