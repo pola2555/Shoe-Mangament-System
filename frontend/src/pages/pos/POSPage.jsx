@@ -13,7 +13,6 @@ import {
 } from 'react-icons/hi2';
 import CheckoutModal from './CheckoutModal';
 import ProductSelectorModal from './ProductSelectorModal';
-import ClickableImage from '../../components/common/ClickableImage';
 import { useTranslation } from '../../i18n/i18nContext';
 import './POS.css';
 
@@ -317,7 +316,7 @@ export default function POSPage() {
                 >
                   <div className="pos-product-img">
                     {item.product_image ? (
-                      <ClickableImage src={item.product_image} alt={item.product_name} title={item.product_name} />
+                      <img src={item.product_image} alt={item.product_name} />
                     ) : (
                       <span className="pos-product-img-placeholder">—</span>
                     )}

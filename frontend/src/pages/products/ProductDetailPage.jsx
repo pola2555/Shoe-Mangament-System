@@ -49,6 +49,8 @@ export default function ProductDetailPage() {
   });
   const [showPriceForm, setShowPriceForm] = useState(false);
   const [uploadColorId, setUploadColorId] = useState(null);
+  const [revealNetPrice, setRevealNetPrice] = useState(false);
+  const netPriceTimerRef = useRef(null);
 
   // Edit Product Info
   const [showEditProduct, setShowEditProduct] = useState(false);
@@ -369,6 +371,28 @@ export default function ProductDetailPage() {
             {t('products.sell')}: {product.default_selling_price ?? '—'} {t('common.currency')} &nbsp;•&nbsp;
             {t('products.range')}: {product.min_selling_price ?? '—'} – {product.max_selling_price ?? '—'} {t('common.currency')}
           </p>
+          {product.net_price != null && (
+            <p
+              style={{
+                color: 'var(--color-text-secondary)',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
+                cursor: 'pointer',
+                display: 'inline-block',
+                marginTop: 4,
+              }}
+              onPointerDown={() => {
+                netPriceTimerRef.current = setTimeout(() => setRevealNetPrice(true), 1000);
+              }}
+              onPointerUp={() => { clearTimeout(netPriceTimerRef.current); setRevealNetPrice(false); }}
+              onPointerLeave={() => { clearTimeout(netPriceTimerRef.current); setRevealNetPrice(false); }}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              {t('products.net_price')}: <span style={{ filter: revealNetPrice ? 'none' : 'blur(8px)', transition: 'filter 0.2s' }}>
+                {product.net_price} {t('common.currency')}
+              </span>
+            </p>
+          )}
         </div>
         {canWrite && (
           <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>

@@ -177,7 +177,6 @@ class ProductsService {
     if (data.color_name !== undefined) safeData.color_name = data.color_name;
     if (data.hex_code !== undefined) safeData.hex_code = data.hex_code;
     if (data.is_active !== undefined) safeData.is_active = data.is_active;
-    safeData.updated_at = new Date();
     const [color] = await db('product_colors')
       .where('id', colorId)
       .update(safeData)

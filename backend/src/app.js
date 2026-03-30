@@ -67,9 +67,10 @@ app.use(morgan('dev'));                              // Request logging
 // Serve uploaded files statically (local storage only) with security headers
 if (env.storage.type === 'local') {
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
+    maxAge: '30d',
+    immutable: true,
     setHeaders: (res) => {
       res.set('X-Content-Type-Options', 'nosniff');
-      res.set('Cache-Control', 'public, max-age=86400');
     },
   }));
 }
