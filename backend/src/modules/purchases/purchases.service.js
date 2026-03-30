@@ -550,6 +550,7 @@ class PurchasesService {
         payment_date: data.payment_date,
         reference_no: data.reference_no || null,
         notes: data.notes || null,
+        type: 'payment',
         created_by: userId,
       });
 
@@ -590,6 +591,40 @@ class PurchasesService {
 
         remaining = Math.round((remaining - allocAmount) * 100) / 100;
       }
+    });
+
+    return this.getPaymentById(paymentId);
+  }
+
+  /**
+   * Create a withdrawal from a supplier (when they owe you money).
+   * No FIFO allocation — just records the withdrawal.
+   */
+  async createWithdrawal(data, userId) {
+    // Verify supplier has a negative balance (they owe us)
+    const suppliersService = require('../suppliers/suppliers.service');
+    const supplier = await suppliersService.getById(data.supplier_id);
+    
+    if (supplier.balance >= 0) {
+      throw new AppError('Supplier does not owe you money. Withdrawal not allowed.', 400);
+    }
+
+    const maxWithdrawal = Math.abs(supplier.balance);
+    if (data.total_amount > maxWithdrawal) {
+      throw new AppError(`Withdrawal amount exceeds supplier debt. Maximum: ${maxWithdrawal.toFixed(2)}`, 400);
+    }
+
+    const paymentId = generateUUID();
+    await db('supplier_payments').insert({
+      id: paymentId,
+      supplier_id: data.supplier_id,
+      total_amount: data.total_amount,
+      payment_method: data.payment_method,
+      payment_date: data.payment_date,
+      reference_no: data.reference_no || null,
+      notes: data.notes || null,
+      type: 'withdrawal',
+      created_by: userId,
     });
 
     return this.getPaymentById(paymentId);

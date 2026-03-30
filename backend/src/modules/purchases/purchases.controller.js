@@ -144,6 +144,13 @@ class PurchasesController {
     } catch (error) { next(error); }
   }
 
+  async createWithdrawal(req, res, next) {
+    try {
+      const payment = await purchasesService.createWithdrawal(req.body, req.user.id);
+      res.status(201).json({ success: true, data: payment });
+    } catch (error) { next(error); }
+  }
+
   // --- Payment Images (proof of transfer) ---
   async uploadPaymentImage(req, res, next) {
     try {

@@ -27,6 +27,7 @@ class InventoryService {
         'product_variants.size_us',
         'product_variants.size_uk',
         'product_variants.size_cm',
+        'product_variants.product_color_id',
         'products.product_code',
         'products.model_name as product_name',
         'products.brand',
@@ -38,7 +39,14 @@ class InventoryService {
         'store_product_prices.max_selling_price as store_max_selling_price',
         'product_colors.color_name',
         'product_colors.hex_code',
-        'stores.name as store_name'
+        'stores.name as store_name',
+        db.raw(`(
+          SELECT pci.image_url
+          FROM product_color_images pci
+          WHERE pci.product_color_id = product_colors.id
+          ORDER BY pci.is_primary DESC, pci.created_at ASC
+          LIMIT 1
+        ) as color_image_url`)
       )
       .orderBy('inventory_items.created_at', 'desc');
 

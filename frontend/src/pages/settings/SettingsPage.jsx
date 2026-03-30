@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useTheme } from '../../context/ThemeContext';
 import { useTranslation } from '../../i18n/i18nContext';
 import { useAuth } from '../../context/AuthContext';
-import { authAPI } from '../../api';
+import { authAPI, backupAPI } from '../../api';
 import toast from 'react-hot-toast';
 import {
   HiOutlineLanguage,
@@ -22,13 +22,8 @@ export default function SettingsPage() {
   const handleDownloadBackup = async () => {
     setDownloading(true);
     try {
-      const token = localStorage.getItem('accessToken');
-      const response = await fetch('/api/backup/download', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!response.ok) throw new Error('Backup failed');
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const { data } = await backupAPI.download();
+      const url = window.URL.createObjectURL(data);
       const a = document.createElement('a');
       a.href = url;
       const date = new Date().toISOString().split('T')[0];

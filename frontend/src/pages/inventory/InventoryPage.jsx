@@ -3,6 +3,7 @@ import { inventoryAPI, storesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
+import ClickableImage from '../../components/common/ClickableImage';
 import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
 
@@ -69,7 +70,7 @@ const InventoryTreeProductRow = ({ product, defaultExpanded = false }) => {
         <td style={{ fontSize: '1.1em', color: 'var(--color-success)' }}><strong>{product.total_quantity}</strong></td>
         <td>
           {product.image ? (
-            <img src={product.image} alt="product" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--color-border)' }} />
+            <ClickableImage src={product.image} alt="product" title={product.name} style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--color-border)' }} />
           ) : (
             <div style={{ width: 44, height: 44, background: 'var(--color-surface-hover)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)' }}>—</div>
           )}

@@ -282,6 +282,14 @@ a:hover { color: var(--color-accent-hover); }
   background: #d35400;
 }
 
+.btn-warning {
+  background: var(--color-warning);
+  color: #000;
+}
+.btn-warning:hover:not(:disabled) {
+  background: #e6a817;
+}
+
 .btn-sm { padding: 0.375rem 0.75rem; font-size: var(--font-size-sm); }
 .btn-lg { padding: 0.875rem 1.75rem; font-size: var(--font-size-md); }
 

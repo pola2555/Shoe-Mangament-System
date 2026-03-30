@@ -93,10 +93,14 @@ export default function ImageViewerModal({ imageUrl, onClose, title = 'Image' })
            display: 'flex', 
            alignItems: 'center', 
            justifyContent: 'center', 
-           cursor: isDragging ? 'grabbing' : 'grab' 
+           cursor: isDragging ? 'grabbing' : 'pointer' 
          }}
          onMouseDown={handleMouseDown} 
          onMouseMove={handleMouseMove}
+         onClick={(e) => {
+           // Close on tap/click if the user hasn't dragged
+           if (!isDragging && scale === 1) { e.stopPropagation(); onClose(); }
+         }}
        >
          <img 
            src={imageUrl} 

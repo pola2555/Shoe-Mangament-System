@@ -4,6 +4,7 @@ import { productsAPI, storesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
+import ClickableImage from '../../components/common/ClickableImage';
 import { useTranslation } from '../../i18n/i18nContext';
 import './Products.css';
 
@@ -23,6 +24,8 @@ export default function ProductDetailPage() {
   // Form states
   const [colorForm, setColorForm] = useState({ color_name: '', hex_code: '' });
   const [showColorForm, setShowColorForm] = useState(false);
+  const [editingColorId, setEditingColorId] = useState(null);
+  const [editColorForm, setEditColorForm] = useState({ color_name: '', hex_code: '' });
   
   // Single Variant Form
   const [variantForm, setVariantForm] = useState({
@@ -136,6 +139,22 @@ export default function ProductDetailPage() {
       toast.success(t('products.color_deleted'));
       fetchProduct();
     } catch (err) { toast.error(err.response?.data?.message || t('products.failed_delete_color')); }
+  };
+
+  const handleEditColorClick = (color) => {
+    setEditingColorId(color.id);
+    setEditColorForm({ color_name: color.color_name, hex_code: color.hex_code || '' });
+  };
+
+  const handleSaveColorEdit = async (colorId) => {
+    try {
+      await productsAPI.updateColor(id, colorId, editColorForm);
+      toast.success(t('products.color_updated'));
+      setEditingColorId(null);
+      fetchProduct();
+    } catch (err) {
+      toast.error(err.response?.data?.message || t('products.failed_update_color'));
+    }
   };
 
   // --- Images ---
@@ -523,15 +542,33 @@ export default function ProductDetailPage() {
               {product.colors.map((color) => (
                 <div key={color.id} className="color-card card">
                   <div className="color-card__header">
-                    {color.hex_code && (
-                      <span className="color-swatch" style={{ backgroundColor: color.hex_code }} />
-                    )}
-                    <strong>{color.color_name}</strong>
-                    <span className={`badge ${color.is_active ? 'badge-success' : 'badge-danger'}`}>
-                      {color.is_active ? t('common.active') : t('common.inactive')}
-                    </span>
-                    {canWrite && (
-                      <button className="btn btn-sm btn-danger" onClick={() => handleDeleteColor(color.id)} title={t('common.delete')} style={{ marginLeft: 'auto', padding: '2px 8px' }}>✕</button>
+                    {editingColorId === color.id ? (
+                      <>
+                        <input type="color" value={editColorForm.hex_code || '#000000'}
+                          onChange={(e) => setEditColorForm({ ...editColorForm, hex_code: e.target.value })}
+                          style={{ width: 32, height: 32, border: 'none', cursor: 'pointer', borderRadius: 'var(--radius-sm)', padding: 0, background: 'none' }} />
+                        <input className="form-input" value={editColorForm.color_name}
+                          onChange={(e) => setEditColorForm({ ...editColorForm, color_name: e.target.value })}
+                          style={{ flex: 1, padding: '4px 8px', maxWidth: 140 }} />
+                        <button className="btn btn-sm btn-success" onClick={() => handleSaveColorEdit(color.id)} title={t('common.save')}>💾</button>
+                        <button className="btn btn-sm btn-secondary" onClick={() => setEditingColorId(null)} title={t('common.cancel')}>✕</button>
+                      </>
+                    ) : (
+                      <>
+                        {color.hex_code && (
+                          <span className="color-swatch" style={{ backgroundColor: color.hex_code }} />
+                        )}
+                        <strong>{color.color_name}</strong>
+                        <span className={`badge ${color.is_active ? 'badge-success' : 'badge-danger'}`}>
+                          {color.is_active ? t('common.active') : t('common.inactive')}
+                        </span>
+                        {canWrite && (
+                          <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                            <button className="btn btn-sm btn-secondary" onClick={() => handleEditColorClick(color)} title={t('common.edit')} style={{ padding: '2px 8px' }}>✏️</button>
+                            <button className="btn btn-sm btn-danger" onClick={() => handleDeleteColor(color.id)} title={t('common.delete')} style={{ padding: '2px 8px' }}>✕</button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
 
@@ -539,7 +576,7 @@ export default function ProductDetailPage() {
                   <div className="color-images">
                     {color.images.map((img) => (
                       <div key={img.id} className={`color-image ${img.is_primary ? 'color-image--primary' : ''}`}>
-                        <img src={img.image_url} alt={color.color_name} />
+                        <ClickableImage src={img.image_url} alt={color.color_name} title={`${product.model_name} - ${color.color_name}`} />
                         {canWrite && (
                           <div className="color-image__actions">
                             {!img.is_primary && (

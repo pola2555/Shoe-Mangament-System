@@ -37,6 +37,7 @@ router.post('/boxes/:boxId/complete', permission('purchase_boxes', 'write'), con
 router.get('/payments', permission('supplier_payments', 'read'), controller.listPayments);
 router.get('/payments/:id', permission('supplier_payments', 'read'), controller.getPayment);
 router.post('/payments', permission('supplier_payments', 'write'), validate(createSupplierPaymentSchema), controller.createPayment);
+router.post('/withdrawals', permission('supplier_payments', 'write'), validate(createSupplierPaymentSchema), controller.createWithdrawal);
 router.post('/payments/:id/images', permission('supplier_payments', 'write'), paymentUpload.single('image'), controller.uploadPaymentImage);
 
 module.exports = router;

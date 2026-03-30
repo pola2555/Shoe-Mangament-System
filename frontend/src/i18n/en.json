@@ -318,6 +318,8 @@
     "product_updated": "Product updated",
     "color_added": "Color added",
     "color_deleted": "Color deleted",
+    "color_updated": "Color updated",
+    "failed_update_color": "Failed to update color",
     "image_uploaded": "Image uploaded",
     "image_deleted": "Image deleted",
     "primary_image_set": "Primary image set",
@@ -466,7 +468,13 @@
     "no_returns": "No supplier returns recorded.",
     "payment_allocation_note": "Any payment recorded here will automatically be allocated to the oldest unpaid invoices first (FIFO). If the payment exceeds the owed amount, the remaining funds will be stored as an <strong>Advance Payment</strong> on the supplier's account balance.",
     "back_to_suppliers": "Back to Suppliers",
-    "save_payment": "Save Payment"
+    "save_payment": "Save Payment",
+    "withdraw": "Withdraw",
+    "withdrawal": "Withdrawal",
+    "payment": "Payment",
+    "total_withdrawn": "Total Withdrawn",
+    "withdrawal_note": "Withdraw money owed to you by this supplier. Maximum available:",
+    "confirm_withdrawal": "Confirm Withdrawal"
   },
   "customers": {
     "title": "Customers",

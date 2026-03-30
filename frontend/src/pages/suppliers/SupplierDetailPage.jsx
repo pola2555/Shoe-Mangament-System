@@ -24,6 +24,12 @@ export default function SupplierDetailPage() {
     total_amount: '', payment_method: 'cash', payment_date: new Date().toISOString().split('T')[0], reference_no: '', notes: '',
   });
 
+  // Withdrawal form
+  const [showWithdrawalForm, setShowWithdrawalForm] = useState(false);
+  const [withdrawalForm, setWithdrawalForm] = useState({
+    total_amount: '', payment_method: 'cash', payment_date: new Date().toISOString().split('T')[0], reference_no: '', notes: '',
+  });
+
   useEffect(() => { fetchSupplier(); }, [id]);
 
   const fetchSupplier = async () => {
@@ -59,6 +65,26 @@ export default function SupplierDetailPage() {
     }
   };
 
+  const handleCreateWithdrawal = async (e) => {
+    e.preventDefault();
+    try {
+      await purchasesAPI.createWithdrawal({
+        supplier_id: id,
+        total_amount: parseFloat(withdrawalForm.total_amount),
+        payment_method: withdrawalForm.payment_method,
+        payment_date: withdrawalForm.payment_date,
+        reference_no: withdrawalForm.reference_no || null,
+        notes: withdrawalForm.notes || null,
+      });
+      toast.success(t('common.success'));
+      setShowWithdrawalForm(false);
+      setWithdrawalForm({ total_amount: '', payment_method: 'cash', payment_date: new Date().toISOString().split('T')[0], reference_no: '', notes: '' });
+      fetchSupplier();
+    } catch (err) {
+      toast.error(err.response?.data?.message || t('common.error'));
+    }
+  };
+
   if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
   if (!supplier) return null;
 
@@ -86,9 +112,16 @@ export default function SupplierDetailPage() {
           </div>
         </div>
         {canWrite && (
-          <button className="btn btn-primary" onClick={() => setShowPaymentForm(true)}>
-            + {t('suppliers.record_payment')}
-          </button>
+          <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
+            <button className="btn btn-primary" onClick={() => setShowPaymentForm(true)}>
+              + {t('suppliers.record_payment')}
+            </button>
+            {oweUs && (
+              <button className="btn btn-warning" onClick={() => { setWithdrawalForm({ ...withdrawalForm, total_amount: '' }); setShowWithdrawalForm(true); }}>
+                ↩ {t('suppliers.withdraw')}
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -106,6 +139,12 @@ export default function SupplierDetailPage() {
           <div className="stat-label">{t('suppliers.total_paid')}</div>
           <div className="stat-value" style={{ color: 'var(--color-primary-light)' }}>{fmt(supplier.total_paid)}</div>
         </div>
+        {supplier.total_withdrawn > 0 && (
+          <div className="stat-card" style={{ border: '1px solid var(--color-warning)' }}>
+            <div className="stat-label">{t('suppliers.total_withdrawn')}</div>
+            <div className="stat-value" style={{ color: 'var(--color-warning)' }}>{fmt(supplier.total_withdrawn)}</div>
+          </div>
+        )}
         <div className={`stat-card ${oweUs ? '' : 'stat-card--danger'}`} style={{ border: `1px solid ${oweUs ? 'var(--color-success)' : 'var(--color-danger)'}` }}>
           <div className="stat-label">{oweUs ? t('suppliers.advance_payment') : t('suppliers.account_balance')}</div>
           <div className="stat-value" style={{ color: oweUs ? 'var(--color-success)' : 'var(--color-danger)' }}>
@@ -166,6 +205,65 @@ export default function SupplierDetailPage() {
               <div className="form-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowPaymentForm(false)}>{t('common.cancel')}</button>
                 <button type="submit" className="btn btn-primary">{t('suppliers.save_payment')}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Withdrawal Form Modal */}
+      {showWithdrawalForm && (
+        <div className="modal-overlay" onClick={() => setShowWithdrawalForm(false)}>
+          <div className="modal-content card" onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ marginBottom: 'var(--spacing-md)' }}>{t('suppliers.withdraw')}</h2>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--spacing-md)' }}>
+              {t('suppliers.withdrawal_note')} <strong>{fmt(absBalance)}</strong>
+            </p>
+            <form onSubmit={handleCreateWithdrawal} className="product-form">
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">{t('common.amount')} (EGP) *</label>
+                  <input className="form-input" type="number" step="0.01" required min="0.01" max={absBalance}
+                    value={withdrawalForm.total_amount}
+                    onChange={(e) => setWithdrawalForm({ ...withdrawalForm, total_amount: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">{t('sales.payment_date')} *</label>
+                  <input className="form-input" type="date" required value={withdrawalForm.payment_date}
+                    onChange={(e) => setWithdrawalForm({ ...withdrawalForm, payment_date: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label className="form-label">{t('pos.payment_method')} *</label>
+                  <SearchableSelect
+                    required
+                    options={[
+                      { value: 'cash', label: t('common.cash') },
+                      { value: 'bank_transfer', label: t('common.bank_transfer') },
+                      { value: 'cheque', label: t('common.cheque') },
+                      { value: 'instapay', label: t('common.instapay') },
+                      { value: 'vodafone_cash', label: t('common.vodafone_cash') },
+                      { value: 'other', label: t('common.other') }
+                    ]}
+                    value={withdrawalForm.payment_method}
+                    onChange={(e) => setWithdrawalForm({ ...withdrawalForm, payment_method: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">{t('common.reference_no')}</label>
+                  <input className="form-input" value={withdrawalForm.reference_no}
+                    onChange={(e) => setWithdrawalForm({ ...withdrawalForm, reference_no: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">{t('common.notes')}</label>
+                <textarea className="form-input" rows={2} value={withdrawalForm.notes}
+                  onChange={(e) => setWithdrawalForm({ ...withdrawalForm, notes: e.target.value })} />
+              </div>
+              <div className="form-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowWithdrawalForm(false)}>{t('common.cancel')}</button>
+                <button type="submit" className="btn btn-warning">{t('suppliers.confirm_withdrawal')}</button>
               </div>
             </form>
           </div>
@@ -234,6 +332,7 @@ export default function SupplierDetailPage() {
                 <thead>
                   <tr>
                     <th>{t('common.date')}</th>
+                    <th>{t('common.type')}</th>
                     <th>{t('pos.payment_method')}</th>
                     <th>{t('common.reference_no')}</th>
                     <th>{t('common.amount')}</th>
@@ -243,9 +342,14 @@ export default function SupplierDetailPage() {
                   {supplier.payments.map((pay) => (
                     <tr key={pay.id}>
                       <td>{new Date(pay.payment_date).toLocaleDateString()}</td>
+                      <td>
+                        <span className={`badge ${pay.type === 'withdrawal' ? 'badge-warning' : 'badge-success'}`}>
+                          {pay.type === 'withdrawal' ? t('suppliers.withdrawal') : t('suppliers.payment')}
+                        </span>
+                      </td>
                       <td><span className="badge badge-neutral">{pay.payment_method}</span></td>
                       <td>{pay.reference_no || '—'}</td>
-                      <td><strong style={{ color: 'var(--color-success)' }}>{fmt(pay.total_amount)}</strong></td>
+                      <td><strong style={{ color: pay.type === 'withdrawal' ? 'var(--color-warning)' : 'var(--color-success)' }}>{pay.type === 'withdrawal' ? '-' : ''}{fmt(pay.total_amount)}</strong></td>
                     </tr>
                   ))}
                 </tbody>

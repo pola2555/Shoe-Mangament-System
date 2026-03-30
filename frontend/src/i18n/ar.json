@@ -318,6 +318,8 @@
     "product_updated": "تم تحديث المنتج",
     "color_added": "تمت إضافة اللون",
     "color_deleted": "تم حذف اللون",
+    "color_updated": "تم تحديث اللون",
+    "failed_update_color": "فشل تحديث اللون",
     "image_uploaded": "تم رفع الصورة",
     "image_deleted": "تم حذف الصورة",
     "primary_image_set": "تم تعيين الصورة الرئيسية",
@@ -466,7 +468,13 @@
     "no_returns": "لا توجد مرتجعات مسجلة لهذا المورد.",
     "payment_allocation_note": "أي دفعة مسجلة هنا سيتم تخصيصها تلقائياً لأقدم الفواتير غير المدفوعة أولاً (FIFO). إذا تجاوزت الدفعة المبلغ المستحق، سيتم تخزين المبلغ المتبقي كـ<strong>دفعة مقدمة</strong> في رصيد حساب المورد.",
     "back_to_suppliers": "العودة للموردين",
-    "save_payment": "حفظ الدفعة"
+    "save_payment": "حفظ الدفعة",
+    "withdraw": "سحب",
+    "withdrawal": "سحب",
+    "payment": "دفعة",
+    "total_withdrawn": "إجمالي المسحوب",
+    "withdrawal_note": "سحب الأموال المستحقة لك من هذا المورد. الحد الأقصى المتاح:",
+    "confirm_withdrawal": "تأكيد السحب"
   },
   "customers": {
     "title": "العملاء",

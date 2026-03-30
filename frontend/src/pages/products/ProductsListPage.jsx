@@ -5,6 +5,7 @@ import { productsAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
+import ClickableImage from '../../components/common/ClickableImage';
 import { useTranslation } from '../../i18n/i18nContext';
 import './Products.css';
 
@@ -289,7 +290,7 @@ export default function ProductsListPage() {
               {/* Product Image */}
               <div className="product-card__image">
                 {p.primary_image_url ? (
-                  <img src={p.primary_image_url} alt={p.model_name} />
+                  <ClickableImage src={p.primary_image_url} alt={p.model_name} title={`${p.brand} ${p.model_name}`} />
                 ) : (
                   <div className="product-card__no-image">📷</div>
                 )}

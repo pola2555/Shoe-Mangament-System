@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { inventoryAPI } from '../../api';
 import toast from 'react-hot-toast';
 import { useTranslation } from '../../i18n/i18nContext';
+import ClickableImage from '../../components/common/ClickableImage';
 import './POS.css';
 
 export default function ProductSelectorModal({ product, storeId, cartItemIds, onClose, onAddToCart }) {
@@ -37,7 +38,7 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
     const color = item.color_name || 'No Color';
     const size = item.size_eu || 'N/A';
     
-    if (!acc[color]) acc[color] = { hex: item.hex_code, sizes: {} };
+    if (!acc[color]) acc[color] = { hex: item.hex_code, colorImage: item.color_image_url || null, sizes: {} };
     if (!acc[color].sizes[size]) acc[color].sizes[size] = [];
     
     acc[color].sizes[size].push(item);
@@ -53,7 +54,7 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
           <div className="pos-selector-product-info" style={{ display: 'flex', gap: 'var(--spacing-md)', alignItems: 'center' }}>
             <div style={{ width: 80, height: 80, borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
               {product.product_image ? (
-                <img src={product.product_image} alt={product.product_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <ClickableImage src={product.product_image} alt={product.product_name} title={product.product_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
                 <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>{t('products.no_image')}</div>
               )}
@@ -82,7 +83,15 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
             {Object.entries(groupedItems).map(([color, data]) => (
               <div key={color} style={{ background: 'var(--color-bg-base)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: 'var(--spacing-md)' }}>
-                  <div style={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: data.hex || '#ccc', border: '1px solid var(--color-border)' }}></div>
+                  {(data.colorImage || product.product_image) && (
+                    <ClickableImage
+                      src={data.colorImage || product.product_image}
+                      alt={color}
+                      title={`${product.product_name} - ${color}`}
+                      style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', flexShrink: 0 }}
+                    />
+                  )}
+                  <div style={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: data.hex || '#ccc', border: '1px solid var(--color-border)', flexShrink: 0 }}></div>
                   <h3 style={{ fontSize: '1.1rem', margin: 0 }}>{color}</h3>
                 </div>
                 

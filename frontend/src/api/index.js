@@ -97,6 +97,7 @@ export const purchasesAPI = {
   listPayments: (params) => api.get('/purchases/payments', { params }),
   getPayment: (id) => api.get(`/purchases/payments/${id}`),
   createPayment: (data) => api.post('/purchases/payments', data),
+  createWithdrawal: (data) => api.post('/purchases/withdrawals', data),
   uploadPaymentImage: (id, formData) =>
     api.post(`/purchases/payments/${id}/images`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
 };
@@ -181,4 +182,8 @@ export const auditLogAPI = {
   list: (params) => api.get('/audit-log', { params }),
   log: (data) => api.post('/audit-log/log', data),
   clear: () => api.delete('/audit-log/clear'),
+};
+
+export const backupAPI = {
+  download: () => api.get('/backup/download', { responseType: 'blob' }),
 };

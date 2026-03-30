@@ -26,13 +26,20 @@ class SuppliersService {
         .first();
       const paymentSum = await db('supplier_payments')
         .where('supplier_id', s.id)
+        .where('type', 'payment')
+        .sum('total_amount as total')
+        .first();
+      const withdrawalSum = await db('supplier_payments')
+        .where('supplier_id', s.id)
+        .where('type', 'withdrawal')
         .sum('total_amount as total')
         .first();
 
       s.total_invoiced = parseFloat(invoiceSum.total) || 0;
       s.total_returns = parseFloat(returnSum.total) || 0;
       s.total_paid = parseFloat(paymentSum.total) || 0;
-      s.balance = s.total_invoiced - s.total_returns - s.total_paid;
+      s.total_withdrawn = parseFloat(withdrawalSum.total) || 0;
+      s.balance = s.total_invoiced - s.total_returns - s.total_paid + s.total_withdrawn;
     }
 
     return suppliers;
@@ -60,11 +67,13 @@ class SuppliersService {
     // Balance
     const invoiceSum = supplier.invoices.reduce((sum, i) => sum + parseFloat(i.total_amount) - (parseFloat(i.discount_amount) || 0), 0);
     const returnSum = supplier.returns.reduce((sum, r) => sum + parseFloat(r.total_amount || 0), 0);
-    const paymentSum = supplier.payments.reduce((sum, p) => sum + parseFloat(p.total_amount), 0);
+    const paymentSum = supplier.payments.filter(p => p.type !== 'withdrawal').reduce((sum, p) => sum + parseFloat(p.total_amount), 0);
+    const withdrawalSum = supplier.payments.filter(p => p.type === 'withdrawal').reduce((sum, p) => sum + parseFloat(p.total_amount), 0);
     supplier.total_invoiced = invoiceSum;
     supplier.total_returns = returnSum;
     supplier.total_paid = paymentSum;
-    supplier.balance = invoiceSum - returnSum - paymentSum;
+    supplier.total_withdrawn = withdrawalSum;
+    supplier.balance = invoiceSum - returnSum - paymentSum + withdrawalSum;
 
     return supplier;
   }
