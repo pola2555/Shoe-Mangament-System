@@ -26,6 +26,42 @@ class CustomersService {
       .select('sales.*', 'stores.name as store_name')
       .orderBy('sales.created_at', 'desc');
 
+    // Fetch items for each sale with product, color, size, and color image
+    if (customer.sales.length > 0) {
+      const saleIds = customer.sales.map(s => s.id);
+      const items = await db('sale_items')
+        .join('inventory_items', 'sale_items.inventory_item_id', 'inventory_items.id')
+        .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
+        .join('products', 'product_variants.product_id', 'products.id')
+        .join('product_colors', 'product_variants.product_color_id', 'product_colors.id')
+        .leftJoin('customer_return_items', 'sale_items.id', 'customer_return_items.sale_item_id')
+        .whereIn('sale_items.sale_id', saleIds)
+        .select(
+          'sale_items.id',
+          'sale_items.sale_id',
+          'sale_items.sale_price',
+          'product_variants.size_eu',
+          'products.product_code',
+          'products.model_name as product_name',
+          'products.brand',
+          'product_colors.color_name',
+          'product_colors.hex_code',
+          'product_colors.id as product_color_id',
+          db.raw('CASE WHEN customer_return_items.id IS NOT NULL THEN true ELSE false END as is_returned'),
+          db.raw(`(SELECT pci.image_url FROM product_color_images pci WHERE pci.product_color_id = product_colors.id ORDER BY pci.is_primary DESC, pci.created_at ASC LIMIT 1) as color_image_url`)
+        );
+
+      // Group items by sale_id
+      const itemsBySale = {};
+      for (const item of items) {
+        if (!itemsBySale[item.sale_id]) itemsBySale[item.sale_id] = [];
+        itemsBySale[item.sale_id].push(item);
+      }
+      for (const sale of customer.sales) {
+        sale.items = itemsBySale[sale.id] || [];
+      }
+    }
+
     return customer;
   }
 

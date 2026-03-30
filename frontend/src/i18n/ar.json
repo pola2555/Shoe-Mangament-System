@@ -731,6 +731,8 @@
     "avg_order_value": "متوسط قيمة الطلب",
     "items_moved": "العناصر المنقولة",
     "total_expenses": "إجمالي المصروفات",
+    "total_money": "إجمالي الأموال",
+    "net_sales_minus_expenses": "صافي المبيعات − المصروفات",
     "inventory_value": "قيمة المخزون",
     "revenue_vs_profit": "الإيرادات مقابل الأرباح",
     "store_performance": "أداء المتاجر",

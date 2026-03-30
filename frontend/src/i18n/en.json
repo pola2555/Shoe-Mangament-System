@@ -731,6 +731,8 @@
     "avg_order_value": "Avg Order Value",
     "items_moved": "Items Moved",
     "total_expenses": "Total Expenses",
+    "total_money": "Total Money",
+    "net_sales_minus_expenses": "Net Sales − Expenses",
     "inventory_value": "Inventory Value",
     "revenue_vs_profit": "Revenue vs Profit Trend",
     "store_performance": "Store Performance",

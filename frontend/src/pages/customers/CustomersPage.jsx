@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { customersAPI } from '../../api';
+import ClickableImage from '../../components/common/ClickableImage';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import { useTranslation } from '../../i18n/i18nContext';
@@ -89,18 +90,53 @@ export default function CustomersPage() {
       {/* Detail Modal */}
       {detail && (
         <div className="modal-overlay" onClick={() => setDetail(null)}>
-          <div className="modal-content card" style={{ maxWidth: 600 }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content card" style={{ maxWidth: 700, maxHeight: '85vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
             <h2>{detail.name || 'Unknown'}</h2>
             <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-lg)' }}>{`${t('common.phone')}:`} <strong>{detail.phone}</strong></p>
             <h3 style={{ marginBottom: 'var(--spacing-sm)' }}>{t('customers.total_purchases')} ({detail.sales?.length || 0})</h3>
             {detail.sales?.length > 0 ? (
-              <div className="table-container" style={{ maxHeight: 300, overflow: 'auto' }}>
-                <table className="table"><thead><tr><th>{t('sales.sale_number')}</th><th>{t('sales.store')}</th><th>{t('common.total')}</th><th>{t('common.date')}</th></tr></thead>
-                  <tbody>{detail.sales.map((s) => (
-                    <tr key={s.id}><td>{s.sale_number}</td><td>{s.store_name}</td>
-                      <td>{parseFloat(s.final_amount).toLocaleString()} EGP</td>
-                      <td>{new Date(s.created_at).toLocaleDateString()}</td></tr>
-                  ))}</tbody></table>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
+                {detail.sales.map((s) => (
+                  <div key={s.id} className="card" style={{ padding: 'var(--spacing-md)', border: '1px solid var(--color-border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-sm)' }}>
+                      <div>
+                        <strong>{s.sale_number}</strong>
+                        <span style={{ color: 'var(--color-text-muted)', marginInlineStart: 8, fontSize: '0.85em' }}>{s.store_name}</span>
+                      </div>
+                      <div style={{ textAlign: 'end' }}>
+                        <strong>{parseFloat(s.final_amount).toLocaleString()} {t('common.currency')}</strong>
+                        <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>{new Date(s.created_at).toLocaleDateString()}</div>
+                      </div>
+                    </div>
+                    {s.items?.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {s.items.map((item) => (
+                          <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)', padding: '6px 0', borderTop: '1px solid var(--color-border)', opacity: item.is_returned ? 0.5 : 1 }}>
+                            {item.color_image_url ? (
+                              <ClickableImage
+                                src={item.color_image_url}
+                                alt={item.color_name}
+                                style={{ width: 44, height: 44, borderRadius: 6, objectFit: 'cover' }}
+                              />
+                            ) : (
+                              <div style={{ width: 44, height: 44, borderRadius: 6, background: item.hex_code || 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', flexShrink: 0 }} />
+                            )}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, fontSize: '0.9em' }}>{item.brand} {item.product_name}</div>
+                              <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>
+                                {item.product_code} • {item.color_name} • EU {item.size_eu}
+                                {item.is_returned && <span style={{ color: 'var(--color-danger)', marginInlineStart: 6 }}>({t('common.returned')})</span>}
+                              </div>
+                            </div>
+                            <div style={{ fontWeight: 600, fontSize: '0.9em', whiteSpace: 'nowrap' }}>
+                              {parseFloat(item.sale_price).toLocaleString()} {t('common.currency')}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             ) : <p style={{ color: 'var(--color-text-muted)' }}>{t('customers.no_customers')}</p>}
           </div>
