@@ -432,6 +432,8 @@
     "all_suppliers": "All Suppliers",
     "select_supplier": "Select supplier",
     "remaining": "Remaining",
+    "boxes_total": "Boxes Total",
+    "fully_documented": "Done",
     "date_from": "Date From",
     "date_to": "Date To",
     "clear_all": "Clear All",

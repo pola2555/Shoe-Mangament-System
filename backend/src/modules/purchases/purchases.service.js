@@ -290,9 +290,9 @@ class PurchasesService {
     const existingBoxes = await db('purchase_invoice_boxes').where('invoice_id', invoiceId).select('total_items', 'cost_per_item');
     const existingTotal = existingBoxes.reduce((sum, b) => sum + ((Number(b.total_items) || 0) * (Number(b.cost_per_item) || 0)), 0);
 
-    const invoiceNet = Number(invoice.total_amount) - (Number(invoice.discount_amount) || 0);
-    if (existingTotal + newBoxCost > invoiceNet) {
-      throw new AppError(`Cannot add box. Accumulated box cost (${existingTotal + newBoxCost}) would exceed the invoice's net total (${invoiceNet}).`, 400);
+    const invoiceGross = Number(invoice.total_amount);
+    if (existingTotal + newBoxCost > invoiceGross) {
+      throw new AppError(`Cannot add box. Accumulated box cost (${existingTotal + newBoxCost}) would exceed the invoice total (${invoiceGross}).`, 400);
     }
 
     const [box] = await db('purchase_invoice_boxes')
@@ -336,9 +336,9 @@ class PurchasesService {
             existingTotal += (Number(b.total_items) || 0) * (Number(b.cost_per_item) || 0);
           }
         }
-        const invoiceNet = Number(invoice.total_amount) - (Number(invoice.discount_amount) || 0);
-        if (existingTotal + newBoxCost > invoiceNet) {
-          throw new AppError(`Cannot update box. Accumulated box cost (${existingTotal + newBoxCost}) would exceed the invoice's net total (${invoiceNet}).`, 400);
+        const invoiceGross = Number(invoice.total_amount);
+        if (existingTotal + newBoxCost > invoiceGross) {
+          throw new AppError(`Cannot update box. Accumulated box cost (${existingTotal + newBoxCost}) would exceed the invoice total (${invoiceGross}).`, 400);
         }
       }
     }

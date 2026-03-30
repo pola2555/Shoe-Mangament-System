@@ -478,6 +478,9 @@ export default function PurchaseDetailPage() {
   const statusColors = { pending: 'badge-warning', partial: 'badge-info', paid: 'badge-success' };
   const boxStatusColors = { pending: 'badge-warning', partial: 'badge-info', complete: 'badge-success' };
   const owed = parseFloat(invoice.total_amount) - (parseFloat(invoice.discount_amount) || 0) - parseFloat(invoice.paid_amount);
+  const invoiceGross = parseFloat(invoice.total_amount) || 0;
+  const boxesTotal = (invoice.boxes || []).reduce((sum, b) => sum + ((Number(b.total_items) || 0) * (Number(b.cost_per_item) || 0)), 0);
+  const boxesFullyDocumented = invoiceGross > 0 && Math.abs(boxesTotal - invoiceGross) < 0.01;
 
   return (
     <div className="product-detail">
@@ -500,6 +503,10 @@ export default function PurchaseDetailPage() {
             <span style={{ color: owed > 0 ? 'var(--color-danger)' : 'var(--color-success)' }}>
               {t('purchases.remaining')}: {owed.toLocaleString()} {t('common.currency')}
             </span>
+          </p>
+          <p style={{ marginTop: 4, fontSize: '0.9em' }}>
+            {t('purchases.boxes_total')}: <strong>{boxesTotal.toLocaleString()} / {invoiceGross.toLocaleString()} {t('common.currency')}</strong>
+            {boxesFullyDocumented && <span style={{ color: 'var(--color-success)', fontWeight: 700, marginInlineStart: 8 }}>✓ {t('purchases.fully_documented')}</span>}
           </p>
           {invoice.notes && <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9em', marginTop: 4 }}>{t('common.notes')}: {invoice.notes}</p>}
         </div>

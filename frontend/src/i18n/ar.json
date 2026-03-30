@@ -432,6 +432,8 @@
     "all_suppliers": "جميع الموردين",
     "select_supplier": "اختر المورد",
     "remaining": "المتبقي",
+    "boxes_total": "إجمالي الصناديق",
+    "fully_documented": "مكتمل",
     "date_from": "من تاريخ",
     "date_to": "إلى تاريخ",
     "clear_all": "مسح الكل",
