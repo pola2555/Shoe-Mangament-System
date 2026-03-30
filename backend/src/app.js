@@ -26,6 +26,7 @@ const returnsRoutes = require('./modules/returns/returns.routes');
 const notificationsRoutes = require('./modules/notifications/notifications.routes');
 const auditLogRoutes = require('./modules/audit-log/audit-log.routes');
 const backupRoutes = require('./modules/backup/backup.routes');
+const loanRoutes = require('./modules/loans/loans.routes');
 
 const app = express();
 
@@ -97,6 +98,7 @@ app.use('/api/returns', returnsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/audit-log', auditLogRoutes);
 app.use('/api/backup', backupRoutes);
+app.use('/api/loans', loanRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -25,6 +25,7 @@ import BoxTemplatesPage from './pages/box-templates/BoxTemplatesPage';
 import ActivityLogPage from './pages/activity-log/ActivityLogPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import ReportsPage from './pages/reports/ReportsPage';
+import LoansPage from './pages/loans/LoansPage';
 
 /**
  * Protected route wrapper.
@@ -132,6 +133,7 @@ function AppRoutes() {
         <Route path="suppliers/:id" element={<PermissionRoute perm="suppliers"><SupplierDetailPage /></PermissionRoute>} />
         <Route path="dealers" element={<PermissionRoute perm="dealers"><DealersPage /></PermissionRoute>} />
         <Route path="expenses" element={<PermissionRoute perm="expenses"><ExpensesPage /></PermissionRoute>} />
+        <Route path="loans" element={<PermissionRoute perm="loans"><LoansPage /></PermissionRoute>} />
         <Route path="reports" element={<PermissionRoute perm="reports"><ReportsPage /></PermissionRoute>} />
         <Route path="stores" element={<PermissionRoute perm="stores"><StoresPage /></PermissionRoute>} />
         <Route path="users" element={<PermissionRoute perm="users"><UsersPage /></PermissionRoute>} />

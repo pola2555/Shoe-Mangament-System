@@ -95,6 +95,7 @@
     "suppliers": "الموردين",
     "dealers": "التجار",
     "expenses": "المصروفات",
+    "loans": "القروض",
     "management": "الإدارة",
     "reports": "التقارير",
     "stores": "المتاجر",
@@ -683,6 +684,7 @@
       "dealer_invoices": "فواتير التجار",
       "dealer_payments": "مدفوعات التجار",
       "expenses": "المصروفات",
+      "loans": "القروض",
       "reports": "التقارير",
       "notifications": "الإشعارات"
     }
@@ -732,7 +734,11 @@
     "items_moved": "العناصر المنقولة",
     "total_expenses": "إجمالي المصروفات",
     "total_money": "إجمالي الأموال",
+    "profit_minus_expenses": "صافي الربح",
+    "clear_profit_minus_expenses": "صافي الربح − المصروفات",
     "net_sales_minus_expenses": "صافي المبيعات − المصروفات",
+    "net_after_loans": "الصافي بعد القروض",
+    "loans_outstanding": "القروض المستحقة",
     "inventory_value": "قيمة المخزون",
     "revenue_vs_profit": "الإيرادات مقابل الأرباح",
     "store_performance": "أداء المتاجر",
@@ -862,5 +868,28 @@
     "min_length": "الحد الأدنى {min} أحرف",
     "max_length": "الحد الأقصى {max} أحرف",
     "passwords_dont_match": "كلمات المرور غير متطابقة"
+  },
+  "loans": {
+    "title": "القروض",
+    "add_loan": "إضافة قرض",
+    "edit_loan": "تعديل القرض",
+    "borrower_name": "اسم المقترض",
+    "amount": "المبلغ",
+    "loan_date": "تاريخ القرض",
+    "due_date": "تاريخ الاستحقاق",
+    "paid_back": "المسدد",
+    "remaining": "المتبقي",
+    "active": "نشط",
+    "partial": "جزئي",
+    "paid": "مسدد",
+    "payments": "الدفعات",
+    "add_payment": "إضافة دفعة",
+    "no_payments": "لا توجد دفعات بعد",
+    "no_loans": "لا توجد قروض",
+    "method": "الطريقة",
+    "total_loaned": "إجمالي القروض",
+    "total_collected": "إجمالي المحصّل",
+    "total_outstanding": "المستحق",
+    "search_placeholder": "بحث بالاسم أو الهاتف..."
   }
 }

@@ -55,6 +55,7 @@ const navGroups = [
       { path: '/suppliers', icon: HiOutlineTruck, labelKey: 'sidebar.suppliers', perm: 'suppliers' },
       { path: '/dealers', icon: HiOutlineUsers, labelKey: 'sidebar.dealers', perm: 'dealers' },
       { path: '/expenses', icon: HiOutlineBanknotes, labelKey: 'sidebar.expenses', perm: 'expenses' },
+      { path: '/loans', icon: HiOutlineBanknotes, labelKey: 'sidebar.loans', perm: 'loans' },
     ]
   },
   {

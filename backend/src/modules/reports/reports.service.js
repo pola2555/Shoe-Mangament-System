@@ -171,6 +171,12 @@ class ReportsService {
     applyBoth(expensesQuery, 'expense_date', 'store_id');
     const expensesResult = await expensesQuery.first();
 
+    // 3b. Outstanding Loans (store-filtered)
+    const loansQuery = db('loans').whereIn('status', ['active', 'partial'])
+      .select(db.raw('COALESCE(SUM(amount - paid_amount), 0) as total'));
+    applyStoreFilter(loansQuery, 'store_id');
+    const loansResult = await loansQuery.first();
+
     // 4. Supplier/Dealer Balances (Global typically) + Inventory Valuation
     const valQuery = db('inventory_items').where('status', 'in_stock').sum('cost as total');
     applyStoreFilter(valQuery, 'store_id');
@@ -287,6 +293,7 @@ class ReportsService {
         net_margin_pct: parseFloat(netMargin.toFixed(2)),
         aov: parseFloat(aov.toFixed(2)),
         total_expenses: parseFloat(expensesResult.total) || 0,
+        total_loans_outstanding: parseFloat(loansResult.total) || 0,
       },
       charts: {
         trend: finalTrend,

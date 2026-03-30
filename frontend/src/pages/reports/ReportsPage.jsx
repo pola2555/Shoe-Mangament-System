@@ -86,7 +86,9 @@ export default function ReportsPage() {
       { label: t('reports.avg_order_value'), value: `${fmt(m.aov)} ${t('common.currency')}`, sub: t('reports.per_sale'), color: '#6366f1' },
       { label: t('reports.items_moved'), value: `${fmt(m.items_sold)} ${t('reports.sold')}`, sub: `${fmt(m.items_returned)} ${t('reports.returned_items')}`, color: '#f59e0b' },
       { label: t('reports.total_expenses'), value: `${fmt(m.total_expenses)} ${t('common.currency')}`, sub: t('reports.in_period'), color: 'var(--color-danger)' },
+      { label: t('reports.profit_minus_expenses'), value: `${fmt((m.clear_profit || 0) - (m.total_expenses || 0))} ${t('common.currency')}`, sub: t('reports.clear_profit_minus_expenses'), color: ((m.clear_profit || 0) - (m.total_expenses || 0)) >= 0 ? '#059669' : 'var(--color-danger)' },
       { label: t('reports.total_money'), value: `${fmt((m.net_sales || 0) - (m.total_expenses || 0))} ${t('common.currency')}`, sub: t('reports.net_sales_minus_expenses'), color: ((m.net_sales || 0) - (m.total_expenses || 0)) >= 0 ? '#10b981' : 'var(--color-danger)' },
+      { label: t('reports.net_after_loans'), value: `${fmt((m.net_sales || 0) - (m.total_expenses || 0) - (m.total_loans_outstanding || 0))} ${t('common.currency')}`, sub: `${t('reports.loans_outstanding')}: ${fmt(m.total_loans_outstanding)} ${t('common.currency')}`, color: ((m.net_sales || 0) - (m.total_expenses || 0) - (m.total_loans_outstanding || 0)) >= 0 ? '#0ea5e9' : 'var(--color-danger)' },
       { label: t('reports.inventory_value'), value: `${fmt(m.inventory_valuation)} ${t('common.currency')}`, sub: `${fmt(m.inventory_in_stock)} ${t('reports.units')}`, color: '#8b5cf6' },
     ];
     return (

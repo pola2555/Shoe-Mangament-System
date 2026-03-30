@@ -95,7 +95,7 @@
     "suppliers": "Suppliers",
     "dealers": "Dealers",
     "expenses": "Expenses",
-    "management": "Management",
+    "loans": "Loans",
     "reports": "Reports",
     "stores": "Stores",
     "users": "Users",
@@ -683,6 +683,7 @@
       "dealer_invoices": "Dealer Invoices",
       "dealer_payments": "Dealer Payments",
       "expenses": "Expenses",
+      "loans": "Loans",
       "reports": "Reports",
       "notifications": "Notifications"
     }
@@ -732,7 +733,11 @@
     "items_moved": "Items Moved",
     "total_expenses": "Total Expenses",
     "total_money": "Total Money",
+    "profit_minus_expenses": "Net Profit",
+    "clear_profit_minus_expenses": "Clear Profit − Expenses",
     "net_sales_minus_expenses": "Net Sales − Expenses",
+    "net_after_loans": "Net After Loans",
+    "loans_outstanding": "Loans Outstanding",
     "inventory_value": "Inventory Value",
     "revenue_vs_profit": "Revenue vs Profit Trend",
     "store_performance": "Store Performance",
@@ -862,5 +867,28 @@
     "min_length": "Minimum {min} characters",
     "max_length": "Maximum {max} characters",
     "passwords_dont_match": "Passwords don't match"
+  },
+  "loans": {
+    "title": "Loans",
+    "add_loan": "Add Loan",
+    "edit_loan": "Edit Loan",
+    "borrower_name": "Borrower Name",
+    "amount": "Amount",
+    "loan_date": "Loan Date",
+    "due_date": "Due Date",
+    "paid_back": "Paid Back",
+    "remaining": "Remaining",
+    "active": "Active",
+    "partial": "Partial",
+    "paid": "Paid",
+    "payments": "Payments",
+    "add_payment": "Add Payment",
+    "no_payments": "No payments yet",
+    "no_loans": "No loans found",
+    "method": "Method",
+    "total_loaned": "Total Loaned",
+    "total_collected": "Total Collected",
+    "total_outstanding": "Outstanding",
+    "search_placeholder": "Search by name or phone..."
   }
 }

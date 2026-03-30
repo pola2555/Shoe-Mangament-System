@@ -184,6 +184,16 @@ export const auditLogAPI = {
   clear: () => api.delete('/audit-log/clear'),
 };
 
+export const loansAPI = {
+  list: (params) => api.get('/loans', { params }),
+  getById: (id) => api.get(`/loans/${id}`),
+  create: (data) => api.post('/loans', data),
+  update: (id, data) => api.put(`/loans/${id}`, data),
+  delete: (id) => api.delete(`/loans/${id}`),
+  addPayment: (id, data) => api.post(`/loans/${id}/payments`, data),
+  deletePayment: (id, paymentId) => api.delete(`/loans/${id}/payments/${paymentId}`),
+};
+
 export const backupAPI = {
   download: () => api.get('/backup/download', { responseType: 'blob' }),
 };
