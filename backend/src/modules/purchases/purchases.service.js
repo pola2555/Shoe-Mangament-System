@@ -122,73 +122,89 @@ class PurchasesService {
         }
       }
 
-      // ── Auto-allocate unallocated advance payments to this new invoice ──
-      // Calculate how much the supplier has paid vs how much has been allocated
-      const paidResult = await trx('supplier_payments')
+      // ── Auto-apply supplier credit (overpayments + returns) to this new invoice ──
+      // Calculate supplier balance BEFORE this new invoice
+      const priorInvoicesSum = await trx('purchase_invoices')
+        .where('supplier_id', invoiceData.supplier_id)
+        .where('id', '!=', invoiceId)
+        .select(trx.raw('COALESCE(SUM(total_amount - COALESCE(discount_amount, 0)), 0) as total'))
+        .first();
+      const returnsSum = await trx('supplier_returns')
         .where('supplier_id', invoiceData.supplier_id)
         .sum('total_amount as total')
         .first();
-      const allocatedResult = await trx('supplier_payment_allocations as spa')
-        .join('supplier_payments as sp', 'spa.payment_id', 'sp.id')
-        .where('sp.supplier_id', invoiceData.supplier_id)
-        .sum('spa.allocated_amount as total')
+      const paymentsSumResult = await trx('supplier_payments')
+        .where('supplier_id', invoiceData.supplier_id)
+        .where('type', 'payment')
+        .sum('total_amount as total')
+        .first();
+      const withdrawalsSumResult = await trx('supplier_payments')
+        .where('supplier_id', invoiceData.supplier_id)
+        .where('type', 'withdrawal')
+        .sum('total_amount as total')
         .first();
 
-      const totalPaid = parseFloat(paidResult?.total) || 0;
-      const totalAllocated = parseFloat(allocatedResult?.total) || 0;
-      const unallocated = totalPaid - totalAllocated;
+      const priorInvoiced = parseFloat(priorInvoicesSum.total) || 0;
+      const totalReturns = parseFloat(returnsSum.total) || 0;
+      const totalPayments = parseFloat(paymentsSumResult.total) || 0;
+      const totalWithdrawals = parseFloat(withdrawalsSumResult.total) || 0;
+      const priorBalance = priorInvoiced - totalReturns - totalPayments + totalWithdrawals;
 
-      if (unallocated > 0) {
+      // If priorBalance < 0, supplier has credit we can apply to this invoice
+      if (priorBalance < 0) {
         const invoiceTotal = parseFloat(invoiceData.total_amount) - (parseFloat(invoiceData.discount_amount) || 0);
-        const toApply = Math.min(unallocated, invoiceTotal);
+        const supplierCredit = Math.abs(priorBalance);
+        const toApply = Math.round(Math.min(supplierCredit, invoiceTotal) * 100) / 100;
 
         if (toApply > 0) {
-          // Find payments with unallocated balance (FIFO by payment_date, locked for update)
-          const payments = await trx('supplier_payments')
-            .where('supplier_id', invoiceData.supplier_id)
-            .orderBy('payment_date', 'asc')
-            .orderBy('created_at', 'asc')
-            .forUpdate();
+          // Allocate from actual unallocated payment funds (FIFO) where possible
+          const allocatedResult = await trx('supplier_payment_allocations as spa')
+            .join('supplier_payments as sp', 'spa.payment_id', 'sp.id')
+            .where('sp.supplier_id', invoiceData.supplier_id)
+            .sum('spa.allocated_amount as total')
+            .first();
+          const totalAllocated = parseFloat(allocatedResult?.total) || 0;
+          const unallocatedPayments = Math.round((totalPayments - totalAllocated) * 100) / 100;
 
-          let remaining = toApply;
+          if (unallocatedPayments > 0) {
+            const paymentToAllocate = Math.min(unallocatedPayments, toApply);
+            const payments = await trx('supplier_payments')
+              .where('supplier_id', invoiceData.supplier_id)
+              .where('type', 'payment')
+              .orderBy('payment_date', 'asc')
+              .orderBy('created_at', 'asc')
+              .forUpdate();
 
-          for (const payment of payments) {
-            if (remaining <= 0) break;
-
-            // How much of this payment is already allocated?
-            const allocSum = await trx('supplier_payment_allocations')
-              .where('payment_id', payment.id)
-              .sum('allocated_amount as total')
-              .first();
-            const paymentAllocated = parseFloat(allocSum?.total) || 0;
-            const paymentUnallocated = parseFloat(payment.total_amount) - paymentAllocated;
-
-            if (paymentUnallocated <= 0) continue;
-
-            const allocAmount = Math.round(Math.min(remaining, paymentUnallocated) * 100) / 100;
-
-            await trx('supplier_payment_allocations').insert({
-              id: generateUUID(),
-              payment_id: payment.id,
-              invoice_id: invoiceId,
-              allocated_amount: allocAmount,
-            });
-
-            remaining = Math.round((remaining - allocAmount) * 100) / 100;
-          }
-
-          // Update the invoice's paid_amount and status
-          const actualApplied = toApply - remaining;
-          if (actualApplied > 0) {
-            const newStatus = actualApplied >= invoiceTotal ? 'paid' : 'partial';
-            await trx('purchase_invoices')
-              .where('id', invoiceId)
-              .update({
-                paid_amount: actualApplied,
-                status: newStatus,
-                updated_at: new Date(),
+            let remaining = paymentToAllocate;
+            for (const payment of payments) {
+              if (remaining <= 0) break;
+              const allocSum = await trx('supplier_payment_allocations')
+                .where('payment_id', payment.id)
+                .sum('allocated_amount as total')
+                .first();
+              const paymentAllocated = parseFloat(allocSum?.total) || 0;
+              const paymentUnallocated = parseFloat(payment.total_amount) - paymentAllocated;
+              if (paymentUnallocated <= 0) continue;
+              const allocAmount = Math.round(Math.min(remaining, paymentUnallocated) * 100) / 100;
+              await trx('supplier_payment_allocations').insert({
+                id: generateUUID(),
+                payment_id: payment.id,
+                invoice_id: invoiceId,
+                allocated_amount: allocAmount,
               });
+              remaining = Math.round((remaining - allocAmount) * 100) / 100;
+            }
           }
+
+          // Update invoice paid_amount with the full credit (payments + return credit)
+          const newStatus = toApply >= invoiceTotal ? 'paid' : 'partial';
+          await trx('purchase_invoices')
+            .where('id', invoiceId)
+            .update({
+              paid_amount: toApply,
+              status: newStatus,
+              updated_at: new Date(),
+            });
         }
       }
     });
