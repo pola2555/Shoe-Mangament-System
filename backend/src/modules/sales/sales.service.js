@@ -256,7 +256,9 @@ class SalesService {
       .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
       .join('products', 'product_variants.product_id', 'products.id')
       .join('product_colors', 'product_variants.product_color_id', 'product_colors.id')
+      .leftJoin('customer_return_items', 'sale_items.id', 'customer_return_items.sale_item_id')
       .whereIn('sale_items.sale_id', saleIds)
+      .whereNull('customer_return_items.id')
       .select(
         'sale_items.sale_id', 'sale_items.sale_price',
         'products.product_code', 'products.model_name',
