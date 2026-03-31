@@ -288,7 +288,8 @@ class SalesService {
       const otherTotal = salePayments.filter(p => p.payment_method !== 'cash').reduce((s, p) => s + parseFloat(p.amount), 0);
       const otherMethods = [...new Set(salePayments.filter(p => p.payment_method !== 'cash').map(p => p.payment_method))].join(', ');
 
-      for (const item of saleItems) {
+      for (let i = 0; i < saleItems.length; i++) {
+        const item = saleItems[i];
         rows.push({
           sale_number: sale.sale_number,
           date: new Date(sale.created_at).toLocaleDateString(),
@@ -298,9 +299,9 @@ class SalesService {
           color: item.color_name,
           size: item.size_eu,
           price: parseFloat(item.sale_price),
-          cash: cashTotal,
-          other: otherTotal,
-          other_methods: otherMethods,
+          cash: i === 0 ? cashTotal : '',
+          other: i === 0 ? otherTotal : '',
+          other_methods: i === 0 ? otherMethods : '',
         });
       }
     }
