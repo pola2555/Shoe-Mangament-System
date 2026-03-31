@@ -13,6 +13,7 @@ export default function SalesPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({ search: '', store_id: '', dateFrom: '', dateTo: '' });
   const [detail, setDetail] = useState(null);
+  const [exporting, setExporting] = useState(false);
   const { filterStores } = useAuth();
   const { t } = useTranslation();
 
@@ -58,6 +59,24 @@ export default function SalesPage() {
     catch { toast.error('Failed to load sale'); }
   };
 
+  const handleExport = async () => {
+    try {
+      setExporting(true);
+      const params = {};
+      if (filters.store_id) params.store_id = filters.store_id;
+      if (filters.dateFrom) params.startDate = filters.dateFrom;
+      if (filters.dateTo) params.endDate = filters.dateTo;
+      const { data } = await salesAPI.exportExcel(params);
+      const url = window.URL.createObjectURL(new Blob([data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sales_export_${new Date().toISOString().split('T')[0]}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { toast.error(t('common.error')); }
+    finally { setExporting(false); }
+  };
+
   const fmt = (v) => parseFloat(v).toLocaleString();
   const totalRevenue = filtered.reduce((s, r) => s + (parseFloat(r.final_amount) - (parseFloat(r.refunded_amount) || 0)), 0);
   const activeFilterCount = [filters.store_id, filters.dateFrom, filters.dateTo].filter(Boolean).length;
@@ -72,6 +91,9 @@ export default function SalesPage() {
           <button className={`btn ${showFilters || activeFilterCount ? 'btn-accent' : 'btn-secondary'}`}
             onClick={() => setShowFilters(!showFilters)}>
             🔍 {t('common.filters')}{activeFilterCount > 0 && ` (${activeFilterCount})`}
+          </button>
+          <button className="btn btn-secondary" onClick={handleExport} disabled={exporting}>
+            📥 {exporting ? t('common.loading') : t('common.export')}
           </button>
         </div>
       </div>

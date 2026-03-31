@@ -11,6 +11,7 @@ const upload = createUpload('payments');
 router.use(auth);
 
 router.get('/', permission('sales', 'read'), controller.list);
+router.get('/export-excel', permission('sales', 'read'), controller.exportExcel);
 router.get('/:id', permission('sales', 'read'), controller.getById);
 router.post('/', permission('pos', 'write'), validate(createSaleSchema), controller.create);
 router.post('/:id/payments', permission('sale_payments', 'write'), validate(addPaymentSchema), controller.addPayment);

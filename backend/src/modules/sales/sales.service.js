@@ -227,6 +227,84 @@ class SalesService {
 
     return payment;
   }
+
+  async exportExcel({ store_id, startDate, endDate } = {}) {
+    let query = db('sales')
+      .join('stores', 'sales.store_id', 'stores.id')
+      .leftJoin('customers', 'sales.customer_id', 'customers.id')
+      .select(
+        'sales.id', 'sales.sale_number', 'sales.final_amount',
+        'sales.refunded_amount', 'sales.created_at',
+        'stores.name as store_name',
+        'customers.name as customer_name'
+      )
+      .orderBy('sales.created_at', 'desc');
+
+    if (store_id) query = query.where('sales.store_id', store_id);
+    if (startDate) query = query.where('sales.created_at', '>=', startDate);
+    if (endDate) query = query.where('sales.created_at', '<=', endDate + 'T23:59:59');
+
+    const sales = await query;
+    if (!sales.length) return [];
+
+    const saleIds = sales.map(s => s.id);
+
+    const items = await db('sale_items')
+      .join('inventory_items', 'sale_items.inventory_item_id', 'inventory_items.id')
+      .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
+      .join('products', 'product_variants.product_id', 'products.id')
+      .join('product_colors', 'product_variants.product_color_id', 'product_colors.id')
+      .whereIn('sale_items.sale_id', saleIds)
+      .select(
+        'sale_items.sale_id', 'sale_items.sale_price',
+        'products.product_code', 'products.model_name',
+        'product_colors.color_name', 'product_variants.size_eu'
+      );
+
+    const payments = await db('sale_payments')
+      .whereIn('sale_id', saleIds)
+      .select('sale_id', 'amount', 'payment_method');
+
+    // Index by sale_id
+    const itemsBySale = {};
+    for (const it of items) {
+      if (!itemsBySale[it.sale_id]) itemsBySale[it.sale_id] = [];
+      itemsBySale[it.sale_id].push(it);
+    }
+    const paymentsBySale = {};
+    for (const p of payments) {
+      if (!paymentsBySale[p.sale_id]) paymentsBySale[p.sale_id] = [];
+      paymentsBySale[p.sale_id].push(p);
+    }
+
+    // Build rows: one row per sale item
+    const rows = [];
+    for (const sale of sales) {
+      const saleItems = itemsBySale[sale.id] || [];
+      const salePayments = paymentsBySale[sale.id] || [];
+      const cashTotal = salePayments.filter(p => p.payment_method === 'cash').reduce((s, p) => s + parseFloat(p.amount), 0);
+      const otherTotal = salePayments.filter(p => p.payment_method !== 'cash').reduce((s, p) => s + parseFloat(p.amount), 0);
+      const otherMethods = [...new Set(salePayments.filter(p => p.payment_method !== 'cash').map(p => p.payment_method))].join(', ');
+
+      for (const item of saleItems) {
+        rows.push({
+          sale_number: sale.sale_number,
+          date: new Date(sale.created_at).toLocaleDateString(),
+          store: sale.store_name,
+          customer: sale.customer_name || 'Walk-in',
+          product: `${item.product_code} - ${item.model_name}`,
+          color: item.color_name,
+          size: item.size_eu,
+          price: parseFloat(item.sale_price),
+          cash: cashTotal,
+          other: otherTotal,
+          other_methods: otherMethods,
+        });
+      }
+    }
+
+    return rows;
+  }
 }
 
 module.exports = new SalesService();

@@ -3,6 +3,7 @@ const db = require('../../config/database');
 const { generateUUID } = require('../../utils/generateCodes');
 const { getUploadedUrl } = require('../../middleware/upload');
 const { userHasStoreAccess } = require('../../middleware/auth');
+const ExcelJS = require('exceljs');
 
 class SalesController {
   async list(req, res, next) {
@@ -29,6 +30,48 @@ class SalesController {
         return res.status(403).json({ success: false, message: 'Access denied' });
       }
       res.json({ success: true, data: sale });
+    } catch (error) { next(error); }
+  }
+
+  async exportExcel(req, res, next) {
+    try {
+      const filters = { ...req.query };
+      if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
+        filters.store_id = req.user.store_id;
+      }
+      const rows = await salesService.exportExcel(filters);
+
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Sales');
+
+      sheet.columns = [
+        { header: 'Sale #', key: 'sale_number', width: 14 },
+        { header: 'Date', key: 'date', width: 12 },
+        { header: 'Store', key: 'store', width: 16 },
+        { header: 'Customer', key: 'customer', width: 18 },
+        { header: 'Product', key: 'product', width: 30 },
+        { header: 'Color', key: 'color', width: 14 },
+        { header: 'Size', key: 'size', width: 8 },
+        { header: 'Price', key: 'price', width: 12 },
+        { header: 'Cash', key: 'cash', width: 12 },
+        { header: 'Other Payment', key: 'other', width: 14 },
+        { header: 'Other Methods', key: 'other_methods', width: 18 },
+      ];
+
+      // Style header
+      sheet.getRow(1).font = { bold: true };
+      sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4472C4' } };
+      sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+
+      for (const row of rows) {
+        sheet.addRow(row);
+      }
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=sales_export_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+      await workbook.xlsx.write(res);
+      res.end();
     } catch (error) { next(error); }
   }
 

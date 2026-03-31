@@ -134,6 +134,7 @@ export const salesAPI = {
   addPayment: (saleId, data) => api.post(`/sales/${saleId}/payments`, data),
   uploadPaymentImage: (saleId, paymentId, formData) =>
     api.post(`/sales/${saleId}/payments/${paymentId}/images`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  exportExcel: (params) => api.get('/sales/export-excel', { params, responseType: 'blob' }),
 };
 
 export const dealersAPI = {
