@@ -30,6 +30,9 @@ const loanRoutes = require('./modules/loans/loans.routes');
 
 const app = express();
 
+// Trust first proxy (Nginx)
+app.set('trust proxy', 1);
+
 // --- Global Rate Limiting ---
 const rateLimit = require('express-rate-limit');
 const globalLimiter = rateLimit({

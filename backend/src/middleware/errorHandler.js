@@ -12,6 +12,8 @@ function errorHandler(err, req, res, next) {
   // Log the full error in development
   if (process.env.NODE_ENV === 'development') {
     console.error('Error:', err);
+  } else {
+    console.error('Error:', err.message, err.stack?.split('\n').slice(0, 3).join('\n'));
   }
 
   // Known operational error
