@@ -228,7 +228,7 @@ class SalesService {
     return payment;
   }
 
-  async exportExcel({ store_id, startDate, endDate } = {}) {
+  async exportExcel({ store_id, store_ids, startDate, endDate } = {}) {
     let query = db('sales')
       .join('stores', 'sales.store_id', 'stores.id')
       .leftJoin('customers', 'sales.customer_id', 'customers.id')
@@ -238,9 +238,11 @@ class SalesService {
         'stores.name as store_name',
         'customers.name as customer_name'
       )
-      .orderBy('sales.created_at', 'desc');
+      .orderBy('sales.created_at', 'desc')
+      .limit(5000);
 
     if (store_id) query = query.where('sales.store_id', store_id);
+    else if (store_ids?.length) query = query.whereIn('sales.store_id', store_ids);
     if (startDate) query = query.where('sales.created_at', '>=', startDate);
     if (endDate) query = query.where('sales.created_at', '<=', endDate + 'T23:59:59');
 

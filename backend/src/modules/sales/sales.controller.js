@@ -37,7 +37,11 @@ class SalesController {
     try {
       const filters = { ...req.query };
       if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
-        filters.store_id = req.user.store_id;
+        if (req.user.assigned_stores?.length > 0) {
+          filters.store_ids = req.user.assigned_stores;
+        } else {
+          filters.store_id = req.user.store_id;
+        }
       }
       const rows = await salesService.exportExcel(filters);
 
