@@ -1,10 +1,12 @@
-import { useState, useEffect, Fragment, useMemo } from 'react';
-import { inventoryAPI, storesAPI } from '../../api';
+import { useState, useEffect, Fragment } from 'react';
+import { inventoryAPI, storesAPI, productsAPI } from '../../api';
+import api from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import ClickableImage from '../../components/common/ClickableImage';
 import { useTranslation } from '../../i18n/i18nContext';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, ImageRun } from 'docx';
 import '../products/Products.css';
 
 // --- Tree View Components ---
@@ -83,6 +85,52 @@ const InventoryTreeProductRow = ({ product, defaultExpanded = false }) => {
   );
 };
 
+const toAbsoluteImageUrl = (imageUrl) => {
+  if (!imageUrl) return null;
+  if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
+  const apiBase = api.defaults.baseURL || '';
+  const origin = apiBase.replace(/\/api\/?$/, '');
+  if (!origin) return imageUrl;
+  return `${origin}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
+};
+
+const loadImageSize = (blob) => new Promise((resolve, reject) => {
+  const objectUrl = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+    const size = { width: img.naturalWidth || 1, height: img.naturalHeight || 1 };
+    URL.revokeObjectURL(objectUrl);
+    resolve(size);
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(objectUrl);
+    reject(new Error('Unable to load image'));
+  };
+  img.src = objectUrl;
+});
+
+const fetchImageForDocx = async (imageUrl, maxWidth = 420, maxHeight = 260) => {
+  const absoluteUrl = toAbsoluteImageUrl(imageUrl);
+  if (!absoluteUrl) return null;
+
+  const token = localStorage.getItem('accessToken');
+  const response = await fetch(absoluteUrl, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!response.ok) throw new Error('Image fetch failed');
+
+  const blob = await response.blob();
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const natural = await loadImageSize(blob);
+  const ratio = Math.min(maxWidth / natural.width, maxHeight / natural.height, 1);
+
+  return {
+    data: bytes,
+    width: Math.max(80, Math.round(natural.width * ratio)),
+    height: Math.max(80, Math.round(natural.height * ratio)),
+  };
+};
+
 // --- Main Page Component ---
 
 export default function InventoryPage() {
@@ -91,7 +139,8 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ store_id: '', status: 'in_stock', search: '', size_min: '', size_max: '' });
   const [viewMode, setViewMode] = useState('summary'); // 'summary' or 'items'
-  const { hasPermission, filterStores } = useAuth();
+  const [exportingWord, setExportingWord] = useState(false);
+  const { filterStores } = useAuth();
   const { t } = useTranslation();
   const [treeData, setTreeData] = useState([]);
 
@@ -108,12 +157,7 @@ export default function InventoryPage() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const params = {};
-      if (filters.store_id) params.store_id = filters.store_id;
-      if (filters.status) params.status = filters.status;
-      if (filters.search) params.search = filters.search;
-      if (filters.size_min) params.size_min = filters.size_min;
-      if (filters.size_max) params.size_max = filters.size_max;
+      const params = buildQueryParams({ includeStatus: viewMode === 'items' });
 
       if (viewMode === 'summary') {
         const { data } = await inventoryAPI.summary(params);
@@ -131,6 +175,177 @@ export default function InventoryPage() {
   const handleSearch = (e) => {
     e.preventDefault();
     fetchData();
+  };
+
+  const buildQueryParams = ({ includeStatus = true } = {}) => {
+    const params = {};
+    if (filters.store_id) params.store_id = filters.store_id;
+    if (includeStatus && filters.status) params.status = filters.status;
+    if (filters.search) params.search = filters.search;
+    if (filters.size_min) params.size_min = filters.size_min;
+    if (filters.size_max) params.size_max = filters.size_max;
+    return params;
+  };
+
+  const formatMoney = (value) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '—';
+    return `${num.toLocaleString()} ${t('common.currency')}`;
+  };
+
+  const handleExportWord = async () => {
+    try {
+      setExportingWord(true);
+
+      const { data } = await inventoryAPI.summary(buildQueryParams({ includeStatus: false }));
+      const rows = data?.data || [];
+      if (!rows.length) {
+        toast.error(t('inventory.no_inventory'));
+        return;
+      }
+
+      const productMap = new Map();
+      for (const row of rows) {
+        if (!productMap.has(row.product_id)) {
+          productMap.set(row.product_id, {
+            id: row.product_id,
+            code: row.product_code,
+            name: row.product_name,
+            brand: row.brand,
+            rows: [],
+            imageUrls: new Set(row.product_image ? [row.product_image] : []),
+          });
+        }
+        productMap.get(row.product_id).rows.push(row);
+      }
+
+      const products = Array.from(productMap.values());
+
+      for (const product of products) {
+        try {
+          const { data: colorsRes } = await productsAPI.listColors(product.id);
+          const colors = colorsRes?.data || [];
+          colors.forEach((color) => {
+            (color.images || []).forEach((img) => {
+              if (img.image_url) product.imageUrls.add(img.image_url);
+            });
+          });
+        } catch {
+          // Best effort: keep export running even when a product images call fails.
+        }
+      }
+
+      const sections = [];
+      for (const product of products) {
+        const productRows = product.rows;
+        const first = productRows[0] || {};
+
+        const imageCandidates = Array.from(product.imageUrls).slice(0, 4);
+        const imageResults = await Promise.allSettled(
+          imageCandidates.map((url) => fetchImageForDocx(url))
+        );
+
+        const imageRuns = imageResults
+          .filter((r) => r.status === 'fulfilled' && r.value)
+          .map((r) => new ImageRun({ data: r.value.data, transformation: { width: r.value.width, height: r.value.height } }));
+
+        const sizesByColor = new Map();
+        let totalQty = 0;
+        for (const row of productRows) {
+          const colorKey = row.color_name || 'N/A';
+          if (!sizesByColor.has(colorKey)) sizesByColor.set(colorKey, new Map());
+          const sizeMap = sizesByColor.get(colorKey);
+          const sizeKey = String(row.size_eu);
+          const qty = Number(row.quantity) || 0;
+          sizeMap.set(sizeKey, (sizeMap.get(sizeKey) || 0) + qty);
+          totalQty += qty;
+        }
+
+        const sellingPrice = first.store_selling_price ?? first.default_selling_price;
+        const minPrice = first.store_min_selling_price ?? first.min_selling_price;
+        const maxPrice = first.store_max_selling_price ?? first.max_selling_price;
+
+        const children = [
+          new Paragraph({
+            heading: HeadingLevel.HEADING_1,
+            alignment: AlignmentType.CENTER,
+            children: [new TextRun(`${product.code || ''} - ${product.name || 'Product'}`)],
+          }),
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 240 },
+            children: [
+              new TextRun({ text: `${t('products.brand')}: `, bold: true }),
+              new TextRun(product.brand || '—'),
+              new TextRun({ text: `   |   ${t('common.price')}: `, bold: true }),
+              new TextRun(formatMoney(sellingPrice)),
+            ],
+          }),
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 320 },
+            children: [
+              new TextRun({ text: `${t('products.min_price')}: `, bold: true }),
+              new TextRun(formatMoney(minPrice)),
+              new TextRun({ text: `   |   ${t('products.max_price')}: `, bold: true }),
+              new TextRun(formatMoney(maxPrice)),
+              new TextRun({ text: `   |   ${t('common.quantity')}: `, bold: true }),
+              new TextRun(String(totalQty)),
+            ],
+          }),
+        ];
+
+        if (imageRuns.length > 0) {
+          imageRuns.forEach((run) => {
+            children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 180 }, children: [run] }));
+          });
+        } else {
+          children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 180 }, text: 'No image available' }));
+        }
+
+        children.push(
+          new Paragraph({
+            heading: HeadingLevel.HEADING_2,
+            spacing: { before: 180, after: 120 },
+            text: `${t('products.size')} / ${t('common.quantity')}`,
+          })
+        );
+
+        Array.from(sizesByColor.entries())
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .forEach(([colorName, sizeMap]) => {
+            const sizeLine = Array.from(sizeMap.entries())
+              .sort((a, b) => Number(a[0]) - Number(b[0]))
+              .map(([size, qty]) => `EU ${size} (${qty})`)
+              .join('    ');
+
+            children.push(
+              new Paragraph({ children: [new TextRun({ text: `${t('products.color_name')}: ${colorName}`, bold: true })] }),
+              new Paragraph({ spacing: { after: 80 }, text: sizeLine || '—' })
+            );
+          });
+
+        sections.push({ children });
+      }
+
+      const doc = new Document({ sections });
+      const blob = await Packer.toBlob(doc);
+      const filename = `inventory-products-${new Date().toISOString().slice(0, 10)}.docx`;
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+
+      toast.success(`${t('common.download')} ${products.length} ${t('common.items')}`);
+    } catch (error) {
+      toast.error(error?.response?.data?.message || t('common.error'));
+    } finally {
+      setExportingWord(false);
+    }
   };
 
   const buildTree = (rawData) => {
@@ -174,6 +389,9 @@ export default function InventoryPage() {
       <div className="page-header">
         <h1 className="page-title">{t('inventory.title')}</h1>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+          <button className="btn btn-secondary" onClick={handleExportWord} disabled={exportingWord}>
+            {exportingWord ? `${t('common.loading')}` : `${t('common.export')} Word`}
+          </button>
           <button className={`btn ${viewMode === 'summary' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setViewMode('summary')}>{t('inventory.summary')}</button>
           <button className={`btn ${viewMode === 'items' ? 'btn-primary' : 'btn-secondary'}`}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { loansAPI, storesAPI } from '../../api';
+import { loansAPI, storesAPI, usersAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
@@ -9,6 +9,7 @@ import '../products/Products.css';
 export default function LoansPage() {
   const [loans, setLoans] = useState([]);
   const [stores, setStores] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -21,13 +22,14 @@ export default function LoansPage() {
   const canWrite = hasPermission('loans', 'write');
   const { t } = useTranslation();
 
-  const emptyForm = { borrower_name: '', borrower_phone: '', amount: '', loan_date: new Date().toISOString().split('T')[0], due_date: '', notes: '', store_id: '' };
+  const emptyForm = { borrower_user_id: '', amount: '', loan_date: new Date().toISOString().split('T')[0], due_date: '', notes: '', store_id: '' };
   const [form, setForm] = useState(emptyForm);
   const emptyPayment = { amount: '', payment_method: 'cash', payment_date: new Date().toISOString().split('T')[0], notes: '' };
   const [paymentForm, setPaymentForm] = useState(emptyPayment);
 
   useEffect(() => {
     storesAPI.list().then(r => setStores(filterStores(r.data.data))).catch(() => {});
+    usersAPI.list().then(r => setUsers(r.data.data || [])).catch(() => {});
     fetchLoans();
   }, []);
 
@@ -48,6 +50,7 @@ export default function LoansPage() {
       const payload = { ...form, amount: parseFloat(form.amount) };
       if (!payload.store_id) delete payload.store_id;
       if (!payload.due_date) payload.due_date = null;
+      delete payload.borrower_name;
       if (editingId) { await loansAPI.update(editingId, payload); toast.success(t('common.updated')); }
       else { await loansAPI.create(payload); toast.success(t('common.created')); }
       setShowForm(false); setEditingId(null); setForm(emptyForm);
@@ -88,7 +91,7 @@ export default function LoansPage() {
     let result = [...loans];
     if (search) {
       const q = search.toLowerCase();
-      result = result.filter(l => l.borrower_name?.toLowerCase().includes(q) || l.borrower_phone?.toLowerCase().includes(q));
+      result = result.filter(l => l.borrower_name?.toLowerCase().includes(q) || l.borrower_full_name?.toLowerCase().includes(q) || l.borrower_username?.toLowerCase().includes(q));
     }
     if (statusFilter) result = result.filter(l => l.status === statusFilter);
     return result;
@@ -139,15 +142,15 @@ export default function LoansPage() {
           <div className="modal-content card" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
             <h2 style={{ marginBottom: 'var(--spacing-lg)' }}>{editingId ? t('loans.edit_loan') : t('loans.add_loan')}</h2>
             <form onSubmit={handleSubmit}>
-              <div className="form-row">
-                <div className="form-group" style={{ flex: 2 }}>
-                  <label className="form-label">{t('loans.borrower_name')} *</label>
-                  <input className="form-input" required value={form.borrower_name} onChange={e => setForm({ ...form, borrower_name: e.target.value })} />
-                </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label className="form-label">{t('common.phone')}</label>
-                  <input className="form-input" value={form.borrower_phone} onChange={e => setForm({ ...form, borrower_phone: e.target.value })} />
-                </div>
+              <div className="form-group">
+                <label className="form-label">{t('loans.borrower_name')} *</label>
+                <SearchableSelect
+                  options={users.map(u => ({ value: u.id, label: u.full_name }))}
+                  value={form.borrower_user_id}
+                  onChange={v => setForm({ ...form, borrower_user_id: v })}
+                  placeholder={t('common.select')}
+                  required
+                />
               </div>
               <div className="form-row">
                 <div className="form-group" style={{ flex: 1 }}>
@@ -192,10 +195,10 @@ export default function LoansPage() {
         <div className="modal-overlay" onClick={() => setDetail(null)}>
           <div className="modal-content card" style={{ maxWidth: 600, maxHeight: '85vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
-              <h2>{detail.borrower_name}</h2>
+              <h2>{detail.borrower_full_name || detail.borrower_name}</h2>
               <span className={`badge ${statusColors[detail.status]}`}>{t(`loans.${detail.status}`)}</span>
             </div>
-            {detail.borrower_phone && <p style={{ color: 'var(--color-text-muted)', marginBottom: 4 }}>{t('common.phone')}: {detail.borrower_phone}</p>}
+            {detail.borrower_username && <p style={{ color: 'var(--color-text-muted)', marginBottom: 4 }}>@{detail.borrower_username}</p>}
             <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-sm)' }}>
               {t('loans.amount')}: <strong>{parseFloat(detail.amount).toLocaleString()} {t('common.currency')}</strong> &nbsp;•&nbsp;
               {t('loans.paid_back')}: <strong style={{ color: 'var(--color-success)' }}>{parseFloat(detail.paid_amount).toLocaleString()} {t('common.currency')}</strong> &nbsp;•&nbsp;
@@ -277,7 +280,6 @@ export default function LoansPage() {
             <thead>
               <tr>
                 <th>{t('loans.borrower_name')}</th>
-                <th>{t('common.phone')}</th>
                 <th>{t('loans.amount')}</th>
                 <th>{t('loans.paid_back')}</th>
                 <th>{t('loans.remaining')}</th>
@@ -289,14 +291,13 @@ export default function LoansPage() {
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>{t('loans.no_loans')}</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>{t('loans.no_loans')}</td></tr>
               ) : filtered.map(l => {
                 const remaining = parseFloat(l.amount) - parseFloat(l.paid_amount);
                 const overdue = l.due_date && new Date(l.due_date) < new Date() && l.status !== 'paid';
                 return (
                   <tr key={l.id} className="product-row" onClick={() => openDetail(l.id)} style={overdue ? { borderInlineStart: '3px solid var(--color-danger)' } : undefined}>
-                    <td><strong>{l.borrower_name}</strong></td>
-                    <td>{l.borrower_phone || '—'}</td>
+                    <td><strong>{l.borrower_full_name || l.borrower_name}</strong></td>
                     <td>{parseFloat(l.amount).toLocaleString()}</td>
                     <td style={{ color: 'var(--color-success)' }}>{parseFloat(l.paid_amount).toLocaleString()}</td>
                     <td style={{ color: remaining > 0 ? 'var(--color-danger)' : 'var(--color-success)', fontWeight: 600 }}>{remaining.toLocaleString()}</td>
@@ -309,7 +310,7 @@ export default function LoansPage() {
                           <>
                             <button className="btn btn-sm btn-secondary" onClick={() => {
                               setForm({
-                                borrower_name: l.borrower_name, borrower_phone: l.borrower_phone || '',
+                                borrower_user_id: l.borrower_user_id || '',
                                 amount: l.amount, loan_date: new Date(l.loan_date).toISOString().split('T')[0],
                                 due_date: l.due_date ? new Date(l.due_date).toISOString().split('T')[0] : '',
                                 notes: l.notes || '', store_id: l.store_id || '',

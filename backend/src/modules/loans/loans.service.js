@@ -6,11 +6,14 @@ class LoansService {
   async list({ store_id, status, search } = {}) {
     let query = db('loans')
       .leftJoin('stores', 'loans.store_id', 'stores.id')
-      .leftJoin('users', 'loans.created_by', 'users.id')
+      .leftJoin('users as creator', 'loans.created_by', 'creator.id')
+      .leftJoin('users as borrower', 'loans.borrower_user_id', 'borrower.id')
       .select(
         'loans.*',
         'stores.name as store_name',
-        'users.full_name as created_by_name'
+        'creator.full_name as created_by_name',
+        'borrower.full_name as borrower_full_name',
+        'borrower.username as borrower_username'
       )
       .orderBy('loans.created_at', 'desc');
 
@@ -20,7 +23,8 @@ class LoansService {
       const safe = search.replace(/[%_\\]/g, '\\$&');
       query = query.where(function () {
         this.where('loans.borrower_name', 'ilike', `%${safe}%`)
-          .orWhere('loans.borrower_phone', 'ilike', `%${safe}%`);
+          .orWhere('borrower.full_name', 'ilike', `%${safe}%`)
+          .orWhere('borrower.username', 'ilike', `%${safe}%`);
       });
     }
 
@@ -30,9 +34,16 @@ class LoansService {
   async getById(id) {
     const loan = await db('loans')
       .leftJoin('stores', 'loans.store_id', 'stores.id')
-      .leftJoin('users', 'loans.created_by', 'users.id')
+      .leftJoin('users as creator', 'loans.created_by', 'creator.id')
+      .leftJoin('users as borrower', 'loans.borrower_user_id', 'borrower.id')
       .where('loans.id', id)
-      .select('loans.*', 'stores.name as store_name', 'users.full_name as created_by_name')
+      .select(
+        'loans.*',
+        'stores.name as store_name',
+        'creator.full_name as created_by_name',
+        'borrower.full_name as borrower_full_name',
+        'borrower.username as borrower_username'
+      )
       .first();
     if (!loan) throw new AppError('Loan not found', 404);
 
@@ -44,10 +55,18 @@ class LoansService {
   }
 
   async create(data, userId) {
+    // If borrower_user_id provided, auto-fill borrower_name from user
+    let borrowerName = data.borrower_name;
+    if (data.borrower_user_id) {
+      const borrowerUser = await db('users').where('id', data.borrower_user_id).first();
+      if (borrowerUser) borrowerName = borrowerUser.full_name;
+    }
+
     const [loan] = await db('loans')
       .insert({
         id: generateUUID(),
-        borrower_name: data.borrower_name,
+        borrower_name: borrowerName,
+        borrower_user_id: data.borrower_user_id || null,
         borrower_phone: data.borrower_phone || null,
         amount: data.amount,
         loan_date: data.loan_date,
@@ -67,7 +86,14 @@ class LoansService {
     if (!existing) throw new AppError('Loan not found', 404);
 
     const safeData = { updated_at: new Date() };
-    if (data.borrower_name !== undefined) safeData.borrower_name = data.borrower_name;
+    if (data.borrower_user_id !== undefined) {
+      safeData.borrower_user_id = data.borrower_user_id;
+      if (data.borrower_user_id) {
+        const borrowerUser = await db('users').where('id', data.borrower_user_id).first();
+        if (borrowerUser) safeData.borrower_name = borrowerUser.full_name;
+      }
+    }
+    if (data.borrower_name !== undefined && !data.borrower_user_id) safeData.borrower_name = data.borrower_name;
     if (data.borrower_phone !== undefined) safeData.borrower_phone = data.borrower_phone;
     if (data.amount !== undefined) safeData.amount = data.amount;
     if (data.loan_date !== undefined) safeData.loan_date = data.loan_date;

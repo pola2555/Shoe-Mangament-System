@@ -1,7 +1,8 @@
 const Joi = require('joi');
 
 const createLoanSchema = Joi.object({
-  borrower_name: Joi.string().max(100).required(),
+  borrower_user_id: Joi.string().uuid().required(),
+  borrower_name: Joi.string().max(100).allow('', null),
   borrower_phone: Joi.string().max(30).allow('', null),
   amount: Joi.number().positive().required(),
   loan_date: Joi.date().required(),
@@ -11,6 +12,7 @@ const createLoanSchema = Joi.object({
 });
 
 const updateLoanSchema = Joi.object({
+  borrower_user_id: Joi.string().uuid(),
   borrower_name: Joi.string().max(100),
   borrower_phone: Joi.string().max(30).allow('', null),
   amount: Joi.number().positive(),
