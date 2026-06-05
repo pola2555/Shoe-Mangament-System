@@ -220,7 +220,7 @@ export default function InventoryPage() {
   const formatMoney = (value) => {
     const num = Number(value);
     if (!Number.isFinite(num)) return '—';
-    return `${num.toLocaleString()} ${t('common.currency')}`;
+    return `${num.toLocaleString('ar-EG')} ${t('common.currency')}`;
   };
 
   const handleExportWord = async () => {
@@ -291,9 +291,7 @@ export default function InventoryPage() {
           totalQty += qty;
         }
 
-        const sellingPrice = first.store_selling_price ?? first.default_selling_price;
-        const minPrice = first.store_min_selling_price ?? first.min_selling_price;
-        const maxPrice = first.store_max_selling_price ?? first.max_selling_price;
+        const netPrice = first.net_price;
 
         const children = [
           new Paragraph({
@@ -307,19 +305,15 @@ export default function InventoryPage() {
             children: [
               new TextRun({ text: `${t('products.brand')}: `, bold: true }),
               new TextRun(product.brand || '—'),
-              new TextRun({ text: `   |   ${t('common.price')}: `, bold: true }),
-              new TextRun(formatMoney(sellingPrice)),
+              new TextRun({ text: `   |   سعر الشراء: `, bold: true }),
+              new TextRun(formatMoney(netPrice)),
             ],
           }),
           new Paragraph({
             alignment: AlignmentType.CENTER,
             spacing: { after: 320 },
             children: [
-              new TextRun({ text: `${t('products.min_price')}: `, bold: true }),
-              new TextRun(formatMoney(minPrice)),
-              new TextRun({ text: `   |   ${t('products.max_price')}: `, bold: true }),
-              new TextRun(formatMoney(maxPrice)),
-              new TextRun({ text: `   |   ${t('common.quantity')}: `, bold: true }),
+              new TextRun({ text: `الكمية: `, bold: true }),
               new TextRun(String(totalQty)),
             ],
           }),
@@ -330,14 +324,14 @@ export default function InventoryPage() {
             children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 180 }, children: [run] }));
           });
         } else {
-          children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 180 }, text: 'No image available' }));
+          children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 180 }, text: 'لا توجد صورة متاحة' }));
         }
 
         children.push(
           new Paragraph({
             heading: HeadingLevel.HEADING_2,
             spacing: { before: 180, after: 120 },
-            text: `${t('products.size')} / ${t('common.quantity')}`,
+            text: 'المقاسات / الكمية',
           })
         );
 
@@ -350,7 +344,7 @@ export default function InventoryPage() {
               .join('    ');
 
             children.push(
-              new Paragraph({ children: [new TextRun({ text: `${t('products.color_name')}: ${colorName}`, bold: true })] }),
+              new Paragraph({ children: [new TextRun({ text: `اللون: ${colorName}`, bold: true })] }),
               new Paragraph({ spacing: { after: 80 }, text: sizeLine || '—' })
             );
           });
@@ -420,7 +414,7 @@ export default function InventoryPage() {
         <h1 className="page-title">{t('inventory.title')}</h1>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
           <button className="btn btn-secondary" onClick={handleExportWord} disabled={exportingWord}>
-            {exportingWord ? `${t('common.loading')}` : `${t('common.export')} Word`}
+            {exportingWord ? 'جاري التحميل...' : 'تصدير وورد'}
           </button>
           <button className={`btn ${viewMode === 'summary' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setViewMode('summary')}>{t('inventory.summary')}</button>

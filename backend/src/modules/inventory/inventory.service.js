@@ -96,6 +96,7 @@ class InventoryService {
         'products.product_code',
         'products.model_name as product_name',
         'products.brand',
+        'products.net_price',
         'products.default_selling_price',
         'products.min_selling_price',
         'products.max_selling_price',
@@ -121,6 +122,7 @@ class InventoryService {
       )
       .groupBy(
         'products.id', 'products.product_code', 'products.model_name', 'products.brand',
+        'products.net_price',
         'products.default_selling_price', 'products.min_selling_price', 'products.max_selling_price',
         'store_product_prices.selling_price', 'store_product_prices.min_selling_price', 'store_product_prices.max_selling_price',
         'product_colors.color_name', 'product_colors.hex_code',
