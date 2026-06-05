@@ -105,6 +105,7 @@ export const purchasesAPI = {
 export const inventoryAPI = {
   list: (params) => api.get('/inventory', { params }),
   summary: (params) => api.get('/inventory/summary', { params }),
+  exportImage: (url) => api.get('/inventory/export-image', { params: { url }, responseType: 'blob' }),
   manualEntry: (data) => api.post('/inventory/manual', data),
   markDamaged: (id, notes) => api.put(`/inventory/${id}/damaged`, { notes }),
 };

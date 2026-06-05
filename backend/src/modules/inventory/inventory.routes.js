@@ -10,6 +10,7 @@ router.use(auth);
 
 router.get('/', permission('inventory', 'read'), controller.list);
 router.get('/summary', permission('inventory', 'read'), controller.summary);
+router.get('/export-image', permission('inventory', 'read'), controller.exportImageProxy);
 router.post('/manual', permission('inventory', 'write'), validate(manualEntrySchema), controller.manualEntry);
 router.put('/:id/damaged', permission('inventory', 'write'), validate(markDamagedSchema), controller.markDamaged);
 

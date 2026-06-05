@@ -2,6 +2,26 @@ const inventoryService = require('./inventory.service');
 const db = require('../../config/database');
 const AppError = require('../../utils/AppError');
 const { userHasStoreAccess } = require('../../middleware/auth');
+const env = require('../../config/env');
+
+function isAllowedExportImageUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+
+    const bucket = env.storage?.s3?.bucket;
+    if (!bucket) return true;
+
+    // Path-style S3 URL: s3.region.amazonaws.com/bucket/key
+    const pathStyle = parsed.hostname.includes('amazonaws.com') && parsed.pathname.startsWith(`/${bucket}/`);
+    // Virtual-hosted S3 URL: bucket.s3.region.amazonaws.com/key
+    const virtualHosted = parsed.hostname === `${bucket}.s3.${env.storage.s3.region}.amazonaws.com`;
+
+    return pathStyle || virtualHosted;
+  } catch {
+    return false;
+  }
+}
 
 class InventoryController {
   async list(req, res, next) {
@@ -43,6 +63,36 @@ class InventoryController {
       const result = await inventoryService.manualEntry(req.body);
       res.status(201).json({ success: true, data: result });
     } catch (error) { next(error); }
+  }
+
+  async exportImageProxy(req, res, next) {
+    try {
+      const { url } = req.query;
+      if (!url || typeof url !== 'string') {
+        return res.status(400).json({ success: false, message: 'Missing image url' });
+      }
+
+      if (!isAllowedExportImageUrl(url)) {
+        throw new AppError('Image URL is not allowed for export', 400);
+      }
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        return res.status(404).json({ success: false, message: 'Image not found' });
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.toLowerCase().startsWith('image/')) {
+        return res.status(400).json({ success: false, message: 'Invalid image content' });
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      return res.send(buffer);
+    } catch (error) {
+      return next(error);
+    }
   }
 
   async markDamaged(req, res, next) {

@@ -1,6 +1,5 @@
 import { useState, useEffect, Fragment } from 'react';
 import { inventoryAPI, storesAPI, productsAPI } from '../../api';
-import api from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
@@ -85,13 +84,19 @@ const InventoryTreeProductRow = ({ product, defaultExpanded = false }) => {
   );
 };
 
-const toAbsoluteImageUrl = (imageUrl) => {
-  if (!imageUrl) return null;
-  if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
-  const apiBase = api.defaults.baseURL || '';
-  const origin = apiBase.replace(/\/api\/?$/, '');
-  if (!origin) return imageUrl;
-  return `${origin}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
+const buildImageUrlCandidates = (imageUrl) => {
+  if (!imageUrl) return [];
+
+  const raw = String(imageUrl).trim();
+  if (!raw) return [];
+
+  const normalized = raw.replace(/\\/g, '/');
+  const candidates = new Set([normalized]);
+
+  if (normalized.startsWith('http://')) candidates.add(`https://${normalized.slice('http://'.length)}`);
+  if (normalized.startsWith('https://')) candidates.add(`http://${normalized.slice('https://'.length)}`);
+
+  return Array.from(candidates);
 };
 
 const loadImageSize = (blob) => new Promise((resolve, reject) => {
@@ -110,25 +115,50 @@ const loadImageSize = (blob) => new Promise((resolve, reject) => {
 });
 
 const fetchImageForDocx = async (imageUrl, maxWidth = 420, maxHeight = 260) => {
-  const absoluteUrl = toAbsoluteImageUrl(imageUrl);
-  if (!absoluteUrl) return null;
+  const candidates = buildImageUrlCandidates(imageUrl);
+  if (!candidates.length) return null;
 
-  const token = localStorage.getItem('accessToken');
-  const response = await fetch(absoluteUrl, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
-  if (!response.ok) throw new Error('Image fetch failed');
+  for (const candidate of candidates) {
+    try {
+      const response = await inventoryAPI.exportImage(candidate);
+      const sourceBlob = response.data;
+      const natural = await loadImageSize(sourceBlob);
+      const ratio = Math.min(maxWidth / natural.width, maxHeight / natural.height, 1);
+      const width = Math.max(80, Math.round(natural.width * ratio));
+      const height = Math.max(80, Math.round(natural.height * ratio));
 
-  const blob = await response.blob();
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  const natural = await loadImageSize(blob);
-  const ratio = Math.min(maxWidth / natural.width, maxHeight / natural.height, 1);
+      // Convert to PNG to avoid unsupported source formats in docx (e.g., webp).
+      const objectUrl = URL.createObjectURL(sourceBlob);
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = objectUrl;
+      });
 
-  return {
-    data: bytes,
-    width: Math.max(80, Math.round(natural.width * ratio)),
-    height: Math.max(80, Math.round(natural.height * ratio)),
-  };
+      const canvas = document.createElement('canvas');
+      canvas.width = natural.width;
+      canvas.height = natural.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        URL.revokeObjectURL(objectUrl);
+        continue;
+      }
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(objectUrl);
+
+      const pngBlob = await new Promise((resolve, reject) => {
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('png conversion failed'))), 'image/png');
+      });
+
+      const bytes = new Uint8Array(await pngBlob.arrayBuffer());
+      return { data: bytes, width, height };
+    } catch {
+      // Try next candidate URL.
+    }
+  }
+
+  throw new Error('Image fetch failed');
 };
 
 // --- Main Page Component ---
