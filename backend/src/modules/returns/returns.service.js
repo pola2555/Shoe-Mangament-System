@@ -45,8 +45,19 @@ class ReturnsService {
 
       // 4. Resolve Items & Update Inventory
       const returnItemsToInsert = [];
+      // Guards against duplicates *within this request*. The DB check below only sees
+      // committed rows, and all inserts happen after this loop, so without this a
+      // repeated sale_item_id passed the check twice and was refunded twice.
+      const seenSaleItemIds = new Set();
+
       for (const reqItem of data.items) {
-        const saleItem = await trx('sale_items').where('id', reqItem.sale_item_id).first();
+        if (seenSaleItemIds.has(reqItem.sale_item_id)) {
+          throw new AppError('The same sale item appears more than once in this return', 400);
+        }
+        seenSaleItemIds.add(reqItem.sale_item_id);
+
+        // forUpdate: serialise concurrent returns of the same item.
+        const saleItem = await trx('sale_items').where('id', reqItem.sale_item_id).forUpdate().first();
         if (!saleItem) throw new AppError(`Sale item ${reqItem.sale_item_id} not found`, 404);
 
         // Verify sale item belongs to the referenced sale

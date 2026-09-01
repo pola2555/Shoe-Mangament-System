@@ -1,5 +1,6 @@
 const productsService = require('./products.service');
 const { getUploadedUrl } = require('../../middleware/upload');
+const { generateThumbnail } = require('../../utils/thumbnails');
 
 class ProductsController {
   // --- Products ---
@@ -89,10 +90,15 @@ class ProductsController {
         .first();
       if (!color) return res.status(404).json({ success: false, message: 'Color not found for this product' });
       const imageUrl = getUploadedUrl('products', req.file);
+      // Derive a small WebP alongside the original so list views don't have to
+      // download a full-size photo to fill a 44px cell. Best-effort: on failure the
+      // thumb is null and the UI falls back to the original.
+      const thumbUrl = await generateThumbnail('products', req.file);
       const image = await productsService.addImage(
         req.params.colorId,
         imageUrl,
-        req.file.originalname
+        req.file.originalname,
+        thumbUrl
       );
       res.status(201).json({ success: true, data: image });
     } catch (error) { next(error); }
@@ -148,7 +154,9 @@ class ProductsController {
       const variants = await productsService.bulkCreateVariants(
         req.params.id,
         req.body.product_color_id,
-        req.body.variants
+        req.body.variants,
+        // The matrix form: colours x sizes, resolved server-side.
+        { color_ids: req.body.color_ids, size_values: req.body.size_values }
       );
       res.status(201).json({ success: true, data: variants });
     } catch (error) { next(error); }

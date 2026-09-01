@@ -44,6 +44,7 @@ const navGroups = [
     items: [
       { path: '/products', icon: HiOutlineCube, labelKey: 'sidebar.products', perm: 'products' },
       { path: '/box-templates', icon: HiOutlineCube, labelKey: 'sidebar.box_templates', perm: 'box_templates' },
+      { path: '/catalog-setup', icon: HiOutlineCube, labelKey: 'sidebar.catalog_setup', perm: 'products' },
       { path: '/inventory', icon: HiOutlineClipboardDocumentList, labelKey: 'sidebar.inventory', perm: 'inventory' },
       { path: '/transfers', icon: HiOutlineArrowsRightLeft, labelKey: 'sidebar.transfers', perm: 'transfers' },
     ]

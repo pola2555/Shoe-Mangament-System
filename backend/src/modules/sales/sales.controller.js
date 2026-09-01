@@ -3,20 +3,14 @@ const db = require('../../config/database');
 const { generateUUID } = require('../../utils/generateCodes');
 const { getUploadedUrl } = require('../../middleware/upload');
 const { userHasStoreAccess } = require('../../middleware/auth');
+const { resolveStoreScope } = require('../../utils/storeScope');
 const ExcelJS = require('exceljs');
 
 class SalesController {
   async list(req, res, next) {
     try {
-      const filters = { ...req.query };
-      // Enforce store scoping for non-admin users
-      if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
-        if (req.user.assigned_stores?.length > 0) {
-          filters.store_ids = req.user.assigned_stores;
-        } else {
-          filters.store_id = req.user.store_id;
-        }
-      }
+      const { store_id: _s, store_ids: _si, ...rest } = req.query;
+      const filters = { ...rest, ...resolveStoreScope(req.user, req.query) };
       const sales = await salesService.list(filters);
       res.json({ success: true, data: sales });
     } catch (error) { next(error); }
@@ -35,14 +29,8 @@ class SalesController {
 
   async exportExcel(req, res, next) {
     try {
-      const filters = { ...req.query };
-      if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
-        if (req.user.assigned_stores?.length > 0) {
-          filters.store_ids = req.user.assigned_stores;
-        } else {
-          filters.store_id = req.user.store_id;
-        }
-      }
+      const { store_id: _s, store_ids: _si, ...rest } = req.query;
+      const filters = { ...rest, ...resolveStoreScope(req.user, req.query) };
       const rows = await salesService.exportExcel(filters);
 
       const workbook = new ExcelJS.Workbook();
@@ -81,7 +69,7 @@ class SalesController {
 
   async create(req, res, next) {
     try {
-      const sale = await salesService.create(req.body, req.user.id);
+      const sale = await salesService.create(req.body, req.user);
       res.status(201).json({ success: true, data: sale });
     } catch (error) { next(error); }
   }

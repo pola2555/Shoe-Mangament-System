@@ -25,13 +25,21 @@ class BoxTemplatesService {
     if (product_id) query = query.where('box_templates.product_id', product_id);
 
     const templates = await query.limit(500);
+    if (templates.length === 0) return templates;
 
-    // Attach items to each template
+    // All items in one query rather than one per template.
+    const allItems = await db('box_template_items')
+      .whereIn('template_id', templates.map((t) => t.id))
+      .orderBy('color_label', 'asc')
+      .orderBy('size', 'asc');
+
+    const itemsByTemplate = new Map();
+    for (const item of allItems) {
+      if (!itemsByTemplate.has(item.template_id)) itemsByTemplate.set(item.template_id, []);
+      itemsByTemplate.get(item.template_id).push(item);
+    }
     for (const tmpl of templates) {
-      tmpl.items = await db('box_template_items')
-        .where('template_id', tmpl.id)
-        .orderBy('color_label', 'asc')
-        .orderBy('size', 'asc');
+      tmpl.items = itemsByTemplate.get(tmpl.id) || [];
     }
 
     return templates;

@@ -1,6 +1,7 @@
 const db = require('../../config/database');
 const AppError = require('../../utils/AppError');
 const { generateUUID } = require('../../utils/generateCodes');
+const { supplierBalanceQuery, getSupplierBalance } = require('../../utils/supplierBalance');
 
 /**
  * Suppliers service — CRUD + balance/statement.
@@ -13,33 +14,20 @@ const { generateUUID } = require('../../utils/generateCodes');
 class SuppliersService {
   async list() {
     const suppliers = await db('suppliers').orderBy('name', 'asc').limit(500);
+    if (suppliers.length === 0) return suppliers;
 
-    // Compute balance for each supplier
+    // One query for every balance, instead of four queries per supplier
+    // (500 suppliers used to mean 2000 round-trips on a single page load).
+    const balances = await supplierBalanceQuery(db, suppliers.map((s) => s.id));
+    const byId = new Map(balances.map((b) => [b.id, b]));
+
     for (const s of suppliers) {
-      const invoiceSum = await db('purchase_invoices')
-        .where('supplier_id', s.id)
-        .select(db.raw('SUM(total_amount - COALESCE(discount_amount, 0)) as total'))
-        .first();
-      const returnSum = await db('supplier_returns')
-        .where('supplier_id', s.id)
-        .sum('total_amount as total')
-        .first();
-      const paymentSum = await db('supplier_payments')
-        .where('supplier_id', s.id)
-        .where('type', 'payment')
-        .sum('total_amount as total')
-        .first();
-      const withdrawalSum = await db('supplier_payments')
-        .where('supplier_id', s.id)
-        .where('type', 'withdrawal')
-        .sum('total_amount as total')
-        .first();
-
-      s.total_invoiced = parseFloat(invoiceSum.total) || 0;
-      s.total_returns = parseFloat(returnSum.total) || 0;
-      s.total_paid = parseFloat(paymentSum.total) || 0;
-      s.total_withdrawn = parseFloat(withdrawalSum.total) || 0;
-      s.balance = s.total_invoiced - s.total_returns - s.total_paid + s.total_withdrawn;
+      const b = byId.get(s.id);
+      s.total_invoiced = parseFloat(b?.total_invoiced) || 0;
+      s.total_returns = parseFloat(b?.total_returns) || 0;
+      s.total_paid = parseFloat(b?.total_paid) || 0;
+      s.total_withdrawn = parseFloat(b?.total_withdrawn) || 0;
+      s.balance = parseFloat(b?.balance) || 0;
     }
 
     return suppliers;
@@ -49,31 +37,19 @@ class SuppliersService {
     const supplier = await db('suppliers').where('id', id).first();
     if (!supplier) throw new AppError('Supplier not found', 404);
 
-    // Invoices
-    supplier.invoices = await db('purchase_invoices')
-      .where('supplier_id', id)
-      .orderBy('invoice_date', 'desc');
+    const [invoices, payments, returns, balance] = await Promise.all([
+      db('purchase_invoices').where('supplier_id', id).orderBy('invoice_date', 'desc'),
+      db('supplier_payments').where('supplier_id', id).orderBy('payment_date', 'desc'),
+      db('supplier_returns').where('supplier_id', id).orderBy('created_at', 'desc'),
+      // Same formula as the list and the financial report, rather than a third
+      // hand-rolled reduce that could drift from them.
+      getSupplierBalance(db, id),
+    ]);
 
-    // Payments
-    supplier.payments = await db('supplier_payments')
-      .where('supplier_id', id)
-      .orderBy('payment_date', 'desc');
-
-    // Returns
-    supplier.returns = await db('supplier_returns')
-      .where('supplier_id', id)
-      .orderBy('created_at', 'desc');
-
-    // Balance
-    const invoiceSum = supplier.invoices.reduce((sum, i) => sum + parseFloat(i.total_amount) - (parseFloat(i.discount_amount) || 0), 0);
-    const returnSum = supplier.returns.reduce((sum, r) => sum + parseFloat(r.total_amount || 0), 0);
-    const paymentSum = supplier.payments.filter(p => p.type !== 'withdrawal').reduce((sum, p) => sum + parseFloat(p.total_amount), 0);
-    const withdrawalSum = supplier.payments.filter(p => p.type === 'withdrawal').reduce((sum, p) => sum + parseFloat(p.total_amount), 0);
-    supplier.total_invoiced = invoiceSum;
-    supplier.total_returns = returnSum;
-    supplier.total_paid = paymentSum;
-    supplier.total_withdrawn = withdrawalSum;
-    supplier.balance = invoiceSum - returnSum - paymentSum + withdrawalSum;
+    supplier.invoices = invoices;
+    supplier.payments = payments;
+    supplier.returns = returns;
+    Object.assign(supplier, balance);
 
     return supplier;
   }

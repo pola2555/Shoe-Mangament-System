@@ -1,4 +1,5 @@
 const usersService = require('./users.service');
+const db = require('../../config/database');
 
 class UsersController {
   async listRoles(req, res, next) {
@@ -73,6 +74,30 @@ class UsersController {
         }
         if (req.body.is_active !== undefined) {
           return res.status(403).json({ success: false, message: 'Only admins can activate/deactivate users' });
+        }
+
+        // Resetting another user's password is a separate, stronger capability than
+        // general user editing. Without this check, anyone holding 'users:write' could
+        // set the admin's password and take over the account.
+        if (req.body.password !== undefined) {
+          if (req.user.permissions?.user_password_reset !== 'write') {
+            return res.status(403).json({
+              success: false,
+              message: "Access denied: resetting another user's password requires the 'user_password_reset' permission",
+            });
+          }
+          // Even with that permission, never let a non-admin reset an admin's password.
+          const target = await db('users')
+            .join('roles', 'users.role_id', 'roles.id')
+            .where('users.id', req.params.id)
+            .select('roles.name as role_name')
+            .first();
+          if (!target) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+          }
+          if (target.role_name === 'admin') {
+            return res.status(403).json({ success: false, message: "Only admins can reset an admin's password" });
+          }
         }
       }
       const user = await usersService.update(req.params.id, req.body);

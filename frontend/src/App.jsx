@@ -1,31 +1,40 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { auditLogAPI } from './api';
 import MainLayout from './components/layout/MainLayout';
+import RouteErrorBoundary from './components/common/RouteErrorBoundary';
+
+// Eager: the two entry points every session hits immediately.
 import LoginPage from './pages/auth/LoginPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
-import ProductsListPage from './pages/products/ProductsListPage';
-import ProductDetailPage from './pages/products/ProductDetailPage';
-import SuppliersListPage from './pages/suppliers/SuppliersListPage';
-import PurchasesPage from './pages/purchases/PurchasesPage';
-import PurchaseDetailPage from './pages/purchases/PurchaseDetailPage';
-import InventoryPage from './pages/inventory/InventoryPage';
-import POSPage from './pages/pos/POSPage';
-import TransfersPage from './pages/transfers/TransfersPage';
-import SalesPage from './pages/sales/SalesPage';
-import DealersPage from './pages/dealers/DealersPage';
-import ExpensesPage from './pages/expenses/ExpensesPage';
-import CustomersPage from './pages/customers/CustomersPage';
-import ReturnsPage from './pages/returns/ReturnsPage';
-import StoresPage from './pages/stores/StoresPage';
-import UsersPage from './pages/users/UsersPage';
-import SupplierDetailPage from './pages/suppliers/SupplierDetailPage';
-import BoxTemplatesPage from './pages/box-templates/BoxTemplatesPage';
-import ActivityLogPage from './pages/activity-log/ActivityLogPage';
-import SettingsPage from './pages/settings/SettingsPage';
-import ReportsPage from './pages/reports/ReportsPage';
-import LoansPage from './pages/loans/LoansPage';
+
+// Everything else is split into its own chunk and fetched on first navigation.
+// The app previously shipped as one 1.47 MB bundle, so every user downloaded the
+// reports charting library and every page they never opened before seeing anything.
+const ProductsListPage = lazy(() => import('./pages/products/ProductsListPage'));
+const ProductDetailPage = lazy(() => import('./pages/products/ProductDetailPage'));
+const SuppliersListPage = lazy(() => import('./pages/suppliers/SuppliersListPage'));
+const PurchasesPage = lazy(() => import('./pages/purchases/PurchasesPage'));
+const PurchaseDetailPage = lazy(() => import('./pages/purchases/PurchaseDetailPage'));
+const InventoryPage = lazy(() => import('./pages/inventory/InventoryPage'));
+const POSPage = lazy(() => import('./pages/pos/POSPage'));
+const TransfersPage = lazy(() => import('./pages/transfers/TransfersPage'));
+const SalesPage = lazy(() => import('./pages/sales/SalesPage'));
+const DealersPage = lazy(() => import('./pages/dealers/DealersPage'));
+const ExpensesPage = lazy(() => import('./pages/expenses/ExpensesPage'));
+const CustomersPage = lazy(() => import('./pages/customers/CustomersPage'));
+const ReturnsPage = lazy(() => import('./pages/returns/ReturnsPage'));
+const StoresPage = lazy(() => import('./pages/stores/StoresPage'));
+const UsersPage = lazy(() => import('./pages/users/UsersPage'));
+const SupplierDetailPage = lazy(() => import('./pages/suppliers/SupplierDetailPage'));
+const BoxTemplatesPage = lazy(() => import('./pages/box-templates/BoxTemplatesPage'));
+const CatalogSetupPage = lazy(() => import('./pages/catalog/CatalogSetupPage'));
+const ActivityLogPage = lazy(() => import('./pages/activity-log/ActivityLogPage'));
+const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'));
+const ReportsPage = lazy(() => import('./pages/reports/ReportsPage'));
+const LoansPage = lazy(() => import('./pages/loans/LoansPage'));
 
 /**
  * Protected route wrapper.
@@ -107,7 +116,16 @@ function PermissionRoute({ perm, children }) {
 }
 
 function AppRoutes() {
+  const location = useLocation();
   return (
+    // Suspense handles the loading state for the lazy route chunks above; the error
+    // boundary handles the failure case, which Suspense does not cover — a chunk that
+    // 404s after a deploy would otherwise unmount the app to a blank page.
+    //
+    // Keyed on pathname so navigating away remounts it: without the key one page's
+    // render error would latch and blank the whole app until a manual reload.
+    <RouteErrorBoundary key={location.pathname}>
+    <Suspense fallback={<div className="loading-screen"><div className="spinner" /></div>}>
     <Routes>
       {/* Public */}
       <Route path="/login" element={
@@ -123,6 +141,7 @@ function AppRoutes() {
         <Route path="products" element={<PermissionRoute perm="products"><ProductsListPage /></PermissionRoute>} />
         <Route path="products/:id" element={<PermissionRoute perm="products"><ProductDetailPage /></PermissionRoute>} />
         <Route path="box-templates" element={<PermissionRoute perm="box_templates"><BoxTemplatesPage /></PermissionRoute>} />
+        <Route path="catalog-setup" element={<PermissionRoute perm="products"><CatalogSetupPage /></PermissionRoute>} />
         <Route path="inventory" element={<PermissionRoute perm="inventory"><InventoryPage /></PermissionRoute>} />
         <Route path="purchases" element={<PermissionRoute perm="purchases"><PurchasesPage /></PermissionRoute>} />
         <Route path="purchases/:id" element={<PermissionRoute perm="purchases"><PurchaseDetailPage /></PermissionRoute>} />
@@ -145,6 +164,8 @@ function AppRoutes() {
       {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
+    </RouteErrorBoundary>
   );
 }
 

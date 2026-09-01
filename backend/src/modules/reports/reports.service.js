@@ -1,18 +1,64 @@
 const db = require('../../config/database');
+const { applyStoreScope } = require('../../utils/storeScope');
+const { businessDayStart, businessDayBoundary, applyDateRange, defaultRange } = require('../../utils/dateRange');
+const { suppliersWithOutstandingBalance } = require('../../utils/supplierBalance');
+
+/**
+ * Net revenue for a single sale item, with the sale-level discount allocated pro-rata.
+ *
+ * Discounts are recorded only on `sales.discount_amount` and never pushed down to items.
+ * Reported revenue uses `sales.final_amount` (net of discount) while profit used to use
+ * `sale_items.sale_price` (gross) — so every discount inflated profit and the margin
+ * percentage compared two different bases.
+ *
+ * An item's share of the discount is proportional to its price:
+ *   share = discount * (sale_price / total_amount)
+ * NULLIF guards a zero total; the outer COALESCE keeps the row in the SUM when it fires.
+ */
+const ITEM_NET_REVENUE = `(
+  sale_items.sale_price
+  - COALESCE(
+      COALESCE(sales.discount_amount, 0) * sale_items.sale_price
+        / NULLIF(sales.total_amount, 0),
+      0
+    )
+)`;
+
+const ITEM_PROFIT = `(${ITEM_NET_REVENUE} - sale_items.cost_at_sale)`;
 
 /**
  * Reports service — aggregated business metrics for the dashboard.
+ *
+ * Two conventions every method here follows:
+ *   - Store filtering goes through applyStoreScope so multi-store users are scoped
+ *     to their assigned stores, not silently given the whole company.
+ *   - Date ranges go through applyDateRange, which uses a half-open [start, end+1day)
+ *     interval in the business timezone rather than a UTC `<= end + ' 23:59:59'` string.
  */
+/**
+ * Report filters arrive as raw query strings. A malformed uuid would reach Postgres
+ * as a cast error and surface to the user as a 500, so anything that is not a uuid is
+ * treated as "no filter" rather than as an error.
+ */
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+function asUuid(value) {
+  return typeof value === 'string' && UUID_RE.test(value) ? value : null;
+}
+
 class ReportsService {
 
   // ============================================================
   // DASHBOARD HOME (lightweight daily snapshot)
   // ============================================================
   async getDashboardHome(filters = {}) {
-    const { store_id } = filters;
-    const today = new Date().toISOString().split('T')[0];
+    const { store_id, store_ids } = filters;
+    const scope = { store_id, store_ids };
+    // The UTC instant of local midnight, not a bare date string — Postgres would
+    // otherwise resolve the literal in the server's timezone and miss the first
+    // few hours of the local day.
+    const today = businessDayBoundary(businessDayStart());
 
-    const applyStore = (q, col = 'store_id') => { if (store_id) q.where(col, store_id); return q; };
+    const applyStore = (q, col = 'store_id') => applyStoreScope(q, col, scope);
 
     // Today's snapshot
     const salesToday = await applyStore(
@@ -44,8 +90,9 @@ class ReportsService {
 
   // Admin-only sections (pending tasks, recent sales, recent activity)
   async getDashboardAdmin(filters = {}) {
-    const { store_id } = filters;
-    const applyStore = (q, col = 'store_id') => { if (store_id) q.where(col, store_id); return q; };
+    const { store_id, store_ids } = filters;
+    const scope = { store_id, store_ids };
+    const applyStore = (q, col = 'store_id') => applyStoreScope(q, col, scope);
 
     // Pending transfers
     const pendingTransfers = await db('store_transfers')
@@ -66,18 +113,18 @@ class ReportsService {
       .orderByRaw('purchase_invoices.total_amount - purchase_invoices.paid_amount DESC')
       .limit(5);
 
-    // Low stock count
-    const lowStockResult = await applyStore(
+    // Low stock count. Previously this pulled every matching group just to read .length;
+    // count the groups in the database instead.
+    const lowStockInner = applyStore(
       db('inventory_items')
         .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
-        .join('products', 'product_variants.product_id', 'products.id')
         .where('inventory_items.status', 'in_stock')
-        .select('products.id')
-        .count('inventory_items.id as stock')
-        .groupBy('products.id')
+        .select('product_variants.product_id')
+        .groupBy('product_variants.product_id')
         .having(db.raw('COUNT(inventory_items.id)'), '<', 5),
       'inventory_items.store_id'
     );
+    const lowStockCountRow = await db.count('* as count').from(lowStockInner.as('low_stock')).first();
 
     // Recent 5 sales
     const recentSales = await applyStore(
@@ -88,7 +135,10 @@ class ReportsService {
         .select('sales.id', 'sales.sale_number', 'sales.final_amount', 'sales.created_at',
           'customers.name as customer_name', 'stores.name as store_name', 'users.full_name as cashier')
         .orderBy('sales.created_at', 'desc')
-        .limit(5)
+        .limit(5),
+      // Must be qualified: the joined customers/stores tables also carry a
+      // store_id, so a bare 'store_id' is ambiguous and Postgres rejects it.
+      'sales.store_id'
     );
 
     // Recent 5 activity
@@ -102,32 +152,83 @@ class ReportsService {
       'activity_log.store_id'
     );
 
+    // Overdue loans.
+    //
+    // Overdue is derived from due_date against CURRENT_DATE rather than stored: a
+    // stored flag is wrong the morning after it is written unless something sweeps the
+    // table, and there is no scheduler in this deployment. Surfacing it here is the
+    // reminder — a loan nobody is chasing is the whole reason to track loans at all.
+    //
+    // Loans with no store belong to the business rather than a branch, so they are not
+    // scoped away; that matches how the loans list itself reads them.
+    const overdueLoansQuery = db('loans')
+      .leftJoin('users as borrower', 'loans.borrower_user_id', 'borrower.id')
+      .whereIn('loans.status', ['active', 'partial'])
+      .whereNotNull('loans.due_date')
+      .whereRaw('loans.due_date < CURRENT_DATE')
+      .select(
+        'loans.id', 'loans.borrower_name', 'loans.due_date', 'loans.amount', 'loans.paid_amount',
+        'borrower.full_name as borrower_full_name',
+        db.raw('(loans.amount - loans.paid_amount) as remaining'),
+        db.raw('(CURRENT_DATE - loans.due_date) as days_overdue')
+      )
+      .orderBy('loans.due_date', 'asc')
+      .limit(5);
+    if (scope.store_id || Array.isArray(scope.store_ids)) {
+      overdueLoansQuery.where(function () {
+        applyStoreScope(this, 'loans.store_id', scope);
+        this.orWhereNull('loans.store_id');
+      });
+    }
+    const overdueLoans = await overdueLoansQuery;
+
+    // Recurring expenses whose next date has arrived. They deliberately do NOT post
+    // themselves — booking rent without a person deciding it went out is worse than a
+    // reminder — so this is how anyone finds out one is waiting.
+    const dueRecurring = await applyStore(
+      db('expense_recurring as r')
+        .leftJoin('expense_categories as c', 'c.id', 'r.category_id')
+        .where('r.is_active', true)
+        .whereRaw('r.next_date <= CURRENT_DATE')
+        .select('r.id', 'r.description', 'r.amount', 'r.next_date', 'r.frequency',
+          'c.name as category_name', 'c.name_ar as category_name_ar')
+        .orderBy('r.next_date', 'asc')
+        .limit(5),
+      'r.store_id'
+    );
+
     return {
       pending_transfers: pendingTransfers,
       unpaid_invoices: unpaidInvoices.map(i => ({
         ...i, total_amount: parseFloat(i.total_amount), paid_amount: parseFloat(i.paid_amount),
         balance: parseFloat(i.total_amount) - parseFloat(i.paid_amount),
       })),
-      low_stock_count: lowStockResult.length,
+      low_stock_count: parseInt(lowStockCountRow?.count, 10) || 0,
+      overdue_loans: overdueLoans.map(l => ({
+        ...l,
+        amount: parseFloat(l.amount),
+        paid_amount: parseFloat(l.paid_amount),
+        remaining: parseFloat(l.remaining),
+      })),
+      due_recurring: dueRecurring.map(r => ({ ...r, amount: parseFloat(r.amount) })),
       recent_sales: recentSales.map(s => ({ ...s, final_amount: parseFloat(s.final_amount) })),
       recent_activity: recentActivity,
     };
   }
 
   async getDashboardStats(filters = {}) {
-    const { startDate, endDate, store_id, limit = 5 } = filters;
+    const { store_id, store_ids, limit = 5 } = filters;
     const lmt = Math.min(50, Math.max(1, parseInt(limit, 10) || 5));
+    const scope = { store_id, store_ids };
+    // Bound the window when the caller gives none — otherwise every dashboard load
+    // scans the entire sales history.
+    const range = defaultRange(filters);
 
-    const applyDateFilter = (query, dateColumn = 'created_at') => {
-      if (startDate) query.where(dateColumn, '>=', startDate);
-      if (endDate) query.where(dateColumn, '<=', endDate + ' 23:59:59');
-      return query;
-    };
+    const applyDateFilter = (query, dateColumn = 'created_at') =>
+      applyDateRange(query, dateColumn, range);
 
-    const applyStoreFilter = (query, storeColumn = 'store_id') => {
-      if (store_id) query.where(storeColumn, store_id);
-      return query;
-    };
+    const applyStoreFilter = (query, storeColumn = 'store_id') =>
+      applyStoreScope(query, storeColumn, scope);
 
     const applyBoth = (query, dateCol = 'created_at', storeCol = 'store_id') => {
       applyDateFilter(query, dateCol);
@@ -135,14 +236,15 @@ class ReportsService {
       return query;
     };
 
+    // Every query below is independent, so they are built first and awaited together
+    // at the end. Previously these ran as 13 sequential round-trips.
+
     // 1. Basic Counts & Totals (Filtered)
     const inventoryQuery = db('inventory_items').where('status', 'in_stock').count('id as count');
     applyStoreFilter(inventoryQuery, 'store_id');
-    const inventoryResult = await inventoryQuery.first();
 
     const salesQuery = db('sales').count('id as count').sum('total_amount as subtotal').sum('final_amount as total').sum('refunded_amount as refunded');
     applyBoth(salesQuery, 'created_at', 'store_id');
-    const salesResult = await salesQuery.first();
 
     // 2. Profit & Items Sold (Filtered)
     const profitQuery = db('sale_items')
@@ -153,38 +255,33 @@ class ReportsService {
         db.raw('SUM(CASE WHEN customer_return_items.id IS NOT NULL THEN 1 ELSE 0 END) as items_returned')
       );
     applyBoth(profitQuery, 'sales.created_at', 'sales.store_id');
-    const profitData = await profitQuery.first();
 
-    const actualProfitData = await applyBoth(
+    const actualProfitQuery = applyBoth(
       db('sale_items')
         .join('sales', 'sale_items.sale_id', 'sales.id')
         .leftJoin('customer_return_items', 'sale_items.id', 'customer_return_items.sale_item_id')
         .whereNull('customer_return_items.id')
         .select(
-          db.raw('SUM(sale_items.sale_price - sale_items.cost_at_sale) as profit')
+          db.raw(`SUM(${ITEM_PROFIT}) as profit`)
         ),
       'sales.created_at', 'sales.store_id'
-    ).first();
+    );
 
     // 3. Expenses (Filtered)
     const expensesQuery = db('expenses').sum('amount as total');
     applyBoth(expensesQuery, 'expense_date', 'store_id');
-    const expensesResult = await expensesQuery.first();
 
     // 3b. Outstanding Loans (store-filtered)
     const loansQuery = db('loans').whereIn('status', ['active', 'partial'])
       .select(db.raw('COALESCE(SUM(amount - paid_amount), 0) as total'));
     applyStoreFilter(loansQuery, 'store_id');
-    const loansResult = await loansQuery.first();
 
     // 4. Supplier/Dealer Balances (Global typically) + Inventory Valuation
     const valQuery = db('inventory_items').where('status', 'in_stock').sum('cost as total');
     applyStoreFilter(valQuery, 'store_id');
-    const valResult = await valQuery.first();
 
     const pendingTransfersQuery = db('store_transfers').whereIn('status', ['pending', 'shipped']).count('id as count');
     applyStoreFilter(pendingTransfersQuery, 'from_store_id'); // Optional interpretation
-    const pendingTransfers = await pendingTransfersQuery.first();
 
     // 5. Sales Trend (Line Chart grouping by Date)
     const trendQuery = db('sales')
@@ -193,7 +290,6 @@ class ReportsService {
       .groupByRaw("TO_CHAR(created_at, 'YYYY-MM-DD')")
       .orderBy('date', 'asc');
     applyBoth(trendQuery, 'created_at', 'store_id');
-    const salesTrend = await trendQuery;
 
     // 6. Profit Trend
     const profitTrendQuery = db('sale_items')
@@ -202,29 +298,23 @@ class ReportsService {
       .whereNull('customer_return_items.id')
       .select(
         db.raw("TO_CHAR(sales.created_at, 'YYYY-MM-DD') as date"),
-        db.raw('SUM(sale_items.sale_price - sale_items.cost_at_sale) as profit')
+        db.raw(`SUM(${ITEM_PROFIT}) as profit`)
       )
       .groupByRaw("TO_CHAR(sales.created_at, 'YYYY-MM-DD')")
       .orderBy('date', 'asc');
     applyBoth(profitTrendQuery, 'sales.created_at', 'sales.store_id');
-    const profitTrend = await profitTrendQuery;
-
-    const trendMap = {};
-    salesTrend.forEach(t => trendMap[t.date] = { date: t.date, revenue: parseFloat(t.revenue) || 0, profit: 0 });
-    profitTrend.forEach(t => {
-      if (!trendMap[t.date]) trendMap[t.date] = { date: t.date, revenue: 0, profit: 0 };
-      trendMap[t.date].profit = parseFloat(t.profit) || 0;
-    });
-    const finalTrend = Object.values(trendMap).sort((a,b) => a.date.localeCompare(b.date));
 
     // 7. Store Performance
-    const storePerf = await applyDateFilter(
-      db('sales')
-        .join('stores', 'sales.store_id', 'stores.id')
-        .select('stores.name')
-        .sum('sales.final_amount as revenue')
-        .groupBy('sales.store_id', 'stores.name'),
-      'sales.created_at'
+    const storePerfQuery = applyStoreFilter(
+      applyDateFilter(
+        db('sales')
+          .join('stores', 'sales.store_id', 'stores.id')
+          .select('stores.name')
+          .sum('sales.final_amount as revenue')
+          .groupBy('sales.store_id', 'stores.name'),
+        'sales.created_at'
+      ),
+      'sales.store_id'
     );
 
     // 8. Payment Methods
@@ -234,7 +324,6 @@ class ReportsService {
       .sum('sale_payments.amount as total')
       .groupBy('sale_payments.payment_method');
     applyBoth(paymentsQuery, 'sales.created_at', 'sales.store_id');
-    const paymentsPerf = await paymentsQuery;
 
     // 9. Top Products
     const topProdQuery = db('sale_items')
@@ -245,13 +334,12 @@ class ReportsService {
       .leftJoin('customer_return_items', 'sale_items.id', 'customer_return_items.sale_item_id')
       .select('products.product_code as product', 'products.model_name as name')
       .count('sale_items.id as qty')
-      .sum('sale_items.sale_price as revenue')
+      .select(db.raw(`SUM(${ITEM_NET_REVENUE}) as revenue`))
       .whereNull('customer_return_items.id')
       .groupBy('products.id', 'products.product_code', 'products.model_name')
       .orderBy('qty', 'desc')
       .limit(lmt);
     applyBoth(topProdQuery, 'sales.created_at', 'sales.store_id');
-    const topProducts = await topProdQuery;
 
     // 10. Low Stock Alerts
     const lowStockQuery = db('inventory_items')
@@ -264,7 +352,36 @@ class ReportsService {
       .orderBy('current_stock', 'asc')
       .limit(lmt);
     applyStoreFilter(lowStockQuery, 'inventory_items.store_id');
-    const lowStock = await lowStockQuery;
+
+    // --- Single round-trip for all of the above ---
+    const [
+      inventoryResult, salesResult, profitData, actualProfitData,
+      expensesResult, loansResult, valResult, pendingTransfers,
+      salesTrend, profitTrend, storePerf, paymentsPerf, topProducts, lowStock,
+    ] = await Promise.all([
+      inventoryQuery.first(),
+      salesQuery.first(),
+      profitQuery.first(),
+      actualProfitQuery.first(),
+      expensesQuery.first(),
+      loansQuery.first(),
+      valQuery.first(),
+      pendingTransfersQuery.first(),
+      trendQuery,
+      profitTrendQuery,
+      storePerfQuery,
+      paymentsQuery,
+      topProdQuery,
+      lowStockQuery,
+    ]);
+
+    const trendMap = {};
+    salesTrend.forEach(t => trendMap[t.date] = { date: t.date, revenue: parseFloat(t.revenue) || 0, profit: 0 });
+    profitTrend.forEach(t => {
+      if (!trendMap[t.date]) trendMap[t.date] = { date: t.date, revenue: 0, profit: 0 };
+      trendMap[t.date].profit = parseFloat(t.profit) || 0;
+    });
+    const finalTrend = Object.values(trendMap).sort((a,b) => a.date.localeCompare(b.date));
 
     // Calculations
     const salesCountVal = parseInt(salesResult.count) || 0;
@@ -311,12 +428,13 @@ class ReportsService {
   // SALES ANALYTICS
   // ============================================================
   async getSalesAnalytics(filters = {}) {
-    const { startDate, endDate, store_id } = filters;
+    const { store_id, store_ids } = filters;
+    const scope = { store_id, store_ids };
+    const range = defaultRange(filters);
 
     const applyFilters = (query, dateCol = 'created_at', storeCol = 'store_id') => {
-      if (startDate) query.where(dateCol, '>=', startDate);
-      if (endDate) query.where(dateCol, '<=', endDate + ' 23:59:59');
-      if (store_id && storeCol) query.where(storeCol, store_id);
+      applyDateRange(query, dateCol, range);
+      if (storeCol) applyStoreScope(query, storeCol, scope);
       return query;
     };
 
@@ -400,13 +518,18 @@ class ReportsService {
   // PRODUCT ANALYTICS
   // ============================================================
   async getProductAnalytics(filters = {}) {
-    const { startDate, endDate, store_id, limit = 20 } = filters;
+    const { store_id, store_ids, limit = 20 } = filters;
     const lmt = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const scope = { store_id, store_ids };
+    const range = defaultRange(filters);
+    const categoryId = asUuid(filters.category_id);
 
     const applyFilters = (query, dateCol = 'sales.created_at', storeCol = 'sales.store_id') => {
-      if (startDate) query.where(dateCol, '>=', startDate);
-      if (endDate) query.where(dateCol, '<=', endDate + ' 23:59:59');
-      if (store_id && storeCol) query.where(storeCol, store_id);
+      applyDateRange(query, dateCol, range);
+      if (storeCol) applyStoreScope(query, storeCol, scope);
+      // Every query in this tab joins products, so the category predicate belongs
+      // here rather than being repeated four times and forgotten on the fifth.
+      if (categoryId) query.where('products.category_id', categoryId);
       return query;
     };
 
@@ -421,8 +544,10 @@ class ReportsService {
         .whereNull('customer_return_items.id')
         .select('products.product_code', 'products.model_name', 'products.brand')
         .count('sale_items.id as qty_sold')
-        .sum('sale_items.sale_price as revenue')
-        .sum(db.raw('sale_items.sale_price - sale_items.cost_at_sale as profit'))
+        // SUM must wrap the expression here, not be applied via .sum(raw) — knex
+        // renders that as `sum(<expr> as alias)`, which Postgres rejects.
+        .select(db.raw(`SUM(${ITEM_NET_REVENUE}) as revenue`))
+        .select(db.raw(`SUM(${ITEM_PROFIT}) as profit`))
         .groupBy('products.id', 'products.product_code', 'products.model_name', 'products.brand')
         .orderBy('qty_sold', 'desc')
         .limit(lmt)
@@ -439,24 +564,36 @@ class ReportsService {
         .whereNull('customer_return_items.id')
         .select('products.product_code', 'products.model_name', 'products.brand')
         .count('sale_items.id as qty_sold')
-        .sum('sale_items.sale_price as revenue')
-        .sum(db.raw('sale_items.sale_price - sale_items.cost_at_sale as profit'))
+        // SUM must wrap the expression here, not be applied via .sum(raw) — knex
+        // renders that as `sum(<expr> as alias)`, which Postgres rejects.
+        .select(db.raw(`SUM(${ITEM_NET_REVENUE}) as revenue`))
+        .select(db.raw(`SUM(${ITEM_PROFIT}) as profit`))
         .groupBy('products.id', 'products.product_code', 'products.model_name', 'products.brand')
         .orderBy('revenue', 'desc')
         .limit(lmt)
     );
 
-    // Size distribution
+    // Size distribution.
+    //
+    // Grouped by the size list as well as the label, and carrying the list's prefix
+    // and suffix so the chart can write "EU 42" and "95 cm". Two lists may both
+    // contain 'M' — merging a sock M with a belt M gives a bucket that means nothing.
     const sizeDistribution = await applyFilters(
       db('sale_items')
         .join('sales', 'sale_items.sale_id', 'sales.id')
         .join('inventory_items', 'sale_items.inventory_item_id', 'inventory_items.id')
         .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
+        .join('products', 'product_variants.product_id', 'products.id')
+        .leftJoin('product_categories as pcat', 'pcat.id', 'products.category_id')
+        .leftJoin('size_scales as sscale', 'sscale.id', 'pcat.size_scale_id')
         .leftJoin('customer_return_items', 'sale_items.id', 'customer_return_items.sale_item_id')
         .whereNull('customer_return_items.id')
         .select('product_variants.size_eu as size')
+        .select('sscale.display_prefix as size_prefix', 'sscale.display_suffix as size_suffix')
+        .select('pcat.has_sizes')
+        .min('product_variants.size_sort as size_sort')
         .count('sale_items.id as count')
-        .groupBy('product_variants.size_eu')
+        .groupBy('product_variants.size_eu', 'sscale.display_prefix', 'sscale.display_suffix', 'pcat.has_sizes')
         .orderBy('count', 'desc')
     );
 
@@ -471,7 +608,7 @@ class ReportsService {
         .whereNull('customer_return_items.id')
         .select('products.brand')
         .count('sale_items.id as qty_sold')
-        .sum('sale_items.sale_price as revenue')
+        .select(db.raw(`SUM(${ITEM_NET_REVENUE}) as revenue`))
         .groupBy('products.brand')
         .orderBy('revenue', 'desc')
     );
@@ -479,7 +616,13 @@ class ReportsService {
     return {
       top_by_qty: topByQty.map(r => ({ code: r.product_code, name: r.model_name, brand: r.brand, qty: parseInt(r.qty_sold), revenue: parseFloat(r.revenue) || 0, profit: parseFloat(r.profit) || 0 })),
       top_by_revenue: topByRevenue.map(r => ({ code: r.product_code, name: r.model_name, brand: r.brand, qty: parseInt(r.qty_sold), revenue: parseFloat(r.revenue) || 0, profit: parseFloat(r.profit) || 0 })),
-      size_distribution: sizeDistribution.map(r => ({ size: r.size, count: parseInt(r.count) })),
+      // The prefix/suffix travel with the row: the chart formats them through the same
+      // variantFormat helper every other screen uses, rather than a second copy here.
+      size_distribution: sizeDistribution.map(r => ({
+        size: r.size, count: parseInt(r.count),
+        size_prefix: r.size_prefix, size_suffix: r.size_suffix,
+        has_sizes: r.has_sizes, size_sort: r.size_sort == null ? null : Number(r.size_sort),
+      })),
       brand_performance: brandPerformance.map(r => ({ brand: r.brand || 'Unknown', qty: parseInt(r.qty_sold), revenue: parseFloat(r.revenue) || 0 })),
     };
   }
@@ -488,25 +631,48 @@ class ReportsService {
   // INVENTORY ANALYTICS
   // ============================================================
   async getInventoryAnalytics(filters = {}) {
-    const { store_id } = filters;
+    const { store_id, store_ids } = filters;
+    const scope = { store_id, store_ids };
+    const categoryId = asUuid(filters.category_id);
 
-    const applyStore = (query, col = 'inventory_items.store_id') => {
-      if (store_id) query.where(col, store_id);
-      return query;
+    const applyStore = (query, col = 'inventory_items.store_id') =>
+      applyStoreScope(query, col, scope);
+
+    /**
+     * Restrict a query to one product category.
+     *
+     * Half the queries in this tab do not touch products at all, so the join is added
+     * only when a category is actually chosen — an unfiltered report costs exactly
+     * what it did before. Every query gets the predicate: a report filtered to Socks
+     * whose aging chart still counted shoes would be worse than no filter at all.
+     *
+     * inventory_items -> variant -> product is many-to-one both ways, so the extra
+     * joins cannot duplicate a row and inflate a COUNT.
+     */
+    const applyCategory = (query, { joined = false } = {}) => {
+      if (!categoryId) return query;
+      if (joined) return query.where('products.category_id', categoryId);
+      return query
+        .join('product_variants as cat_pv', 'inventory_items.variant_id', 'cat_pv.id')
+        .join('products as cat_p', 'cat_pv.product_id', 'cat_p.id')
+        .where('cat_p.category_id', categoryId);
     };
 
-    // Stock by store
-    const stockByStore = await db('inventory_items')
-      .join('stores', 'inventory_items.store_id', 'stores.id')
-      .where('inventory_items.status', 'in_stock')
-      .select('stores.name')
-      .count('inventory_items.id as count')
-      .sum('inventory_items.cost as value')
-      .groupBy('stores.id', 'stores.name')
-      .orderBy('count', 'desc');
+    // Stock by store — also scoped, so a store-limited user does not see a
+    // per-store breakdown of the whole company.
+    const stockByStore = await applyCategory(applyStore(
+      db('inventory_items')
+        .join('stores', 'inventory_items.store_id', 'stores.id')
+        .where('inventory_items.status', 'in_stock')
+        .select('stores.name')
+        .count('inventory_items.id as count')
+        .sum('inventory_items.cost as value')
+        .groupBy('stores.id', 'stores.name')
+        .orderBy('count', 'desc')
+    ));
 
     // Stock by brand
-    const stockByBrand = await applyStore(
+    const stockByBrand = await applyCategory(applyStore(
       db('inventory_items')
         .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
         .join('products', 'product_variants.product_id', 'products.id')
@@ -515,33 +681,45 @@ class ReportsService {
         .count('inventory_items.id as count')
         .groupBy('products.brand')
         .orderBy('count', 'desc')
-    );
+    ), { joined: true });
 
-    // Stock by size
-    const stockBySize = await applyStore(
+    // Stock by size.
+    //
+    // Grouped by the size list as well as the label, and ordered by the numeric key so
+    // '10' does not land before '9' and words come back in their list's own order.
+    // Without the list in the group key a sock M and a belt M merge into one bucket.
+    const stockBySize = await applyCategory(applyStore(
       db('inventory_items')
         .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
+        .join('products', 'product_variants.product_id', 'products.id')
+        .leftJoin('product_categories as pcat', 'pcat.id', 'products.category_id')
+        .leftJoin('size_scales as sscale', 'sscale.id', 'pcat.size_scale_id')
         .where('inventory_items.status', 'in_stock')
         .select('product_variants.size_eu as size')
+        .select('sscale.display_prefix as size_prefix', 'sscale.display_suffix as size_suffix')
+        .select('pcat.has_sizes')
+        .min('product_variants.size_sort as size_sort')
         .count('inventory_items.id as count')
-        .groupBy('product_variants.size_eu')
-        .orderBy('size', 'asc')
-    );
+        .groupBy('product_variants.size_eu', 'sscale.display_prefix', 'sscale.display_suffix', 'pcat.has_sizes')
+        .orderBy('size_sort', 'asc')
+    ), { joined: true });
 
     // Stock aging (days since purchase)
-    const aging = await applyStore(
+    // created_at is qualified: products and product_variants both carry one, so the
+    // bare column becomes ambiguous the moment a category filter adds those joins.
+    const aging = await applyCategory(applyStore(
       db('inventory_items')
         .where('inventory_items.status', 'in_stock')
         .select(
-          db.raw("SUM(CASE WHEN created_at >= NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END)::int as within_30"),
-          db.raw("SUM(CASE WHEN created_at >= NOW() - INTERVAL '60 days' AND created_at < NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END)::int as d30_60"),
-          db.raw("SUM(CASE WHEN created_at >= NOW() - INTERVAL '90 days' AND created_at < NOW() - INTERVAL '60 days' THEN 1 ELSE 0 END)::int as d60_90"),
-          db.raw("SUM(CASE WHEN created_at < NOW() - INTERVAL '90 days' THEN 1 ELSE 0 END)::int as over_90")
+          db.raw("SUM(CASE WHEN inventory_items.created_at >= NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END)::int as within_30"),
+          db.raw("SUM(CASE WHEN inventory_items.created_at >= NOW() - INTERVAL '60 days' AND inventory_items.created_at < NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END)::int as d30_60"),
+          db.raw("SUM(CASE WHEN inventory_items.created_at >= NOW() - INTERVAL '90 days' AND inventory_items.created_at < NOW() - INTERVAL '60 days' THEN 1 ELSE 0 END)::int as d60_90"),
+          db.raw("SUM(CASE WHEN inventory_items.created_at < NOW() - INTERVAL '90 days' THEN 1 ELSE 0 END)::int as over_90")
         )
-    ).first();
+    )).first();
 
     // Low stock products (< 5 items)
-    const lowStock = await applyStore(
+    const lowStock = await applyCategory(applyStore(
       db('inventory_items')
         .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
         .join('products', 'product_variants.product_id', 'products.id')
@@ -552,20 +730,25 @@ class ReportsService {
         .having(db.raw('COUNT(inventory_items.id)'), '<', 5)
         .orderBy('stock', 'asc')
         .limit(20)
-    );
+    ), { joined: true });
 
     // Status distribution
-    const statusDist = await applyStore(
+    const statusDist = await applyCategory(applyStore(
       db('inventory_items')
-        .select('status')
-        .count('id as count')
-        .groupBy('status')
-    );
+        // Qualified for the same reason as the aging query above.
+        .select('inventory_items.status')
+        .count('inventory_items.id as count')
+        .groupBy('inventory_items.status')
+    ));
 
     return {
       stock_by_store: stockByStore.map(r => ({ name: r.name, count: parseInt(r.count), value: parseFloat(r.value) || 0 })),
       stock_by_brand: stockByBrand.map(r => ({ brand: r.brand || 'Unknown', count: parseInt(r.count) })),
-      stock_by_size: stockBySize.map(r => ({ size: r.size, count: parseInt(r.count) })),
+      stock_by_size: stockBySize.map(r => ({
+        size: r.size, count: parseInt(r.count),
+        size_prefix: r.size_prefix, size_suffix: r.size_suffix,
+        has_sizes: r.has_sizes, size_sort: r.size_sort == null ? null : Number(r.size_sort),
+      })),
       aging: { within_30: aging.within_30 || 0, d30_60: aging.d30_60 || 0, d60_90: aging.d60_90 || 0, over_90: aging.over_90 || 0 },
       low_stock: lowStock.map(r => ({ code: r.product_code, name: r.model_name, stock: parseInt(r.stock) })),
       status_distribution: statusDist.map(r => ({ status: r.status, count: parseInt(r.count) })),
@@ -576,12 +759,13 @@ class ReportsService {
   // FINANCIAL REPORT
   // ============================================================
   async getFinancialReport(filters = {}) {
-    const { startDate, endDate, store_id } = filters;
+    const { store_id, store_ids } = filters;
+    const scope = { store_id, store_ids };
+    const range = defaultRange(filters);
 
     const applyFilters = (query, dateCol = 'created_at', storeCol = 'store_id') => {
-      if (startDate) query.where(dateCol, '>=', startDate);
-      if (endDate) query.where(dateCol, '<=', endDate + ' 23:59:59');
-      if (store_id && storeCol) query.where(storeCol, store_id);
+      applyDateRange(query, dateCol, range);
+      if (storeCol) applyStoreScope(query, storeCol, scope);
       return query;
     };
 
@@ -604,16 +788,41 @@ class ReportsService {
       'sales.created_at', 'sales.store_id'
     ).first();
 
-    // Expenses by category
+    // Expenses by category. leftJoin + COALESCE: category_id is nullable, and the old
+    // inner join dropped uncategorised expenses — which then vanished from net profit too.
+    // Sub-categories roll up under their parent: a shop that files Electricity and
+    // Water under Utilities wants to read "Utilities", with the split available under
+    // it — not two unrelated lines that never add up to the heading anyone expects.
     const expensesByCategory = await applyFilters(
       db('expenses')
-        .join('expense_categories', 'expenses.category_id', 'expense_categories.id')
-        .select('expense_categories.name as category')
+        .leftJoin('expense_categories as c', 'expenses.category_id', 'c.id')
+        .leftJoin('expense_categories as p', 'p.id', 'c.parent_id')
+        .select(
+          db.raw("COALESCE(p.name, c.name, 'Uncategorised') as category"),
+          db.raw("COALESCE(p.name_ar, c.name_ar) as category_ar")
+        )
         .sum('expenses.amount as total')
-        .groupBy('expense_categories.name')
+        .groupByRaw("COALESCE(p.name, c.name, 'Uncategorised'), COALESCE(p.name_ar, c.name_ar)")
         .orderBy('total', 'desc'),
       'expenses.expense_date', 'expenses.store_id'
     );
+
+    // Expenses month by month, over the same window as the P&L trend, so the two
+    // charts can be read against each other.
+    const expenseTrend = await applyFilters(
+      db('expenses')
+        .select(db.raw("TO_CHAR(expense_date, 'YYYY-MM') as month"))
+        .sum('amount as total')
+        .groupByRaw("TO_CHAR(expense_date, 'YYYY-MM')")
+        .orderByRaw("TO_CHAR(expense_date, 'YYYY-MM')"),
+      'expenses.expense_date', 'expenses.store_id'
+    );
+
+    // Authoritative expense total, independent of the category breakdown.
+    const expensesTotalRow = await applyFilters(
+      db('expenses').select(db.raw('COALESCE(SUM(amount), 0) as total')),
+      'expenses.expense_date', 'expenses.store_id'
+    ).first();
 
     // Monthly P&L trend
     const monthlyPL = await applyFilters(
@@ -643,21 +852,15 @@ class ReportsService {
     });
     const plTrend = Object.values(monthMap).sort((a, b) => a.month.localeCompare(b.month));
 
-    // Supplier balances
-    const supplierBalances = await db('suppliers')
-      .leftJoin('purchase_invoices', 'suppliers.id', 'purchase_invoices.supplier_id')
-      .select('suppliers.name')
-      .sum('purchase_invoices.total_amount as invoiced')
-      .sum('purchase_invoices.paid_amount as paid')
-      .groupBy('suppliers.id', 'suppliers.name')
-      .havingRaw('SUM(purchase_invoices.total_amount) - SUM(purchase_invoices.paid_amount) > 0')
-      .orderByRaw('SUM(purchase_invoices.total_amount) - SUM(purchase_invoices.paid_amount) DESC')
-      .limit(10);
+    // Supplier balances — uses the shared formula so this agrees with the suppliers
+    // page. The old query here was `SUM(total_amount) - SUM(paid_amount)`, which ignored
+    // discounts, returns and withdrawals and so reported different debt.
+    const supplierBalances = await suppliersWithOutstandingBalance(db, 10);
 
     const totalRevenue = parseFloat(revenue.total_revenue) || 0;
     const totalRefunded = parseFloat(revenue.total_refunded) || 0;
     const totalCogs = parseFloat(cogs.total_cogs) || 0;
-    const totalExpenses = expensesByCategory.reduce((s, r) => s + (parseFloat(r.total) || 0), 0);
+    const totalExpenses = parseFloat(expensesTotalRow?.total) || 0;
 
     return {
       summary: {
@@ -669,10 +872,23 @@ class ReportsService {
         gross_profit: totalRevenue - totalRefunded - totalCogs,
         total_expenses: totalExpenses,
         net_profit: totalRevenue - totalRefunded - totalCogs - totalExpenses,
+        // What share of what came in went straight back out. null rather than 0 when
+        // there was no revenue: a percentage of nothing is not a number to show anyone.
+        expense_ratio_pct: totalRevenue - totalRefunded > 0
+          ? Math.round((totalExpenses / (totalRevenue - totalRefunded)) * 1000) / 10
+          : null,
       },
-      expenses_by_category: expensesByCategory.map(r => ({ category: r.category, total: parseFloat(r.total) || 0 })),
+      expenses_by_category: expensesByCategory.map(r => ({
+        category: r.category, category_ar: r.category_ar, total: parseFloat(r.total) || 0,
+      })),
+      expense_trend: expenseTrend.map(r => ({ month: r.month, total: parseFloat(r.total) || 0 })),
       pl_trend: plTrend,
-      supplier_balances: supplierBalances.map(r => ({ name: r.name, invoiced: parseFloat(r.invoiced) || 0, paid: parseFloat(r.paid) || 0, balance: (parseFloat(r.invoiced) || 0) - (parseFloat(r.paid) || 0) })),
+      supplier_balances: supplierBalances.map(r => ({
+        name: r.name,
+        invoiced: parseFloat(r.total_invoiced) || 0,
+        paid: parseFloat(r.total_paid) || 0,
+        balance: parseFloat(r.balance) || 0,
+      })),
     };
   }
 
@@ -680,13 +896,14 @@ class ReportsService {
   // CUSTOMER ANALYTICS
   // ============================================================
   async getCustomerAnalytics(filters = {}) {
-    const { startDate, endDate, store_id, limit = 20 } = filters;
+    const { store_id, store_ids, limit = 20 } = filters;
     const lmt = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const scope = { store_id, store_ids };
+    const range = defaultRange(filters);
 
     const applyFilters = (query, dateCol = 'sales.created_at', storeCol = 'sales.store_id') => {
-      if (startDate) query.where(dateCol, '>=', startDate);
-      if (endDate) query.where(dateCol, '<=', endDate + ' 23:59:59');
-      if (store_id && storeCol) query.where(storeCol, store_id);
+      applyDateRange(query, dateCol, range);
+      if (storeCol) applyStoreScope(query, storeCol, scope);
       return query;
     };
 
@@ -752,12 +969,13 @@ class ReportsService {
   // EMPLOYEE ANALYTICS
   // ============================================================
   async getEmployeeAnalytics(filters = {}) {
-    const { startDate, endDate, store_id } = filters;
+    const { store_id, store_ids } = filters;
+    const scope = { store_id, store_ids };
+    const range = defaultRange(filters);
 
     const applyFilters = (query, dateCol = 'sales.created_at', storeCol = 'sales.store_id') => {
-      if (startDate) query.where(dateCol, '>=', startDate);
-      if (endDate) query.where(dateCol, '<=', endDate + ' 23:59:59');
-      if (store_id && storeCol) query.where(storeCol, store_id);
+      applyDateRange(query, dateCol, range);
+      if (storeCol) applyStoreScope(query, storeCol, scope);
       return query;
     };
 

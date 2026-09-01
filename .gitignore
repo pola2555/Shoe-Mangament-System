@@ -5,3 +5,6 @@ dist/
 .DS_Store
 *.log
 backend/src/db/server.txt
+e2e/.auth/
+e2e/.artifacts/
+e2e/report/

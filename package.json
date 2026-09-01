@@ -10,9 +10,20 @@
     "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
     "migrate": "cd backend && npx knex migrate:latest",
     "migrate:rollback": "cd backend && npx knex migrate:rollback",
-    "seed": "cd backend && npx knex seed:run"
+    "seed": "cd backend && npx knex seed:run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report e2e/report",
+    "barcodes:backfill": "cd backend && node scripts/backfill-barcodes.js",
+    "check:sizes": "node backend/scripts/check-size-ordering.js",
+    "check:categories": "node backend/scripts/check-categories.js",
+    "check:filters": "node backend/scripts/check-filters.js",
+    "check:colors": "node backend/scripts/check-color-skus.js",
+    "check:money": "node backend/scripts/check-expenses-loans.js",
+    "check:http": "node backend/scripts/check-expenses-loans-http.js"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "concurrently": "^8.2.2"
   }
 }

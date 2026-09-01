@@ -2,19 +2,13 @@ const transfersService = require('./transfers.service');
 const db = require('../../config/database');
 const AppError = require('../../utils/AppError');
 const { userHasStoreAccess } = require('../../middleware/auth');
+const { resolveStoreScope } = require('../../utils/storeScope');
 
 class TransfersController {
   async list(req, res, next) {
     try {
-      const filters = { ...req.query };
-      // Non-admin users only see transfers involving their store
-      if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
-        if (req.user.assigned_stores?.length > 0) {
-          filters.store_ids = req.user.assigned_stores;
-        } else {
-          filters.store_id = req.user.store_id;
-        }
-      }
+      const { store_id: _s, store_ids: _si, ...rest } = req.query;
+      const filters = { ...rest, ...resolveStoreScope(req.user, req.query) };
       const transfers = await transfersService.list(filters);
       res.json({ success: true, data: transfers });
     } catch (error) { next(error); }

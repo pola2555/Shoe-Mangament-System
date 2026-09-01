@@ -59,6 +59,34 @@ export const productsAPI = {
   deleteStorePrice: (productId, storeId) => api.delete(`/products/${productId}/prices/${storeId}`),
 };
 
+/**
+ * Catalogue reference data: what categories exist, what sizes each one offers, and the
+ * shared colour names. Reads only need products:read, so every user who can see the
+ * product form can populate it.
+ */
+export const productCategoriesAPI = {
+  list: (params) => api.get('/product-categories', { params }),
+  getById: (id) => api.get(`/product-categories/${id}`),
+  create: (data) => api.post('/product-categories', data),
+  update: (id, data) => api.put(`/product-categories/${id}`, data),
+  toggleActive: (id) => api.patch(`/product-categories/${id}/toggle-active`),
+};
+
+export const sizeScalesAPI = {
+  list: (params) => api.get('/size-scales', { params }),
+  getById: (id) => api.get(`/size-scales/${id}`),
+  create: (data) => api.post('/size-scales', data),
+  update: (id, data) => api.put(`/size-scales/${id}`, data),
+  // Whole-set replace, so a reorder is one atomic call.
+  replaceValues: (id, values) => api.put(`/size-scales/${id}/values`, { values }),
+};
+
+export const colorPresetsAPI = {
+  list: (params) => api.get('/color-presets', { params }),
+  create: (data) => api.post('/color-presets', data),
+  update: (id, data) => api.put(`/color-presets/${id}`, data),
+};
+
 export const boxTemplatesAPI = {
   list: (params) => api.get('/box-templates', { params }),
   getById: (id) => api.get(`/box-templates/${id}`),
@@ -160,12 +188,36 @@ export const notificationsAPI = {
 };
 
 export const expensesAPI = {
+  // Returns { data, pagination, summary } — summary.total describes the whole filter,
+  // not the page, so a figure under the table is never the sum of one page.
   list: (params) => api.get('/expenses', { params }),
-  getCategories: () => api.get('/expenses/categories'),
+  getById: (id) => api.get(`/expenses/${id}`),
   create: (data) => api.post('/expenses', data),
   update: (id, data) => api.put(`/expenses/${id}`, data),
   delete: (id) => api.delete(`/expenses/${id}`),
   summary: (params) => api.get('/expenses/summary', { params }),
+  monthlyTrend: (params) => api.get('/expenses/monthly-trend', { params }),
+
+  getCategories: (params) => api.get('/expenses/categories', { params }),
+  createCategory: (data) => api.post('/expenses/categories', data),
+  updateCategory: (id, data) => api.put(`/expenses/categories/${id}`, data),
+  toggleCategoryActive: (id) => api.patch(`/expenses/categories/${id}/toggle-active`),
+  deleteCategory: (id) => api.delete(`/expenses/categories/${id}`),
+
+  listRecurring: (params) => api.get('/expenses/recurring', { params }),
+  createRecurring: (data) => api.post('/expenses/recurring', data),
+  updateRecurring: (id, data) => api.put(`/expenses/recurring/${id}`, data),
+  deleteRecurring: (id) => api.delete(`/expenses/recurring/${id}`),
+  postRecurring: (id, data) => api.post(`/expenses/recurring/${id}/post`, data || {}),
+
+  budgets: (params) => api.get('/expenses/budgets', { params }),
+  setBudget: (data) => api.put('/expenses/budgets', data),
+
+  listReceipts: (id) => api.get(`/expenses/${id}/receipts`),
+  uploadReceipt: (id, formData) => api.post(`/expenses/${id}/receipts`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  deleteReceipt: (id, imageId) => api.delete(`/expenses/${id}/receipts/${imageId}`),
 };
 
 export const reportsAPI = {
@@ -189,11 +241,32 @@ export const auditLogAPI = {
 export const loansAPI = {
   list: (params) => api.get('/loans', { params }),
   getById: (id) => api.get(`/loans/${id}`),
+  statement: (id) => api.get(`/loans/${id}/statement`),
+  outstanding: (params) => api.get('/loans/outstanding', { params }),
   create: (data) => api.post('/loans', data),
   update: (id, data) => api.put(`/loans/${id}`, data),
   delete: (id) => api.delete(`/loans/${id}`),
+  setInstallments: (id, data) => api.put(`/loans/${id}/installments`, data),
+  // The response carries payment_id so a proof image can be attached straight after,
+  // without a second round-trip to find the payment that was just created.
   addPayment: (id, data) => api.post(`/loans/${id}/payments`, data),
   deletePayment: (id, paymentId) => api.delete(`/loans/${id}/payments/${paymentId}`),
+  uploadPaymentProof: (id, paymentId, formData) =>
+    api.post(`/loans/${id}/payments/${paymentId}/images`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  deletePaymentProof: (id, paymentId, imageId) =>
+    api.delete(`/loans/${id}/payments/${paymentId}/images/${imageId}`),
+};
+
+export const barcodesAPI = {
+  // POS scan resolution. exclude_ids keeps a rescan from returning a pair that is
+  // already sitting in the cart.
+  lookup: (params) => api.get('/barcodes/lookup', { params }),
+  labels: (params) => api.get('/barcodes/labels', { params }),
+  assign: (data) => api.post('/barcodes/assign', data),
+  link: (data) => api.post('/barcodes/link', data),
+  clear: (variantId) => api.delete(`/barcodes/${variantId}`),
 };
 
 export const backupAPI = {

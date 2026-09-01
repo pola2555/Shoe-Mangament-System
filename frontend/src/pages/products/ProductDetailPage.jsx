@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { productsAPI, storesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
@@ -6,13 +6,17 @@ import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import ClickableImage from '../../components/common/ClickableImage';
 import { useTranslation } from '../../i18n/i18nContext';
+import VariantMatrix from './VariantMatrix';
+import { formatSize, sizeValueLabel, localizedName } from '../../utils/variantFormat';
 import './Products.css';
+
+const PrintLabelsModal = lazy(() => import('../../components/barcode/PrintLabelsModal'));
 
 export default function ProductDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const canWrite = hasPermission('products', 'write');
 
   const [product, setProduct] = useState(null);
@@ -32,13 +36,11 @@ export default function ProductDetailPage() {
     product_color_id: '', size_eu: '', size_us: '', size_uk: '', size_cm: '',
   });
   const [showVariantForm, setShowVariantForm] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
   const [generatorMode, setGeneratorMode] = useState(true); // true = smart generator, false = single variant
 
   // Smart Variant Generator States
-  const [genSelectedColors, setGenSelectedColors] = useState([]); // array of color IDs
-  const [genSizeStart, setGenSizeStart] = useState('');
-  const [genSizeEnd, setGenSizeEnd] = useState('');
-  const [genPreview, setGenPreview] = useState([]); // Array of { tempId, product_color_id, size_eu, size_us, size_uk, size_cm }
+  const [creatingVariants, setCreatingVariants] = useState(false);
 
   // Inline Variant Editing States
   const [editingVariantId, setEditingVariantId] = useState(null);
@@ -245,86 +247,43 @@ export default function ProductDetailPage() {
     }
   };
 
-  // --- Smart Generator Logic ---
-  const handleToggleGenColor = (colorId) => {
-    setGenSelectedColors((prev) => 
-      prev.includes(colorId) ? prev.filter((c) => c !== colorId) : [...prev, colorId]
-    );
-  };
+  // What this product's category allows. A product with no category predates the
+  // feature and behaves as it always did: colours and EU sizes, both required.
+  const cat = product?.category || null;
+  const catHasSizes = cat ? cat.has_sizes : true;
+  const catHasColors = cat ? cat.has_colors : true;
+  const catIsNumeric = cat ? cat.scale_is_numeric : true;
+  const catSizeValues = cat?.size_values || [];
 
-  const handleGeneratePreview = () => {
-    if (genSelectedColors.length === 0) return toast.error(t('products.select_at_least_one_color'));
-    const start = parseInt(genSizeStart);
-    const end = parseInt(genSizeEnd);
-    if (!start || !end || start > end) return toast.error(t('products.valid_size_range'));
+  /**
+   * A variant stores the size's raw value ('KIDS'); the readable label lives on the
+   * size list, and the API now sends it alongside. The scale still comes from the
+   * category here because a variant row carries no prefix of its own.
+   */
+  const sizeOf = (v) => formatSize(
+    { ...v, size_prefix: cat?.display_prefix, size_suffix: cat?.display_suffix },
+    locale,
+  );
 
-    let newPreview = [];
-    for (const colorId of genSelectedColors) {
-      for (let size = start; size <= end; size++) {
-        // Prevent adding if it already exists in the product
-        const exists = product.variants.some(v => v.product_color_id === colorId && v.size_eu === String(size));
-        if (!exists) {
-          newPreview.push({
-            tempId: Math.random().toString(36).substring(7),
-            product_color_id: colorId,
-            size_eu: String(size),
-            size_us: '',
-            size_uk: '',
-            size_cm: ''
-          });
-        }
-      }
-    }
-    
-    if (newPreview.length === 0) {
-      toast.success(t('products.combinations_exist'));
-    } else {
-      setGenPreview(newPreview);
-      toast.success(`${t('products.preview_generating')} (${newPreview.length})`);
-    }
-  };
-
-  const updatePreviewRow = (tempId, field, value) => {
-    setGenPreview((prev) => prev.map(p => p.tempId === tempId ? { ...p, [field]: value } : p));
-  };
-
-  const deletePreviewRow = (tempId) => {
-    setGenPreview((prev) => prev.filter(p => p.tempId !== tempId));
-  };
-
-  const handleSaveGeneratedVariants = async () => {
-    if (genPreview.length === 0) return;
+  /**
+   * Create everything the matrix selected in one request.
+   *
+   * This used to be one request per colour, fired in parallel — a failure partway
+   * through left half a matrix created and nothing to tell you which half.
+   */
+  const handleCreateVariants = async (payload) => {
     try {
-      // Group variants by color
-      const groups = {};
-      genPreview.forEach(g => {
-        if (!groups[g.product_color_id]) groups[g.product_color_id] = [];
-        const { size_eu, size_us, size_uk, size_cm } = g;
-        groups[g.product_color_id].push({
-          size_eu,
-          size_us: size_us || null,
-          size_uk: size_uk || null,
-          size_cm: size_cm ? parseFloat(size_cm) : null,
-        });
-      });
-
-      // Send bulk create requests in parallel for each color group
-      const promises = Object.keys(groups).map((colorId) => 
-        productsAPI.bulkCreateVariants(id, {
-          product_color_id: colorId,
-          variants: groups[colorId]
-        })
-      );
-
-      await Promise.all(promises);
-      toast.success(t('products.variants_saved'));
-      
-      // Reset forms
-      setGenPreview([]);
+      setCreatingVariants(true);
+      const { data } = await productsAPI.bulkCreateVariants(id, payload);
+      const made = (data.data || []).length;
+      if (made === 0) toast.success(t('products.combinations_exist'));
+      else toast.success(t('products.variants_saved'));
       setShowVariantForm(false);
       fetchProduct();
     } catch (err) {
       toast.error(err.response?.data?.message || t('products.failed_save_variants'));
+    } finally {
+      setCreatingVariants(false);
     }
   };
 
@@ -367,6 +326,14 @@ export default function ProductDetailPage() {
             ← {t('common.back')}
           </button>
           <h1 className="page-title">{product.brand} {product.model_name}</h1>
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{ marginBottom: 8 }}
+            onClick={() => setShowLabels(true)}
+            data-testid="product-print-labels"
+          >
+            🏷 {t('barcode.print_labels')}
+          </button>
           <p style={{ color: 'var(--color-text-secondary)' }}>{t('products.code')}: {product.product_code} &nbsp;•&nbsp;
             {t('products.sell')}: {product.default_selling_price ?? '—'} {t('common.currency')} &nbsp;•&nbsp;
             {t('products.range')}: {product.min_selling_price ?? '—'} – {product.max_selling_price ?? '—'} {t('common.currency')}
@@ -600,7 +567,7 @@ export default function ProductDetailPage() {
                   <div className="color-images">
                     {color.images.map((img) => (
                       <div key={img.id} className={`color-image ${img.is_primary ? 'color-image--primary' : ''}`}>
-                        <ClickableImage src={img.image_url} alt={color.color_name} title={`${product.model_name} - ${color.color_name}`} />
+                        <ClickableImage src={img.image_url} thumbSrc={img.thumb_url} alt={color.color_name} title={`${product.model_name} - ${color.color_name}`} />
                         {canWrite && (
                           <div className="color-image__actions">
                             {!img.is_primary && (
@@ -640,135 +607,72 @@ export default function ProductDetailPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
                     <h3 style={{ margin: 0 }}>{t('products.add_variants')}</h3>
                     <div style={{ display: 'flex', gap: 10 }}>
-                      <button className={`btn btn-sm ${generatorMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setGeneratorMode(true)}>⚡ {t('products.smart_generator')}</button>
+                      <button className={`btn btn-sm ${generatorMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setGeneratorMode(true)}>⚡ {t('products.size_matrix')}</button>
                       <button className={`btn btn-sm ${!generatorMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setGeneratorMode(false)}>📝 {t('products.single_variant')}</button>
                     </div>
                   </div>
 
                   {generatorMode ? (
-                    /* SMART GENERATOR MODE */
-                    <div>
-                      {product.colors.length === 0 ? (
-                        <p style={{ color: 'var(--color-text-danger)' }}>{t('products.add_colors_first')}</p>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
-                          <div className="form-group">
-                            <label className="form-label">{t('products.select_colors_generate')}</label>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                              {product.colors.map(c => (
-                                <button
-                                  key={c.id}
-                                  type="button"
-                                  onClick={() => handleToggleGenColor(c.id)}
-                                  style={{
-                                    display: 'flex', alignItems: 'center', gap: 6,
-                                    padding: '6px 12px', borderRadius: 20,
-                                    border: genSelectedColors.includes(c.id) ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
-                                    backgroundColor: genSelectedColors.includes(c.id) ? 'var(--color-primary-light)' : 'var(--color-surface)',
-                                    cursor: 'pointer', transition: 'all 0.2s ease'
-                                  }}
-                                >
-                                  {c.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: c.hex_code, width: 16, height: 16 }} />}
-                                  <span style={{ fontWeight: genSelectedColors.includes(c.id) ? 600 : 400 }}>{c.color_name}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          
-                          <div className="form-row" style={{ alignItems: 'flex-end' }}>
-                            <div className="form-group" style={{ flex: 1 }}>
-                              <label className="form-label">{t('products.start_size')}</label>
-                              <input className="form-input" type="number" value={genSizeStart} onChange={e => setGenSizeStart(e.target.value)} placeholder="e.g. 38" />
-                            </div>
-                            <div className="form-group" style={{ flex: 1 }}>
-                              <label className="form-label">{t('products.end_size')}</label>
-                              <input className="form-input" type="number" value={genSizeEnd} onChange={e => setGenSizeEnd(e.target.value)} placeholder="e.g. 45" />
-                            </div>
-                            <div className="form-group">
-                              <button className="btn btn-secondary" onClick={handleGeneratePreview}>{t('products.generate_preview')}</button>
-                            </div>
-                          </div>
-
-                          {genPreview.length > 0 && (
-                            <div style={{ marginTop: 'var(--spacing-md)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--spacing-md)' }}>
-                              <h4>{t('products.preview_generating')} ({genPreview.length} {t('products.variants')})</h4>
-                              <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 8 }}>{t('products.preview_description')}</p>
-                              <div style={{ maxHeight: 400, overflowY: 'auto', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)' }}>
-                                <table className="table" style={{ margin: 0 }}>
-                                  <thead style={{ position: 'sticky', top: 0, backgroundColor: 'var(--color-surface)', zIndex: 1, borderBottom: '2px solid var(--color-border)' }}>
-                                    <tr>
-                                      <th>{t('products.colors')}</th><th>EU</th><th>US ({t('common.optional')})</th><th>UK ({t('common.optional')})</th><th>CM ({t('common.optional')})</th><th></th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {genPreview.map((p) => {
-                                      const c = product.colors.find(col => col.id === p.product_color_id);
-                                      return (
-                                        <tr key={p.tempId}>
-                                          <td style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            {c?.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: c.hex_code }} />}
-                                            {c?.color_name}
-                                          </td>
-                                          <td style={{ fontWeight: 600 }}>{p.size_eu}</td>
-                                          <td><input className="form-input" style={{ padding: '4px 8px' }} value={p.size_us} onChange={e => updatePreviewRow(p.tempId, 'size_us', e.target.value)} placeholder="e.g. 9" /></td>
-                                          <td><input className="form-input" style={{ padding: '4px 8px' }} value={p.size_uk} onChange={e => updatePreviewRow(p.tempId, 'size_uk', e.target.value)} placeholder="e.g. 8" /></td>
-                                          <td><input className="form-input" type="number" step="0.1" style={{ padding: '4px 8px' }} value={p.size_cm} onChange={e => updatePreviewRow(p.tempId, 'size_cm', e.target.value)} placeholder="e.g. 27.0" /></td>
-                                          <td><button className="btn btn-sm btn-danger" title={t('products.remove')} onClick={() => deletePreviewRow(p.tempId)}>✕</button></td>
-                                        </tr>
-                                      )
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
-                              <div className="form-actions" style={{ marginTop: 'var(--spacing-md)' }}>
-                                <button type="button" className="btn btn-secondary" onClick={() => { setGenPreview([]); setShowVariantForm(false); }}>{t('common.cancel')}</button>
-                                <button type="button" className="btn btn-primary" onClick={handleSaveGeneratedVariants}>{t('products.save_all_variants')}</button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    <VariantMatrix
+                      product={product}
+                      creating={creatingVariants}
+                      onCreate={handleCreateVariants}
+                    />
                   ) : (
                     /* SINGLE VARIANT FORM */
                     <form onSubmit={handleAddVariant} className="inline-form">
                       <div className="form-row">
-                        <div className="form-group">
-                          <label className="form-label">{t('products.colors')} *</label>
-                          <SearchableSelect
-                            required
-                            options={[
-                              { value: '', label: t('products.select_color') },
-                              ...product.colors.map((c) => ({ value: c.id, label: c.color_name }))
-                            ]}
-                            value={variantForm.product_color_id}
-                            onChange={(e) => setVariantForm({ ...variantForm, product_color_id: e.target.value })}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label className="form-label">{t('products.eu_size')} *</label>
-                          <input className="form-input" required value={variantForm.size_eu}
-                            onChange={(e) => setVariantForm({ ...variantForm, size_eu: e.target.value })}
-                            placeholder="42" />
-                        </div>
+                        {catHasColors && (
+                          <div className="form-group">
+                            <label className="form-label">{t('products.colors')} *</label>
+                            <SearchableSelect
+                              required
+                              options={[
+                                { value: '', label: t('products.select_color') },
+                                ...product.colors.filter((c) => !c.is_placeholder)
+                                  .map((c) => ({ value: c.id, label: c.color_name }))
+                              ]}
+                              value={variantForm.product_color_id}
+                              onChange={(e) => setVariantForm({ ...variantForm, product_color_id: e.target.value })}
+                            />
+                          </div>
+                        )}
+                        {catHasSizes && (
+                          <div className="form-group">
+                            <label className="form-label">{cat?.display_prefix || t('products.size_generic')} *</label>
+                            {/* A list, not free text: the category owns the sizes, so a
+                                typed size would be refused by the server anyway. */}
+                            <SearchableSelect
+                              required
+                              options={[
+                                { value: '', label: t('products.select_size') },
+                                ...catSizeValues.map((sv) => ({ value: sv.value, label: sizeValueLabel(sv, locale) })),
+                              ]}
+                              value={variantForm.size_eu}
+                              onChange={(e) => setVariantForm({ ...variantForm, size_eu: e.target.value })}
+                            />
+                          </div>
+                        )}
                       </div>
-                      <div className="form-row">
-                        <div className="form-group">
-                          <label className="form-label">{t('products.us_size')}</label>
-                          <input className="form-input" value={variantForm.size_us}
-                            onChange={(e) => setVariantForm({ ...variantForm, size_us: e.target.value })} placeholder="9" />
+                      {catIsNumeric && (
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label className="form-label">{t('products.us_size')}</label>
+                            <input className="form-input" value={variantForm.size_us}
+                              onChange={(e) => setVariantForm({ ...variantForm, size_us: e.target.value })} placeholder="9" />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">{t('products.uk_size')}</label>
+                            <input className="form-input" value={variantForm.size_uk}
+                              onChange={(e) => setVariantForm({ ...variantForm, size_uk: e.target.value })} placeholder="8" />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">CM</label>
+                            <input className="form-input" type="number" step="0.1" value={variantForm.size_cm}
+                              onChange={(e) => setVariantForm({ ...variantForm, size_cm: e.target.value })} />
+                          </div>
                         </div>
-                        <div className="form-group">
-                          <label className="form-label">{t('products.uk_size')}</label>
-                          <input className="form-input" value={variantForm.size_uk}
-                            onChange={(e) => setVariantForm({ ...variantForm, size_uk: e.target.value })} placeholder="8" />
-                        </div>
-                        <div className="form-group">
-                          <label className="form-label">CM</label>
-                          <input className="form-input" type="number" step="0.1" value={variantForm.size_cm}
-                            onChange={(e) => setVariantForm({ ...variantForm, size_cm: e.target.value })} />
-                        </div>
-                      </div>
+                      )}
                       <div className="form-actions">
                         <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowVariantForm(false)}>{t('common.cancel')}</button>
                         <button type="submit" className="btn btn-primary btn-sm">{t('products.add_variant')}</button>
@@ -788,11 +692,10 @@ export default function ProductDetailPage() {
                 <thead>
                   <tr>
                     <th>{t('products.sku')}</th>
-                    <th>{t('products.colors')}</th>
-                    <th>EU</th>
-                    <th>US</th>
-                    <th>UK</th>
-                    <th>CM</th>
+                    <th>{t('barcode.barcode')}</th>
+                    {catHasColors && <th>{t('products.colors')}</th>}
+                    {catHasSizes && <th>{cat?.display_prefix || t('products.size_generic')}</th>}
+                    {catIsNumeric && <><th>US</th><th>UK</th><th>CM</th></>}
                     <th>{t('common.status')}</th>
                     {canWrite && <th></th>}
                   </tr>
@@ -806,16 +709,25 @@ export default function ProductDetailPage() {
                       return (
                         <tr key={v.id}>
                           <td><strong>{v.sku}</strong></td>
-                          <td>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              {color?.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: color.hex_code }} />}
-                              {color?.color_name || '—'}
-                            </span>
-                          </td>
-                          <td>{v.size_eu}</td>
-                          <td><input className="form-input" style={{ padding: '4px 8px', maxWidth: 60 }} value={editVariantForm.size_us} onChange={e => setEditVariantForm({...editVariantForm, size_us: e.target.value})} placeholder="US" /></td>
-                          <td><input className="form-input" style={{ padding: '4px 8px', maxWidth: 60 }} value={editVariantForm.size_uk} onChange={e => setEditVariantForm({...editVariantForm, size_uk: e.target.value})} placeholder="UK" /></td>
-                          <td><input className="form-input" type="number" step="0.1" style={{ padding: '4px 8px', maxWidth: 70 }} value={editVariantForm.size_cm} onChange={e => setEditVariantForm({...editVariantForm, size_cm: e.target.value})} placeholder="27.0" /></td>
+                        <td style={{ fontFamily: 'monospace', fontSize: '.85em', whiteSpace: 'nowrap' }}>
+                          {v.barcode || <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
+                        </td>
+                          {catHasColors && (
+                            <td>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                {color?.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: color.hex_code }} />}
+                                {color?.color_name || '—'}
+                              </span>
+                            </td>
+                          )}
+                          {catHasSizes && <td>{sizeOf(v)}</td>}
+                          {catIsNumeric && (
+                            <>
+                              <td><input className="form-input" style={{ padding: '4px 8px', maxWidth: 60 }} value={editVariantForm.size_us} onChange={e => setEditVariantForm({...editVariantForm, size_us: e.target.value})} placeholder="US" /></td>
+                              <td><input className="form-input" style={{ padding: '4px 8px', maxWidth: 60 }} value={editVariantForm.size_uk} onChange={e => setEditVariantForm({...editVariantForm, size_uk: e.target.value})} placeholder="UK" /></td>
+                              <td><input className="form-input" type="number" step="0.1" style={{ padding: '4px 8px', maxWidth: 70 }} value={editVariantForm.size_cm} onChange={e => setEditVariantForm({...editVariantForm, size_cm: e.target.value})} placeholder="27.0" /></td>
+                            </>
+                          )}
                           <td>
                             <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 'var(--font-size-sm)' }}>
                               <input type="checkbox" checked={editVariantForm.is_active} onChange={e => setEditVariantForm({...editVariantForm, is_active: e.target.checked})} />
@@ -835,16 +747,25 @@ export default function ProductDetailPage() {
                     return (
                       <tr key={v.id}>
                         <td><strong>{v.sku}</strong></td>
-                        <td>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            {color?.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: color.hex_code }} />}
-                            {color?.color_name || '—'}
-                          </span>
+                        <td style={{ fontFamily: 'monospace', fontSize: '.85em', whiteSpace: 'nowrap' }}>
+                          {v.barcode || <span style={{ color: 'var(--color-text-muted)' }}>—</span>}
                         </td>
-                        <td>{v.size_eu}</td>
-                        <td>{v.size_us || '—'}</td>
-                        <td>{v.size_uk || '—'}</td>
-                        <td>{v.size_cm != null ? `${v.size_cm}` : '—'}</td>
+                        {catHasColors && (
+                          <td>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {color?.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: color.hex_code }} />}
+                              {color?.color_name || '—'}
+                            </span>
+                          </td>
+                        )}
+                        {catHasSizes && <td>{sizeOf(v)}</td>}
+                        {catIsNumeric && (
+                          <>
+                            <td>{v.size_us || '—'}</td>
+                            <td>{v.size_uk || '—'}</td>
+                            <td>{v.size_cm != null ? `${v.size_cm}` : '—'}</td>
+                          </>
+                        )}
                         <td>
                           <span className={`badge ${v.is_active ? 'badge-success' : 'badge-danger'}`}>
                             {v.is_active ? t('common.active') : t('common.inactive')}
@@ -957,6 +878,15 @@ export default function ProductDetailPage() {
             </div>
           )}
         </div>
+      )}
+      {showLabels && (
+        <Suspense fallback={null}>
+          <PrintLabelsModal
+            productId={product.id}
+            title={`${product.brand || ''} ${product.model_name}`.trim()}
+            onClose={() => setShowLabels(false)}
+          />
+        </Suspense>
       )}
     </div>
   );

@@ -584,3 +584,65 @@
     max-height: 95vh;
   }
 }
+
+/* --- Barcode scan feedback strip --------------------------------------- */
+.pos-scan-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.65rem;
+  margin: 0 0 0.5rem;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  min-height: 2rem;
+  /* The message can be a long product name; never let it push the layout wide. */
+  overflow: hidden;
+}
+.pos-scan-strip > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pos-scan-idle { color: var(--color-text-muted); }
+.pos-scan-ok   { color: var(--color-success); font-weight: 600; }
+.pos-scan-err  { color: var(--color-danger);  font-weight: 600; }
+
+/* Category chips above the product grid. Scrolls sideways rather than wrapping into
+   several rows, so the grid below never loses height on a small till screen. */
+.pos-category-chips {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+  margin-bottom: 0.5rem;
+  scrollbar-width: thin;
+}
+
+.pos-category-chip {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pos-category-chip:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.pos-category-chip--on {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.pos-category-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { inventoryAPI } from '../../api';
 import toast from 'react-hot-toast';
 import { useTranslation } from '../../i18n/i18nContext';
+import { formatSize, formatColor, compareSize } from '../../utils/variantFormat';
 import ClickableImage from '../../components/common/ClickableImage';
 import './POS.css';
 
 export default function ProductSelectorModal({ product, storeId, cartItemIds, onClose, onAddToCart }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState([]);
 
@@ -35,10 +36,15 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
   // Group items by color, then by size
   // Form: { [color_name]: { [size]: [item1, item2, ...] } }
   const groupedItems = items.reduce((acc, item) => {
-    const color = item.color_name || 'No Color';
+    const color = formatColor(item) || '';
     const size = item.size_eu || 'N/A';
     
-    if (!acc[color]) acc[color] = { hex: item.hex_code, colorImage: item.color_image_url || null, sizes: {} };
+    if (!acc[color]) acc[color] = {
+      hex: item.hex_code,
+      colorImage: item.color_image_url || null,
+      colorImageThumb: item.color_image_thumb_url || null,
+      sizes: {},
+    };
     if (!acc[color].sizes[size]) acc[color].sizes[size] = [];
     
     acc[color].sizes[size].push(item);
@@ -54,7 +60,7 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
           <div className="pos-selector-product-info" style={{ display: 'flex', gap: 'var(--spacing-md)', alignItems: 'center' }}>
             <div style={{ width: 80, height: 80, borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
               {product.product_image ? (
-                <ClickableImage src={product.product_image} alt={product.product_name} title={product.product_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <ClickableImage src={product.product_image} thumbSrc={product.product_image_thumb} alt={product.product_name} title={product.product_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
                 <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>{t('products.no_image')}</div>
               )}
@@ -82,23 +88,30 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)', maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
             {Object.entries(groupedItems).map(([color, data]) => (
               <div key={color} style={{ background: 'var(--color-bg-base)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: 'var(--spacing-md)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: color ? 'var(--spacing-md)' : 0 }}>
                   {(data.colorImage || product.product_image) && (
                     <ClickableImage
                       src={data.colorImage || product.product_image}
+                      thumbSrc={data.colorImageThumb || product.product_image_thumb}
                       alt={color}
+                      width={44}
+                      height={44}
                       title={`${product.product_name} - ${color}`}
                       style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', flexShrink: 0 }}
                     />
                   )}
-                  <div style={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: data.hex || '#ccc', border: '1px solid var(--color-border)', flexShrink: 0 }}></div>
-                  <h3 style={{ fontSize: '1.1rem', margin: 0 }}>{color}</h3>
+                  {color && (
+                    <>
+                      <div style={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: data.hex || '#ccc', border: '1px solid var(--color-border)', flexShrink: 0 }}></div>
+                      <h3 style={{ fontSize: '1.1rem', margin: 0 }}>{color}</h3>
+                    </>
+                  )}
                 </div>
                 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 'var(--spacing-sm)' }}>
                   {/* Sort sizes nicely */}
                   {Object.entries(data.sizes)
-                    .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+                    .sort(([, a], [, b]) => compareSize(a[0], b[0]))
                     .map(([size, sizeItems]) => {
                       // How many of this size are available AND NOT in the cart yet?
                       const availableItems = sizeItems.filter(item => !cartItemIds.has(item.id));
@@ -124,7 +137,9 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
                             transition: 'all 0.2s'
                           }}
                         >
-                          <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.1rem' }}>EU {size}</div>
+                          <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.1rem' }}>
+                            {formatSize(sizeItems[0], locale) || t('pos.add_to_cart')}
+                          </div>
                           <div style={{ fontSize: '0.75rem', color: isSoldOut ? 'var(--color-danger)' : 'var(--color-text-secondary)' }}>
                             {isSoldOut ? t('pos.out_of_stock') : `${availableItems.length} ${t('pos.available')}`}
                           </div>

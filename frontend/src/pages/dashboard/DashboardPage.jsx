@@ -2,17 +2,19 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { reportsAPI } from '../../api';
+import toast from 'react-hot-toast';
 import { useTranslation } from '../../i18n/i18nContext';
 import {
   HiOutlineShoppingCart, HiOutlineTruck, HiOutlineArrowsRightLeft,
   HiOutlineBanknotes, HiOutlineChartBar, HiOutlineClock,
-  HiOutlineExclamationTriangle, HiOutlineDocumentText, HiOutlineCube
+  HiOutlineExclamationTriangle, HiOutlineDocumentText, HiOutlineCube,
+  HiOutlineArrowPath
 } from 'react-icons/hi2';
 import './Dashboard.css';
 
 export default function DashboardPage() {
   const { user, hasPermission } = useAuth();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const navigate = useNavigate();
   const isAdminSection = hasPermission('dashboard_admin', 'read');
   const canViewReports = hasPermission('reports', 'read');
@@ -34,18 +36,27 @@ export default function DashboardPage() {
       return;
     }
 
-    Promise.all(promises)
+    // allSettled: one failing section (e.g. no permission for the admin panel)
+    // should not blank out the other. The old Promise.all + empty catch silently
+    // showed an empty dashboard whenever either call failed.
+    Promise.allSettled(promises)
       .then((results) => {
         if (!active) return;
         let idx = 0;
-        if (canViewReports) setSnapshot(results[idx++]?.data?.data);
-        if (isAdminSection) setAdminData(results[idx++]?.data?.data);
+        if (canViewReports) {
+          const r = results[idx++];
+          if (r.status === 'fulfilled') setSnapshot(r.value?.data?.data);
+          else toast.error(t('common.error'));
+        }
+        if (isAdminSection) {
+          const r = results[idx++];
+          if (r.status === 'fulfilled') setAdminData(r.value?.data?.data);
+        }
       })
-      .catch(() => {})
       .finally(() => { if (active) setLoading(false); });
 
     return () => { active = false; };
-  }, [isAdminSection]);
+  }, [isAdminSection, canViewReports]);
 
   const fmt = (v) => v != null ? parseFloat(v).toLocaleString() : '—';
   const fmtTime = (d) => {
@@ -166,6 +177,27 @@ export default function DashboardPage() {
                       <span className="pending-label">{t('dashboard.low_stock_alerts')}</span>
                     </div>
                   </div>
+                  {/* A debt nobody is chasing is the whole reason to track loans, and a
+                      recurring cost nobody posts is the whole reason to list them. Both
+                      are derived from dates on every load, so neither can go stale. */}
+                  <div className="pending-card card" data-testid="overdue-loans-tile">
+                    <div className="pending-icon" style={{ color: '#dc2626' }}>
+                      <HiOutlineBanknotes size={22} />
+                    </div>
+                    <div className="pending-info">
+                      <span className="pending-count">{(adminData.overdue_loans || []).length}</span>
+                      <span className="pending-label">{t('dashboard.overdue_loans')}</span>
+                    </div>
+                  </div>
+                  <div className="pending-card card" data-testid="due-recurring-tile">
+                    <div className="pending-icon" style={{ color: '#f59e0b' }}>
+                      <HiOutlineArrowPath size={22} />
+                    </div>
+                    <div className="pending-info">
+                      <span className="pending-count">{(adminData.due_recurring || []).length}</span>
+                      <span className="pending-label">{t('dashboard.recurring_due')}</span>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Pending details tables */}
@@ -190,6 +222,70 @@ export default function DashboardPage() {
                                 <td><strong>{tr.transfer_number}</strong></td>
                                 <td>{tr.from_store} → {tr.to_store}</td>
                                 <td><span className={`badge badge-${tr.status === 'pending' ? 'warning' : 'info'}`}>{tr.status}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {(adminData.overdue_loans || []).length > 0 && (
+                    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                      <div className="card-header">
+                        <h3>{t('dashboard.overdue_loans')}</h3>
+                      </div>
+                      <div className="table-container">
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>{t('loans.borrower')}</th>
+                              <th>{t('loans.due_date')}</th>
+                              <th style={{ textAlign: 'right' }}>{t('loans.remaining')}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {adminData.overdue_loans.map(l => (
+                              <tr key={l.id}>
+                                <td><strong>{l.borrower_full_name || l.borrower_name}</strong></td>
+                                <td>
+                                  <span className="badge badge-danger">
+                                    {t('loans.overdue_by', { n: l.days_overdue })}
+                                  </span>
+                                </td>
+                                <td style={{ textAlign: 'right', color: 'var(--color-danger)', fontWeight: 600 }}>
+                                  {fmt(l.remaining)} {t('common.currency')}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {(adminData.due_recurring || []).length > 0 && (
+                    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                      <div className="card-header">
+                        <h3>{t('dashboard.recurring_due')}</h3>
+                      </div>
+                      <div className="table-container">
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>{t('expenses.description')}</th>
+                              <th>{t('expenses.category')}</th>
+                              <th style={{ textAlign: 'right' }}>{t('expenses.amount')}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {adminData.due_recurring.map(r => (
+                              <tr key={r.id}>
+                                <td><strong>{r.description || '—'}</strong></td>
+                                <td>{locale === 'ar' ? (r.category_name_ar || r.category_name) : r.category_name}</td>
+                                <td style={{ textAlign: 'right', fontWeight: 600 }}>
+                                  {fmt(r.amount)} {t('common.currency')}
+                                </td>
                               </tr>
                             ))}
                           </tbody>

@@ -12,7 +12,7 @@ const { generateUUID, generateDocumentNumber } = require('../../utils/generateCo
  * When cancelled: items revert to 'in_stock' at original store
  */
 class TransfersService {
-  async list({ from_store_id, to_store_id, status, store_id } = {}) {
+  async list({ from_store_id, to_store_id, status, store_id, store_ids } = {}) {
     let query = db('store_transfers')
       .join('stores as from_s', 'store_transfers.from_store_id', 'from_s.id')
       .join('stores as to_s', 'store_transfers.to_store_id', 'to_s.id')
@@ -28,19 +28,29 @@ class TransfersService {
     if (from_store_id) query = query.where('store_transfers.from_store_id', from_store_id);
     if (to_store_id) query = query.where('store_transfers.to_store_id', to_store_id);
     if (status) query = query.where('store_transfers.status', status);
-    // store_id scoping: show transfers where user's store is either source or destination
-    if (store_id) {
-      query = query.where(function() {
-        this.where('store_transfers.from_store_id', store_id)
-            .orWhere('store_transfers.to_store_id', store_id);
+    // Store scoping: a transfer is visible if EITHER endpoint is in scope.
+    // Note this is deliberately not applyStoreScope — that helper targets a single column.
+    const scoped = store_id ? [store_id] : (Array.isArray(store_ids) ? store_ids : null);
+    if (scoped) {
+      query = query.where(function () {
+        this.whereIn('store_transfers.from_store_id', scoped)
+          .orWhereIn('store_transfers.to_store_id', scoped);
       });
     }
 
-    // Add item count
     const transfers = await query.limit(500);
+    if (transfers.length === 0) return transfers;
+
+    // Item counts in one grouped query instead of one query per transfer.
+    const counts = await db('transfer_items')
+      .whereIn('transfer_id', transfers.map((t) => t.id))
+      .groupBy('transfer_id')
+      .select('transfer_id')
+      .count('id as count');
+
+    const countByTransfer = new Map(counts.map((c) => [c.transfer_id, parseInt(c.count, 10)]));
     for (const t of transfers) {
-      const count = await db('transfer_items').where('transfer_id', t.id).count('id as count').first();
-      t.item_count = parseInt(count.count);
+      t.item_count = countByTransfer.get(t.id) || 0;
     }
     return transfers;
   }
@@ -67,8 +77,19 @@ class TransfersService {
       .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
       .join('products', 'product_variants.product_id', 'products.id')
       .join('product_colors', 'product_variants.product_color_id', 'product_colors.id')
+      .leftJoin('product_categories as pcat', 'pcat.id', 'products.category_id')
+      .leftJoin('size_scales as sscale', 'sscale.id', 'pcat.size_scale_id')
+      .leftJoin('size_scale_values as ssv', 'ssv.id', 'product_variants.size_scale_value_id')
       .where('transfer_items.transfer_id', id)
       .select(
+        // How this category writes a size, and whether the colour is the "no colour"
+        // placeholder. Without them variantFormat assumes a shoe and prints "EU KIDS".
+        'sscale.display_prefix as size_prefix',
+        'sscale.display_suffix as size_suffix',
+        'ssv.label_en as size_label_en',
+        'ssv.label_ar as size_label_ar',
+        'pcat.has_sizes',
+        'product_colors.is_placeholder as color_is_placeholder',
         'transfer_items.id',
         'transfer_items.inventory_item_id',
         'inventory_items.status as item_status',
@@ -88,10 +109,10 @@ class TransfersService {
       throw new AppError('Source and destination stores must be different', 400);
     }
 
-    const transferNumber = await generateDocumentNumber('TR', db, 'store_transfers', 'transfer_number');
     const transferId = generateUUID();
 
     await db.transaction(async (trx) => {
+      const transferNumber = await generateDocumentNumber('TR', trx, 'store_transfers', 'transfer_number');
       await trx('store_transfers').insert({
         id: transferId,
         transfer_number: transferNumber,

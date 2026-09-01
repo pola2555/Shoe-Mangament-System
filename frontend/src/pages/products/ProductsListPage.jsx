@@ -1,12 +1,13 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { productsAPI } from '../../api';
+import { productsAPI, productCategoriesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import ClickableImage from '../../components/common/ClickableImage';
 import { useTranslation } from '../../i18n/i18nContext';
+import { localizedName } from '../../utils/variantFormat';
 import './Products.css';
 
 export default function ProductsListPage() {
@@ -14,22 +15,33 @@ export default function ProductsListPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'grid'
+  const [categories, setCategories] = useState([]);
   const [formData, setFormData] = useState({
-    product_code: '', brand: '', model_name: '',
+    product_code: '', brand: '', model_name: '', category_id: '',
     net_price: '', default_selling_price: '', min_selling_price: '', max_selling_price: '',
     description: '',
   });
   const [editingId, setEditingId] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
-    search: '', brand: '', priceMin: '', priceMax: '', status: '',
+    search: '', brand: '', category_id: '', priceMin: '', priceMax: '', status: '',
     sortBy: 'model_name', sortDir: 'asc',
   });
   const { hasPermission } = useAuth();
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
-  useEffect(() => { fetchProducts(); }, []);
+  useEffect(() => { fetchProducts(); fetchCategories(); }, []);
+
+  const fetchCategories = async () => {
+    try {
+      const { data } = await productCategoriesAPI.list({ is_active: true });
+      setCategories(data.data || []);
+    } catch (err) {
+      // The form falls back to a plain list; nothing else on this page needs it.
+      toast.error(t('categories.load_failed'));
+    }
+  };
 
   const fetchProducts = async () => {
     try {
@@ -57,6 +69,11 @@ export default function ProductsListPage() {
     // Brand filter
     if (filters.brand) {
       result = result.filter(p => p.brand === filters.brand);
+    }
+
+    // Category filter
+    if (filters.category_id) {
+      result = result.filter(p => p.category_id === filters.category_id);
     }
 
     // Price range
@@ -99,6 +116,10 @@ export default function ProductsListPage() {
       ['net_price', 'default_selling_price', 'min_selling_price', 'max_selling_price'].forEach((f) => {
         payload[f] = payload[f] === '' ? null : parseFloat(payload[f]);
       });
+      // Editing sends the category only when it actually changed: the server refuses a
+      // move between categories with different sizes or colours once variants exist,
+      // and re-sending the current one would trip that for no reason.
+      if (!payload.category_id) delete payload.category_id;
 
       if (editingId) { await productsAPI.update(editingId, payload); toast.success('Product updated'); }
       else { await productsAPI.create(payload); toast.success('Product created'); }
@@ -109,6 +130,7 @@ export default function ProductsListPage() {
   const startEdit = (product) => {
     setFormData({
       product_code: product.product_code, brand: product.brand || '', model_name: product.model_name,
+      category_id: product.category_id || '',
       net_price: product.net_price ?? '', default_selling_price: product.default_selling_price ?? '',
       min_selling_price: product.min_selling_price ?? '', max_selling_price: product.max_selling_price ?? '',
       description: product.description || '',
@@ -117,14 +139,17 @@ export default function ProductsListPage() {
   };
 
   const resetForm = () => {
-    setFormData({ product_code: '', brand: '', model_name: '', net_price: '', default_selling_price: '', min_selling_price: '', max_selling_price: '', description: '' });
+    setFormData({ product_code: '', brand: '', model_name: '', category_id: '', net_price: '', default_selling_price: '', min_selling_price: '', max_selling_price: '', description: '' });
     setEditingId(null);
   };
 
-  const clearFilters = () => setFilters({ search: '', brand: '', priceMin: '', priceMax: '', status: '', sortBy: 'model_name', sortDir: 'asc' });
+  const clearFilters = () => setFilters({ search: '', brand: '', category_id: '', priceMin: '', priceMax: '', status: '', sortBy: 'model_name', sortDir: 'asc' });
 
   const fmt = (v) => v != null ? parseFloat(v).toLocaleString() : '—';
-  const activeFilterCount = [filters.brand, filters.priceMin, filters.priceMax, filters.status].filter(Boolean).length;
+  const activeFilterCount = [filters.brand, filters.category_id, filters.priceMin, filters.priceMax, filters.status].filter(Boolean).length;
+
+  const categoryOptions = categories.map((c) => ({ value: c.id, label: localizedName(c, locale) }));
+  const selectedCategory = categories.find((c) => c.id === formData.category_id);
 
   return (
     <div className="products-page">
@@ -168,6 +193,17 @@ export default function ProductsListPage() {
                 ]}
                 value={filters.brand}
                 onChange={(e) => setFilters({ ...filters, brand: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">{t('products.category')}</label>
+              <SearchableSelect
+                options={[
+                  { value: '', label: t('common.all') },
+                  ...categoryOptions,
+                ]}
+                value={filters.category_id}
+                onChange={(e) => setFilters({ ...filters, category_id: e.target.value })}
               />
             </div>
             <div className="form-group">
@@ -245,6 +281,26 @@ export default function ProductsListPage() {
               <div className="form-group"><label className="form-label">{t('products.model_name')} *</label>
                 <input className="form-input" required value={formData.model_name}
                   onChange={(e) => setFormData({ ...formData, model_name: e.target.value })} placeholder="e.g. Air Max 90" /></div>
+              <div className="form-group" data-testid="product-category">
+                <label className="form-label">{t('products.category')} *</label>
+                <SearchableSelect
+                  options={categoryOptions}
+                  value={formData.category_id}
+                  onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+                  placeholder={t('categories.choose')}
+                />
+                {/* The category decides what a product can have, so say so before the
+                    variants tab surprises anyone. */}
+                {selectedCategory && (
+                  <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginTop: '.35rem' }}>
+                    {selectedCategory.has_sizes
+                      ? t('categories.hint_sizes', { list: localizedName({ name_en: selectedCategory.scale_name_en, name_ar: selectedCategory.scale_name_ar }, locale) })
+                      : t('categories.hint_no_sizes')}
+                    {' · '}
+                    {selectedCategory.has_colors ? t('categories.hint_colors') : t('categories.hint_no_colors')}
+                  </div>
+                )}
+              </div>
               <div className="form-row">
                 <div className="form-group"><label className="form-label">{t('products.cost_price')}</label>
                   <input className="form-input" type="number" step="0.01" value={formData.net_price}
@@ -290,7 +346,12 @@ export default function ProductsListPage() {
               {/* Product Image */}
               <div className="product-card__image">
                 {p.primary_image_url ? (
-                  <ClickableImage src={p.primary_image_url} alt={p.model_name} title={`${p.brand} ${p.model_name}`} />
+                  <ClickableImage
+                    src={p.primary_image_url}
+                    thumbSrc={p.primary_image_thumb_url}
+                    alt={p.model_name}
+                    title={`${p.brand} ${p.model_name}`}
+                  />
                 ) : (
                   <div className="product-card__no-image">📷</div>
                 )}

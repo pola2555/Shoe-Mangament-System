@@ -10,12 +10,32 @@ const { generateUUID, generateDocumentNumber } = require('../../utils/generateCo
 class DealersService {
   async list() {
     const dealers = await db('dealers').orderBy('name', 'asc').limit(500);
+    if (dealers.length === 0) return dealers;
+
+    const ids = dealers.map((d) => d.id);
+
+    // Two grouped aggregates instead of two queries per dealer.
+    //
+    // total_paid comes from dealer_payments, NOT from summing invoices.paid_amount.
+    // paid_amount only ever holds what FIFO managed to allocate, so an overpayment
+    // was invisible: the dealer's credit simply vanished from their balance. Summing
+    // actual payments makes it surface as a negative balance, matching how supplier
+    // balances already work.
+    const [invoiceTotals, paymentTotals] = await Promise.all([
+      db('wholesale_invoices').whereIn('dealer_id', ids)
+        .groupBy('dealer_id').select('dealer_id').sum('total_amount as invoiced'),
+      db('dealer_payments').whereIn('dealer_id', ids)
+        .groupBy('dealer_id').select('dealer_id').sum('total_amount as paid'),
+    ]);
+
+    const invoicedBy = new Map(invoiceTotals.map((t) => [t.dealer_id, parseFloat(t.invoiced) || 0]));
+    const paidBy = new Map(paymentTotals.map((t) => [t.dealer_id, parseFloat(t.paid) || 0]));
+
     for (const d of dealers) {
-      const inv = await db('wholesale_invoices').where('dealer_id', d.id).sum('total_amount as total').first();
-      const paid = await db('wholesale_invoices').where('dealer_id', d.id).sum('paid_amount as total').first();
-      d.total_invoiced = parseFloat(inv.total) || 0;
-      d.total_paid = parseFloat(paid.total) || 0;
-      d.balance = d.total_invoiced - d.total_paid;
+      d.total_invoiced = invoicedBy.get(d.id) || 0;
+      d.total_paid = paidBy.get(d.id) || 0;
+      // Positive = the dealer owes us. Negative = they are in credit with us.
+      d.balance = Math.round((d.total_invoiced - d.total_paid) * 100) / 100;
     }
     return dealers;
   }
@@ -24,14 +44,19 @@ class DealersService {
     const dealer = await db('dealers').where('id', id).first();
     if (!dealer) throw new AppError('Dealer not found', 404);
 
-    const inv = await db('wholesale_invoices').where('dealer_id', id).sum('total_amount as total').first();
-    const paid = await db('wholesale_invoices').where('dealer_id', id).sum('paid_amount as total').first();
-    dealer.total_invoiced = parseFloat(inv.total) || 0;
-    dealer.total_paid = parseFloat(paid.total) || 0;
-    dealer.balance = dealer.total_invoiced - dealer.total_paid;
+    const [invoiceTotal, paymentTotal, invoices, payments] = await Promise.all([
+      db('wholesale_invoices').where('dealer_id', id).sum('total_amount as invoiced').first(),
+      // Actual payments, not invoices.paid_amount — see list() for why.
+      db('dealer_payments').where('dealer_id', id).sum('total_amount as paid').first(),
+      db('wholesale_invoices').where('dealer_id', id).orderBy('invoice_date', 'desc'),
+      db('dealer_payments').where('dealer_id', id).orderBy('payment_date', 'desc'),
+    ]);
 
-    dealer.invoices = await db('wholesale_invoices').where('dealer_id', id).orderBy('invoice_date', 'desc');
-    dealer.payments = await db('dealer_payments').where('dealer_id', id).orderBy('payment_date', 'desc');
+    dealer.total_invoiced = parseFloat(invoiceTotal?.invoiced) || 0;
+    dealer.total_paid = parseFloat(paymentTotal?.paid) || 0;
+    dealer.balance = Math.round((dealer.total_invoiced - dealer.total_paid) * 100) / 100;
+    dealer.invoices = invoices;
+    dealer.payments = payments;
 
     return dealer;
   }
@@ -73,11 +98,11 @@ class DealersService {
 
   // --- Wholesale Invoices ---
   async createInvoice(data, userId) {
-    const invoiceNumber = await generateDocumentNumber('WI', db, 'wholesale_invoices', 'invoice_number');
     const invoiceId = generateUUID();
     const { boxes, ...invoiceData } = data;
 
     await db.transaction(async (trx) => {
+      const invoiceNumber = await generateDocumentNumber('WI', trx, 'wholesale_invoices', 'invoice_number');
       await trx('wholesale_invoices').insert({
         id: invoiceId,
         invoice_number: invoiceNumber,
@@ -135,7 +160,8 @@ class DealersService {
   // --- Dealer Payments (FIFO) ---
   async createPayment(data, userId) {
     const paymentId = generateUUID();
-    let remaining = data.total_amount;
+    let remaining = parseFloat(data.total_amount);
+    let unallocated = 0;
 
     await db.transaction(async (trx) => {
       await trx('dealer_payments').insert({
@@ -173,9 +199,14 @@ class DealersService {
         });
         remaining = Math.round((remaining - alloc) * 100) / 100;
       }
+
+      // Whatever FIFO could not place is the dealer's credit toward future invoices.
+      // It used to be dropped on the floor with no record of it anywhere.
+      unallocated = Math.max(0, remaining);
     });
 
-    return db('dealer_payments').where('id', paymentId).first();
+    const payment = await db('dealer_payments').where('id', paymentId).first();
+    return { ...payment, unallocated_credit: unallocated };
   }
 }
 

@@ -1,4 +1,5 @@
 const db = require('../../config/database');
+const { applyDateRange } = require('../../utils/dateRange');
 
 class AuditLogService {
   async list({ page = 1, limit = 50, user_id, module, action, entity_type, store_id, date_from, date_to, search }) {
@@ -29,8 +30,7 @@ class AuditLogService {
     if (action) query = query.where('activity_log.action', action);
     if (entity_type) query = query.where('activity_log.entity_type', entity_type);
     if (store_id) query = query.where('activity_log.store_id', store_id);
-    if (date_from) query = query.where('activity_log.created_at', '>=', date_from);
-    if (date_to) query = query.where('activity_log.created_at', '<=', date_to + ' 23:59:59');
+    applyDateRange(query, 'activity_log.created_at', { startDate: date_from, endDate: date_to });
     if (search) {
       const safeSearch = search.replace(/[%_\\]/g, '\\$&');
       query = query.whereRaw("activity_log.details::text ILIKE ?", [`%${safeSearch}%`]);

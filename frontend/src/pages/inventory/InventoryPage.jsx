@@ -1,20 +1,26 @@
-import { useState, useEffect, Fragment } from 'react';
-import { inventoryAPI, storesAPI, productsAPI } from '../../api';
+import { useState, useEffect, Fragment, lazy, Suspense } from 'react';
+import { inventoryAPI, storesAPI, productsAPI, productCategoriesAPI, sizeScalesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
+import { formatSize, formatColor, compareSize, localizedName, sizeValueLabel } from '../../utils/variantFormat';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import ClickableImage from '../../components/common/ClickableImage';
 import { useTranslation } from '../../i18n/i18nContext';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, ImageRun } from 'docx';
 import '../products/Products.css';
+
+const PrintLabelsModal = lazy(() => import('../../components/barcode/PrintLabelsModal'));
+
+// `docx` is ~400 kB and only needed when the user actually exports. Imported
+// dynamically so it is not part of the bundle every page load pays for.
+const loadDocx = () => import('docx');
 
 // --- Tree View Components ---
 
 const InventoryTreeSizeRow = ({ sizeRow }) => {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   return (
   <tr className="tree-row size-row" style={{ backgroundColor: 'transparent' }}>
-    <td style={{ paddingLeft: '5.5rem', color: 'var(--color-text-secondary)' }}>EU {sizeRow.size_eu}</td>
+    <td style={{ paddingInlineStart: '5.5rem', color: 'var(--color-text-secondary)' }}>{formatSize(sizeRow, locale)}</td>
     <td style={{ color: 'var(--color-text-muted)', fontSize: '0.9em' }}>{sizeRow.sku}</td>
     <td>{sizeRow.store_name}</td>
     <td>{parseFloat(sizeRow.avg_cost).toFixed(2)} {t('common.currency')}</td>
@@ -30,7 +36,7 @@ const InventoryTreeColorRow = ({ color, defaultExpanded = false }) => {
   return (
     <Fragment>
       <tr className="tree-row color-row" onClick={() => setExpanded(!expanded)} style={{ cursor: 'pointer', backgroundColor: 'var(--color-row-alt)' }}>
-        <td style={{ paddingLeft: '3rem' }}>
+        <td style={{ paddingInlineStart: '3rem' }}>
           <button className="btn-icon" style={{ padding: '0 8px', marginRight: 12, background: 'none', border:'none', color: 'inherit', cursor: 'pointer' }}>
             {expanded ? '▼' : '▶'}
           </button>
@@ -71,7 +77,15 @@ const InventoryTreeProductRow = ({ product, defaultExpanded = false }) => {
         <td style={{ fontSize: '1.1em', color: 'var(--color-success)' }}><strong>{product.total_quantity}</strong></td>
         <td>
           {product.image ? (
-            <ClickableImage src={product.image} alt="product" title={product.name} style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--color-border)' }} />
+            <ClickableImage
+              src={product.image}
+              thumbSrc={product.imageThumb}
+              alt="product"
+              title={product.name}
+              width={44}
+              height={44}
+              style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--color-border)' }}
+            />
           ) : (
             <div style={{ width: 44, height: 44, background: 'var(--color-surface-hover)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)' }}>—</div>
           )}
@@ -114,6 +128,32 @@ const loadImageSize = (blob) => new Promise((resolve, reject) => {
   img.src = objectUrl;
 });
 
+/**
+ * Run async tasks with a bounded number in flight.
+ *
+ * The export previously fired every image request at once — for 200 products that is
+ * ~800 simultaneous proxied downloads, which blew through the server's rate limit and
+ * spiked its memory. Four at a time keeps it well inside both.
+ */
+const mapWithConcurrency = async (items, limit, worker) => {
+  const results = new Array(items.length);
+  let next = 0;
+
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      try {
+        results[index] = { status: 'fulfilled', value: await worker(items[index]) };
+      } catch (error) {
+        results[index] = { status: 'rejected', reason: error };
+      }
+    }
+  });
+
+  await Promise.all(runners);
+  return results;
+};
+
 const fetchImageForDocx = async (imageUrl, maxWidth = 420, maxHeight = 260) => {
   const candidates = buildImageUrlCandidates(imageUrl);
   if (!candidates.length) return null;
@@ -127,32 +167,43 @@ const fetchImageForDocx = async (imageUrl, maxWidth = 420, maxHeight = 260) => {
       const width = Math.max(80, Math.round(natural.width * ratio));
       const height = Math.max(80, Math.round(natural.height * ratio));
 
-      // Convert to PNG to avoid unsupported source formats in docx (e.g., webp).
       const objectUrl = URL.createObjectURL(sourceBlob);
       const img = new Image();
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = objectUrl;
-      });
+      try {
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = reject;
+          img.src = objectUrl;
+        });
 
-      const canvas = document.createElement('canvas');
-      canvas.width = natural.width;
-      canvas.height = natural.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
+        // Draw at the FINAL display size, not the source's natural size. The old code
+        // allocated a full-resolution canvas (a 4000×3000 photo = ~48 MB of RGBA) and
+        // then encoded it as PNG, which is far larger than the JPEG source — so the
+        // .docx ended up bigger than the originals it was built from.
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) continue;
+        // JPEG has no alpha channel: without an explicit white fill, transparent
+        // product cut-outs composite onto black instead of the page background.
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const jpegBlob = await new Promise((resolve, reject) => {
+          canvas.toBlob(
+            (b) => (b ? resolve(b) : reject(new Error('jpeg conversion failed'))),
+            'image/jpeg',
+            0.82
+          );
+        });
+
+        const bytes = new Uint8Array(await jpegBlob.arrayBuffer());
+        return { data: bytes, width, height };
+      } finally {
         URL.revokeObjectURL(objectUrl);
-        continue;
       }
-      ctx.drawImage(img, 0, 0);
-      URL.revokeObjectURL(objectUrl);
-
-      const pngBlob = await new Promise((resolve, reject) => {
-        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('png conversion failed'))), 'image/png');
-      });
-
-      const bytes = new Uint8Array(await pngBlob.arrayBuffer());
-      return { data: bytes, width, height };
     } catch {
       // Try next candidate URL.
     }
@@ -167,15 +218,25 @@ export default function InventoryPage() {
   const [items, setItems] = useState([]);
   const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ store_id: '', status: 'in_stock', search: '', size_min: '', size_max: '' });
+  const [filters, setFilters] = useState({
+    store_id: '', status: 'in_stock', search: '', category_id: '',
+    size_min: '', size_max: '',
+    // Exact sizes, for a category whose sizes are words. A numeric range cannot
+    // express 'Kids' — and used to make every such row disappear without saying so.
+    size_values: [],
+  });
+  const [categories, setCategories] = useState([]);
+  // scale id -> its values, so switching category needs no extra request.
+  const [valuesByScale, setValuesByScale] = useState({});
   const [viewMode, setViewMode] = useState('summary'); // 'summary' or 'items'
   const [exportingWord, setExportingWord] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
   const { filterStores } = useAuth();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [treeData, setTreeData] = useState([]);
 
-  useEffect(() => { fetchStores(); }, []);
-  useEffect(() => { fetchData(); }, [viewMode, filters.store_id, filters.status]);
+  useEffect(() => { fetchStores(); fetchCatalogue(); }, []);
+  useEffect(() => { fetchData(); }, [viewMode, filters.store_id, filters.status, filters.category_id, filters.size_values]);
 
   const fetchStores = async () => {
     try {
@@ -183,6 +244,37 @@ export default function InventoryPage() {
       setStores(filterStores(data.data));
     } catch { /* ignore */ }
   };
+
+  const fetchCatalogue = async () => {
+    try {
+      const [cats, scales] = await Promise.all([
+        productCategoriesAPI.list({ is_active: true }),
+        sizeScalesAPI.list({ include_values: true }),
+      ]);
+      setCategories(cats.data.data || []);
+      setValuesByScale(Object.fromEntries((scales.data.data || []).map((sc) => [sc.id, sc.values || []])));
+    } catch {
+      // The page still works without it — the category picker simply does not appear.
+    }
+  };
+
+  /**
+   * Switching category clears the size filter.
+   *
+   * A size only means something inside its own list: 'Kids' is not a belt length and
+   * '95' is not a sock. Carrying the old value over would filter to nothing and look
+   * like missing stock.
+   */
+  const changeCategory = (category_id) =>
+    setFilters((f) => ({ ...f, category_id, size_min: '', size_max: '', size_values: [] }));
+
+  const toggleSizeValue = (value) =>
+    setFilters((f) => ({
+      ...f,
+      size_values: f.size_values.includes(value)
+        ? f.size_values.filter((v) => v !== value)
+        : [...f.size_values, value],
+    }));
 
   const fetchData = async () => {
     try {
@@ -207,13 +299,24 @@ export default function InventoryPage() {
     fetchData();
   };
 
+  const selectedCategory = categories.find((c) => c.id === filters.category_id) || null;
+  // With no category chosen the catalogue may hold any kind of size, so the range
+  // stays available — it is the only control that makes sense across all of them.
+  const sizeIsNumeric = !selectedCategory || selectedCategory.scale_is_numeric;
+  const sizeUnit = selectedCategory ? (selectedCategory.display_prefix || selectedCategory.display_suffix || '') : '';
+  const sizeAxisLabel = sizeUnit
+    ? `${t('products.size_generic')} (${sizeUnit})`
+    : t('products.size_generic');
+
   const buildQueryParams = ({ includeStatus = true } = {}) => {
     const params = {};
     if (filters.store_id) params.store_id = filters.store_id;
     if (includeStatus && filters.status) params.status = filters.status;
     if (filters.search) params.search = filters.search;
+    if (filters.category_id) params.category_id = filters.category_id;
     if (filters.size_min) params.size_min = filters.size_min;
     if (filters.size_max) params.size_max = filters.size_max;
+    if (filters.size_values.length) params.size_values = filters.size_values.join(',');
     return params;
   };
 
@@ -226,6 +329,8 @@ export default function InventoryPage() {
   const handleExportWord = async () => {
     try {
       setExportingWord(true);
+
+      const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, ImageRun } = await loadDocx();
 
       const { data } = await inventoryAPI.summary(buildQueryParams({ includeStatus: false }));
       const rows = data?.data || [];
@@ -251,19 +356,24 @@ export default function InventoryPage() {
 
       const products = Array.from(productMap.values());
 
-      for (const product of products) {
+      // Colour lookups run a few at a time rather than strictly one-after-another,
+      // which is what made this loop the slowest part of the export.
+      await mapWithConcurrency(products, 4, async (product) => {
         try {
           const { data: colorsRes } = await productsAPI.listColors(product.id);
           const colors = colorsRes?.data || [];
           colors.forEach((color) => {
             (color.images || []).forEach((img) => {
-              if (img.image_url) product.imageUrls.add(img.image_url);
+              // Prefer the thumbnail: the export renders these at ~420px, so the
+              // full-size original is wasted bandwidth on both ends.
+              const url = img.thumb_url || img.image_url;
+              if (url) product.imageUrls.add(url);
             });
           });
         } catch {
           // Best effort: keep export running even when a product images call fails.
         }
-      }
+      });
 
       const sections = [];
       for (const product of products) {
@@ -271,13 +381,17 @@ export default function InventoryPage() {
         const first = productRows[0] || {};
 
         const imageCandidates = Array.from(product.imageUrls).slice(0, 4);
-        const imageResults = await Promise.allSettled(
-          imageCandidates.map((url) => fetchImageForDocx(url))
+        const imageResults = await mapWithConcurrency(
+          imageCandidates, 4, (url) => fetchImageForDocx(url)
         );
 
         const imageRuns = imageResults
           .filter((r) => r.status === 'fulfilled' && r.value)
-          .map((r) => new ImageRun({ data: r.value.data, transformation: { width: r.value.width, height: r.value.height } }));
+          .map((r) => new ImageRun({
+            type: 'jpg',
+            data: r.value.data,
+            transformation: { width: r.value.width, height: r.value.height },
+          }));
 
         const sizesByColor = new Map();
         let totalQty = 0;
@@ -287,7 +401,8 @@ export default function InventoryPage() {
           const sizeMap = sizesByColor.get(colorKey);
           const sizeKey = String(row.size_eu);
           const qty = Number(row.quantity) || 0;
-          sizeMap.set(sizeKey, (sizeMap.get(sizeKey) || 0) + qty);
+          const prev = sizeMap.get(sizeKey);
+          sizeMap.set(sizeKey, { qty: (prev ? prev.qty : 0) + qty, row });
           totalQty += qty;
         }
 
@@ -339,8 +454,8 @@ export default function InventoryPage() {
           .sort((a, b) => a[0].localeCompare(b[0]))
           .forEach(([colorName, sizeMap]) => {
             const sizeLine = Array.from(sizeMap.entries())
-              .sort((a, b) => Number(a[0]) - Number(b[0]))
-              .map(([size, qty]) => `EU ${size} (${qty})`)
+              .sort((a, b) => compareSize(a[1].row, b[1].row))
+              .map(([, v]) => `${formatSize(v.row, locale) || v.row.size_eu} (${v.qty})`)
               .join('    ');
 
             children.push(
@@ -384,6 +499,7 @@ export default function InventoryPage() {
           name: row.product_name,
           brand: row.brand,
           image: row.product_image,
+          imageThumb: row.product_image_thumb,
           total_quantity: 0,
           colors: new Map()
         });
@@ -413,6 +529,16 @@ export default function InventoryPage() {
       <div className="page-header">
         <h1 className="page-title">{t('inventory.title')}</h1>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => setShowLabels(true)}
+            // Nothing on screen means nothing to label; opening the dialog would only
+            // show an empty list.
+            disabled={loading || items.length === 0}
+            data-testid="inventory-print-labels"
+          >
+            🏷 {t('barcode.print_labels')}
+          </button>
           <button className="btn btn-secondary" onClick={handleExportWord} disabled={exportingWord}>
             {exportingWord ? 'جاري التحميل...' : 'تصدير وورد'}
           </button>
@@ -445,18 +571,69 @@ export default function InventoryPage() {
             />
           </div>
 
-          <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">{t('products.size')} Min</label>
-              <input type="number" step="0.5" className="form-input" placeholder="38" value={filters.size_min}
-                onChange={(e) => setFilters({ ...filters, size_min: e.target.value })} />
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">{t('products.size')} Max</label>
-              <input type="number" step="0.5" className="form-input" placeholder="46" value={filters.size_max}
-                onChange={(e) => setFilters({ ...filters, size_max: e.target.value })} />
-            </div>
+          <div className="form-group" data-testid="inventory-category">
+            <label className="form-label">{t('products.category')}</label>
+            <SearchableSelect
+              options={[
+                { value: '', label: t('common.all') },
+                ...categories.map((c) => ({ value: c.id, label: localizedName(c, locale) })),
+              ]}
+              value={filters.category_id}
+              onChange={(e) => changeCategory(e.target.value)}
+            />
           </div>
+
+          {/* The size control follows the category's size list. A number range is
+              offered only for a list that IS numbers; anything else gets its own
+              values as chips, because a range cannot express them. */}
+          {selectedCategory && !selectedCategory.has_sizes ? (
+            <div className="form-group" data-testid="inventory-size-none">
+              <label className="form-label">{t('products.size_generic')}</label>
+              <div style={{ color: 'var(--color-text-muted)', fontSize: '0.85em', paddingTop: '0.6rem' }}>
+                {t('inventory.category_no_sizes')}
+              </div>
+            </div>
+          ) : sizeIsNumeric ? (
+            <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+                <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                  <label className="form-label">{sizeAxisLabel} Min</label>
+                  <input type="number" step="0.5" className="form-input" placeholder="38" value={filters.size_min}
+                    data-testid="inventory-size-min"
+                    onChange={(e) => setFilters({ ...filters, size_min: e.target.value })} />
+                </div>
+                <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                  <label className="form-label">{sizeAxisLabel} Max</label>
+                  <input type="number" step="0.5" className="form-input" placeholder="46" value={filters.size_max}
+                    data-testid="inventory-size-max"
+                    onChange={(e) => setFilters({ ...filters, size_max: e.target.value })} />
+                </div>
+              </div>
+              {/* Said out loud, because it used to happen silently. */}
+              {!selectedCategory && (filters.size_min || filters.size_max) && (
+                <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }} data-testid="inventory-size-hint">
+                  {t('inventory.numeric_only_hint')}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="form-group" data-testid="inventory-size-values">
+              <label className="form-label">{sizeAxisLabel}</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                {(valuesByScale[selectedCategory.size_scale_id] || []).map((v) => {
+                  const on = filters.size_values.includes(v.value);
+                  return (
+                    <button key={v.id || v.value} type="button"
+                      className={`btn ${on ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ padding: '0.25rem 0.6rem', fontSize: '0.85em' }}
+                      onClick={() => toggleSizeValue(v.value)}>
+                      {sizeValueLabel(v, locale)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {viewMode === 'items' && (
             <div className="form-group">
@@ -518,7 +695,7 @@ export default function InventoryPage() {
                     <td><strong>{item.sku}</strong></td>
                     <td>{item.product_code} — {item.product_name}</td>
                     <td>{item.color_name}</td>
-                    <td>EU {item.size_eu}</td>
+                    <td>{formatSize(item, locale)}</td>
                     <td>{item.store_name}</td>
                     <td>{parseFloat(item.cost).toFixed(2)} {t('common.currency')}</td>
                     <td><span className={`badge ${item.source === 'purchase' ? 'badge-info' : 'badge-neutral'}`}>{item.source}</span></td>
@@ -529,6 +706,16 @@ export default function InventoryPage() {
             </tbody>
           </table>
         </div>
+      )}
+      {showLabels && (
+        <Suspense fallback={null}>
+          <PrintLabelsModal
+            variantIds={[...new Set((items || []).map((i) => i.variant_id).filter(Boolean))]}
+            storeId={filters.store_id || undefined}
+            title={t('inventory.title')}
+            onClose={() => setShowLabels(false)}
+          />
+        </Suspense>
       )}
     </div>
   );

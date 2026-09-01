@@ -1,12 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { purchasesAPI, productsAPI, storesAPI, suppliersAPI, boxTemplatesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
+import { formatSize, compareSize } from '../../utils/variantFormat';
+import { today } from '../../utils/dates';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import ImageViewerModal from '../../components/common/ImageViewerModal';
 import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
+
+const PrintLabelsModal = lazy(() => import('../../components/barcode/PrintLabelsModal'));
 
 export default function PurchaseDetailPage() {
   const { id } = useParams();
@@ -31,12 +35,14 @@ export default function PurchaseDetailPage() {
 
   // Box items form
   const [editingBoxId, setEditingBoxId] = useState(null);
+  // Box whose labels are being printed; also auto-opened right after completion.
+  const [labelBoxId, setLabelBoxId] = useState(null);
   const [boxItems, setBoxItems] = useState([{ size_eu: '', size_us: '', size_uk: '', size_cm: '', quantity: '' }]);
 
   // Payment form
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentForm, setPaymentForm] = useState({
-    total_amount: '', payment_method: 'cash', payment_date: new Date().toISOString().split('T')[0], reference_no: '', notes: '',
+    total_amount: '', payment_method: 'cash', payment_date: today(), reference_no: '', notes: '',
   });
 
   // Edit Invoice Form
@@ -343,7 +349,9 @@ export default function PurchaseDetailPage() {
       }
       updated[groupIdx].sizes.push(...filteredNewItems);
       // Sort existing group sizes nicely
-      updated[groupIdx].sizes.sort((a,b) => parseInt(a.size_eu) - parseInt(b.size_eu));
+      // compareSize falls back to a numeric parse, so numeric sizes behave exactly as
+      // before while 'Kids' and 'M' stop landing in arbitrary order.
+      updated[groupIdx].sizes.sort(compareSize);
     }
     
     setColorGroups(updated);
@@ -384,7 +392,10 @@ export default function PurchaseDetailPage() {
     try {
       await purchasesAPI.completeBox(boxId);
       toast.success(t('common.success'));
-      fetchAll();
+      await fetchAll();
+      // Offer the labels immediately: the stock is on the bench right now, which is
+      // the one moment labelling costs nothing extra.
+      setLabelBoxId(boxId);
     } catch (err) {
       toast.error(err.response?.data?.message || t('common.error'));
     }
@@ -404,7 +415,7 @@ export default function PurchaseDetailPage() {
       });
       toast.success(t('common.success'));
       setShowPaymentForm(false);
-      setPaymentForm({ total_amount: '', payment_method: 'cash', payment_date: new Date().toISOString().split('T')[0], reference_no: '', notes: '' });
+      setPaymentForm({ total_amount: '', payment_method: 'cash', payment_date: today(), reference_no: '', notes: '' });
       fetchAll();
     } catch (err) {
       toast.error(err.response?.data?.message || t('common.error'));
@@ -700,7 +711,7 @@ export default function PurchaseDetailPage() {
                         {box.items.map((item, i) => (
                           <span key={i} className="badge badge-neutral" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             {item.color_name && <strong style={{color: 'var(--color-primary)'}}>{item.color_name}</strong>}
-                            EU {item.size_eu} ×{item.quantity}
+                            {formatSize(item)} ×{item.quantity}
                           </span>
                         ))}
                       </div>
@@ -722,8 +733,17 @@ export default function PurchaseDetailPage() {
                     </div>
                   )}
                   {box.detail_status === 'complete' && (
-                    <div style={{ marginTop: 'var(--spacing-md)', color: 'var(--color-success)', fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>
-                      ✓ {t('purchases.complete_box')}
+                    <div style={{ marginTop: 'var(--spacing-md)', display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)', flexWrap: 'wrap' }}>
+                      <span style={{ color: 'var(--color-success)', fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>
+                        ✓ {t('purchases.complete_box')}
+                      </span>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => setLabelBoxId(box.id)}
+                        data-testid={`box-print-labels-${box.id}`}
+                      >
+                        🏷 {t('barcode.print_labels')}
+                      </button>
                     </div>
                   )}
 
@@ -1018,7 +1038,13 @@ export default function PurchaseDetailPage() {
                   style={{ width: 200, borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--color-border)', position: 'relative', cursor: 'pointer' }}
                   onClick={() => setViewerImage({ url: img.image_url, title: img.original_name })}
                 >
-                  <img src={img.image_url} alt={img.original_name} style={{ width: '100%', display: 'block' }} />
+                  <img
+                    src={img.thumb_url || img.image_url}
+                    alt={img.original_name}
+                    loading="lazy"
+                    decoding="async"
+                    style={{ width: '100%', display: 'block' }}
+                  />
                   <div style={{ padding: 6, fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }} title={img.original_name}>{img.original_name}</span>
                     {canWrite && (
@@ -1044,6 +1070,15 @@ export default function PurchaseDetailPage() {
         />
       )}
 
+      {labelBoxId && (
+        <Suspense fallback={null}>
+          <PrintLabelsModal
+            invoiceBoxId={labelBoxId}
+            title={t('purchases.box_items')}
+            onClose={() => setLabelBoxId(null)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

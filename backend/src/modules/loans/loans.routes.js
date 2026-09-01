@@ -3,17 +3,39 @@ const controller = require('./loans.controller');
 const validate = require('../../middleware/validate');
 const auth = require('../../middleware/auth');
 const permission = require('../../middleware/permission');
-const { createLoanSchema, updateLoanSchema, loanPaymentSchema } = require('./loans.validation');
+const { createUpload } = require('../../middleware/upload');
+const {
+  createLoanSchema,
+  updateLoanSchema,
+  listLoansSchema,
+  loanPaymentSchema,
+  installmentsSchema,
+} = require('./loans.validation');
 
 const router = Router();
 router.use(auth);
 
-router.get('/', permission('loans', 'read'), controller.list);
-router.get('/:id', permission('loans', 'read'), controller.getById);
-router.post('/', permission('loans', 'write'), validate(createLoanSchema), controller.create);
-router.put('/:id', permission('loans', 'write'), validate(updateLoanSchema), controller.update);
-router.delete('/:id', permission('loans', 'write'), controller.delete);
-router.post('/:id/payments', permission('loans', 'write'), validate(loanPaymentSchema), controller.addPayment);
-router.delete('/:id/payments/:paymentId', permission('loans', 'write'), controller.deletePayment);
+const upload = createUpload('loans');
+const canRead = permission('loans', 'read');
+const canWrite = permission('loans', 'write');
+
+// Specific paths first, so /outstanding is not read as an id.
+router.get('/outstanding', canRead, controller.outstanding);
+
+router.get('/', canRead, validate(listLoansSchema, 'query'), controller.list);
+router.post('/', canWrite, validate(createLoanSchema), controller.create);
+router.get('/:id', canRead, controller.getById);
+router.get('/:id/statement', canRead, controller.statement);
+router.put('/:id', canWrite, validate(updateLoanSchema), controller.update);
+router.delete('/:id', canWrite, controller.delete);
+
+router.put('/:id/installments', canWrite, validate(installmentsSchema), controller.setInstallments);
+
+router.post('/:id/payments', canWrite, validate(loanPaymentSchema), controller.addPayment);
+router.delete('/:id/payments/:paymentId', canWrite, controller.deletePayment);
+
+router.get('/:id/payments/:paymentId/images', canRead, controller.listPaymentProof);
+router.post('/:id/payments/:paymentId/images', canWrite, upload.single('image'), controller.uploadPaymentProof);
+router.delete('/:id/payments/:paymentId/images/:imageId', canWrite, controller.deletePaymentProof);
 
 module.exports = router;

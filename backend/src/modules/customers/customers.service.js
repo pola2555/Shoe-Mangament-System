@@ -34,9 +34,20 @@ class CustomersService {
         .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
         .join('products', 'product_variants.product_id', 'products.id')
         .join('product_colors', 'product_variants.product_color_id', 'product_colors.id')
+        .leftJoin('product_categories as pcat', 'pcat.id', 'products.category_id')
+        .leftJoin('size_scales as sscale', 'sscale.id', 'pcat.size_scale_id')
+        .leftJoin('size_scale_values as ssv', 'ssv.id', 'product_variants.size_scale_value_id')
         .leftJoin('customer_return_items', 'sale_items.id', 'customer_return_items.sale_item_id')
         .whereIn('sale_items.sale_id', saleIds)
         .select(
+            // How this category writes a size, and whether the colour is the "no colour"
+            // placeholder. Without them variantFormat assumes a shoe and prints "EU KIDS".
+            'sscale.display_prefix as size_prefix',
+            'sscale.display_suffix as size_suffix',
+            'ssv.label_en as size_label_en',
+            'ssv.label_ar as size_label_ar',
+            'pcat.has_sizes',
+            'product_colors.is_placeholder as color_is_placeholder',
           'sale_items.id',
           'sale_items.sale_id',
           'sale_items.sale_price',

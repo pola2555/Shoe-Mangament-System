@@ -2,21 +2,15 @@ const { Router } = require('express');
 const reportsService = require('./reports.service');
 const auth = require('../../middleware/auth');
 const permission = require('../../middleware/permission');
+const { scopeStoreQuery } = require('../../utils/storeScope');
 
 const router = Router();
 router.use(auth);
 
-// Enforce store scoping for non-admin users on all report endpoints
-function enforceStoreScope(req, res, next) {
-  if (req.user.role_name !== 'admin' && !req.user.permissions?.all_stores) {
-    if (req.user.assigned_stores?.length > 0) {
-      req.query.store_ids = req.user.assigned_stores;
-    } else {
-      req.query.store_id = req.user.store_id;
-    }
-  }
-  next();
-}
+// Enforce store scoping for non-admin users on all report endpoints.
+// scopeStoreQuery strips any client-supplied store filter before re-deriving it,
+// so `?store_id=<other store>` can no longer be smuggled through.
+const enforceStoreScope = scopeStoreQuery;
 
 router.get('/dashboard', permission('reports', 'read'), enforceStoreScope, async (req, res, next) => {
   try {
@@ -67,8 +61,11 @@ router.get('/employee-analytics', permission('reports', 'read'), enforceStoreSco
   } catch (error) { next(error); }
 });
 
-// Dashboard home — today's snapshot (all authenticated users)
-router.get('/dashboard-home', permission('dashboard', 'read'), enforceStoreScope, async (req, res, next) => {
+// Dashboard home — today's snapshot.
+// Gated on 'reports', not 'dashboard': no seed or migration ever created a 'dashboard'
+// permission row, and permission_code is a FK to permissions.code, so it could not even
+// be granted by hand — every non-admin was permanently locked out of the landing page.
+router.get('/dashboard-home', permission('reports', 'read'), enforceStoreScope, async (req, res, next) => {
   try {
     const data = await reportsService.getDashboardHome(req.query);
     res.json({ success: true, data });

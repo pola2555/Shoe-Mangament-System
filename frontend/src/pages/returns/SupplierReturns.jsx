@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
+import { formatSize } from '../../utils/variantFormat';
 import { suppliersAPI, inventoryAPI, returnsAPI } from '../../api';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import { useTranslation } from '../../i18n/i18nContext';
 import { HiOutlineMagnifyingGlass, HiOutlineArrowUturnLeft } from 'react-icons/hi2';
 
 export default function SupplierReturns() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [suppliers, setSuppliers] = useState([]);
   const [selectedSupplier, setSelectedSupplier] = useState('');
   
@@ -206,7 +207,7 @@ export default function SupplierReturns() {
                       <td><span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         {item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
                         {item.color_name}</span></td>
-                      <td>EU {item.size_eu}</td>
+                      <td>{formatSize(item, locale)}</td>
                       <td>{parseFloat(item.cost).toLocaleString()} {t('common.currency')}</td>
                       <td>{new Date(item.created_at).toLocaleDateString()}</td>
                     </tr>

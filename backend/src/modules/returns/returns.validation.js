@@ -11,14 +11,17 @@ const createCustomerReturnSchema = Joi.object({
       sale_item_id: Joi.string().uuid().required(),
       refund_amount: Joi.number().precision(2).min(0).max(999999999).required()
     })
-  ).min(1).max(100).required()
+  // unique(): the same sale item must not appear twice in one return, or it is
+  // refunded twice — the service's "already returned?" check queries the table,
+  // which cannot see rows this very request is about to insert.
+  ).min(1).max(100).unique('sale_item_id').required()
 });
 
 const createSupplierReturnSchema = Joi.object({
   supplier_id: Joi.string().uuid().required(),
   reason: Joi.string().max(500).allow('', null),
   notes: Joi.string().max(500).allow('', null),
-  items: Joi.array().items(Joi.string().uuid()).min(1).max(200).required()
+  items: Joi.array().items(Joi.string().uuid()).min(1).max(200).unique().required()
 });
 
 module.exports = {

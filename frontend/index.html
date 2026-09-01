@@ -14,9 +14,13 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="PT ERP" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+    <!--
+      No webfont <link> here on purpose. Inter is self-hosted from /fonts and declared
+      in src/styles/fonts.css. It used to load from fonts.googleapis.com, which proved
+      reachable only intermittently: a render-blocking stylesheet that times out after
+      ~20 seconds freezes a till for 20 seconds, and `media="print"` only un-blocks
+      first paint — the stylesheet still holds the load event open for the full wait.
+    -->
     <title>PT Shoe ERP</title>
   </head>
   <body>

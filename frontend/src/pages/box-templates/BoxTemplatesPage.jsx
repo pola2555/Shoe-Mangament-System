@@ -225,7 +225,7 @@ export default function BoxTemplatesPage() {
                           {label}:
                         </span>
                         <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)', marginLeft: 6 }}>
-                          {items.map(i => `EU ${i.size} ×${i.quantity}`).join(', ')}
+                          {items.map(i => `${i.size} ×${i.quantity}`).join(', ')}
                         </span>
                       </div>
                     ))}

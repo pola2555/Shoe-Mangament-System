@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../../config/database');
 const AppError = require('../../utils/AppError');
 const { generateUUID } = require('../../utils/generateCodes');
+const { invalidateUserCache } = require('../../middleware/auth');
 
 /**
  * Users service — CRUD + permission management.
@@ -40,9 +41,15 @@ class UsersService {
       )
       .orderBy('users.created_at', 'desc');
 
-    // Non-admin users without 'all_stores' can only see their store's users
-    if (requestingUser.role_name !== 'admin' && !requestingUser.permissions.all_stores) {
-      query = query.where('users.store_id', requestingUser.store_id);
+    // Non-admin users without 'all_stores' can only see users in their own stores.
+    // Uses assigned_stores, not just the legacy single store_id — and when the caller
+    // has no store at all, matches nothing. The previous `where(store_id, null)` was
+    // rendered by knex as `store_id is null`, which listed every admin account.
+    if (requestingUser.role_name !== 'admin' && !requestingUser.permissions?.all_stores) {
+      const allowed = requestingUser.assigned_stores?.length
+        ? requestingUser.assigned_stores
+        : (requestingUser.store_id ? [requestingUser.store_id] : []);
+      query = query.whereIn('users.store_id', allowed);
     }
 
     return query;
@@ -116,7 +123,8 @@ class UsersService {
     if (data.is_active !== undefined) safeData.is_active = data.is_active;
 
     // If password is provided, hash it
-    if (data.password) {
+    const passwordChanged = Boolean(data.password);
+    if (passwordChanged) {
       safeData.password_hash = await bcrypt.hash(data.password, 12);
     }
 
@@ -126,6 +134,15 @@ class UsersService {
       .where('id', id)
       .update(safeData)
       .returning(['id', 'username', 'email', 'full_name', 'role_id', 'store_id', 'is_active', 'updated_at']);
+
+    // An admin-initiated reset must invalidate existing sessions too, exactly as
+    // changePassword does — otherwise the old session survives the reset.
+    if (passwordChanged) {
+      await db('refresh_tokens').where('user_id', id).update({ is_revoked: true });
+    }
+
+    // role_id / store_id / is_active are all cached by the auth middleware.
+    invalidateUserCache(id);
 
     return user;
   }
@@ -175,6 +192,9 @@ class UsersService {
       await db('user_permissions').insert(rows);
     }
 
+    // Take effect immediately rather than after the cache TTL.
+    invalidateUserCache(userId);
+
     // Return updated permissions
     return db('user_permissions')
       .where('user_id', userId)
@@ -193,6 +213,12 @@ class UsersService {
     if (!user) {
       throw new AppError('User not found', 404);
     }
+
+    // Revoke sessions and drop the cache so a deactivated user is locked out at once
+    // instead of retaining access until their access token expires.
+    await db('refresh_tokens').where('user_id', id).update({ is_revoked: true });
+    invalidateUserCache(id);
+
     return user;
   }
 
@@ -218,6 +244,9 @@ class UsersService {
       }));
       await db('user_stores').insert(rows);
     }
+
+    // assigned_stores drives all store scoping — must not lag behind.
+    invalidateUserCache(userId);
 
     return this.getStores(userId);
   }

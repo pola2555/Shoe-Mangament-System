@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
-import { inventoryAPI, customersAPI, storesAPI, salesAPI } from '../../api';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import { inventoryAPI, customersAPI, storesAPI, salesAPI, barcodesAPI, productCategoriesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
+import { formatSize, formatColor, localizedName } from '../../utils/variantFormat';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import {
   HiOutlineShoppingBag,
@@ -9,16 +10,23 @@ import {
   HiOutlineBuildingStorefront,
   HiOutlineTrash,
   HiOutlineMagnifyingGlass,
-  HiOutlineUserPlus
+  HiOutlineUserPlus,
+  HiOutlineQrCode,
+  HiOutlineCamera
 } from 'react-icons/hi2';
 import CheckoutModal from './CheckoutModal';
 import ProductSelectorModal from './ProductSelectorModal';
 import { useTranslation } from '../../i18n/i18nContext';
+import useBarcodeScanner from '../../hooks/useBarcodeScanner';
 import './POS.css';
+
+// ZXing is ~300 kB. Loading the scanner lazily keeps it out of the POS entry chunk;
+// it only arrives if the cashier actually opens the camera.
+const BarcodeScannerModal = lazy(() => import('../../components/barcode/BarcodeScannerModal'));
 
 export default function POSPage() {
   const { user, filterStores } = useAuth();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   
   // Data
   const [stores, setStores] = useState([]);
@@ -29,6 +37,9 @@ export default function POSPage() {
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [categories, setCategories] = useState([]);
+  // A till is a touch screen: one tap on a chip beats opening a dropdown.
+  const [categoryId, setCategoryId] = useState('');
   
   // Selection
   const [selectedStore, setSelectedStore] = useState(() => localStorage.getItem('pos_store') || '');
@@ -59,7 +70,21 @@ export default function POSPage() {
   // Mobile tab: 'products' or 'cart'
   const [mobileTab, setMobileTab] = useState('products');
 
+  // Barcode scanning
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [lastScan, setLastScan] = useState(null);   // { ok, text } feedback strip
+  // The cart lives in state, but handleScan is memoised for the global key listener;
+  // a ref keeps it reading the CURRENT cart instead of the one captured at mount.
+  const cartRef = useRef(cart);
+  const storeRef = useRef(selectedStore);
+  // Serialises overlapping scans so none is lost.
+  const scanQueueRef = useRef(Promise.resolve());
+
   // Initialize
+  useEffect(() => { cartRef.current = cart; }, [cart]);
+  useEffect(() => { storeRef.current = selectedStore; }, [selectedStore]);
+
   useEffect(() => {
     fetchInitialData();
   }, []);
@@ -96,6 +121,11 @@ export default function POSPage() {
         storesAPI.list(),
         customersAPI.list()
       ]);
+      // The chips are a convenience; a failure here must not stop the till opening.
+      productCategoriesAPI.list({ is_active: true })
+        .then((r) => setCategories(r.data.data || []))
+        .catch(() => {});
+
       const accessibleStores = filterStores(strs.data.data);
       setStores(accessibleStores);
       setCustomers(custs.data.data);
@@ -111,17 +141,24 @@ export default function POSPage() {
     }
   };
 
-  const handleSearch = async (e) => {
+  const handleSearch = async (e, category = categoryId) => {
     if (e) e.preventDefault();
     if (!selectedStore) return;
 
     try {
       setSearching(true);
       // We need sellable inventory items summarized by product (status is automatically in_stock in summary)
+      // A row here is one size of one colour and the grid groups them by product, so
+      // the row limit is roughly (products x colours x sizes). 500 rows is only ~20
+      // products for a typical catalogue — high enough to bound a runaway query,
+      // low enough to silently hide stock from the cashier. Keep it generous.
       const res = await inventoryAPI.summary({
         store_id: selectedStore,
         search: searchQuery,
-        limit: 50
+        // Sent from the argument, not from state: the chip handler calls this in the
+        // same tick it sets the state, when `categoryId` would still be the old value.
+        ...(category ? { category_id: category } : {}),
+        limit: 5000
       });
       
       // Group by product_id so we show exactly one card per product model
@@ -154,9 +191,75 @@ export default function POSPage() {
     if (defaultPrice > maxPrice) defaultPrice = maxPrice;
     if (defaultPrice < minPrice) defaultPrice = minPrice;
 
-    setCart([...cart, { ...physicalItem, sale_price: defaultPrice }]);
+    // Functional update: handleScan is memoised for the global key listener, so a
+    // closed-over `cart` would be whatever it was when that callback was created and
+    // the second scan of a burst would overwrite the first instead of appending.
+    const line = { ...physicalItem, sale_price: defaultPrice };
+    cartRef.current = [...cartRef.current, line];   // keep exclude_ids correct for a
+                                                    // rescan that lands before React
+                                                    // has re-rendered
+    setCart((prev) => [...prev, line]);
     toast.success(`${t('pos.add_to_cart')}: ${physicalItem.product_name} - ${physicalItem.size_eu}`);
     // Optional: close modal immediately or let the cashier keep tapping sizes
+  };
+
+  /**
+   * Resolve a scanned barcode to a concrete pair and drop it in the cart.
+   *
+   * exclude_ids carries what is already in the cart, so scanning the same size twice
+   * adds a SECOND pair rather than returning the one already there — and correctly
+   * refuses once stock runs out.
+   */
+  // handleScan is handed to a global key listener and must keep a stable identity, so
+  // it dispatches through a ref rather than capturing runScan from one render.
+  const runScanRef = useRef(null);
+
+  const handleScan = useCallback((rawCode) => {
+    // Chain onto whatever is already running. Scans must queue, never drop: a cashier
+    // running a scanner down a row of boxes fires them faster than a round trip.
+    scanQueueRef.current = scanQueueRef.current
+      .then(() => runScanRef.current?.(rawCode))
+      .catch(() => {});
+    return scanQueueRef.current;
+  }, []);
+
+  const runScan = useCallback(async (rawCode) => {
+    const storeId = storeRef.current;
+    if (!storeId) {
+      setLastScan({ ok: false, text: t('barcode.select_store_first') });
+      toast.error(t('barcode.select_store_first'));
+      return;
+    }
+    try {
+      setScanBusy(true);
+      const res = await barcodesAPI.lookup({
+        code: rawCode,
+        store_id: storeId,
+        exclude_ids: cartRef.current.map((c) => c.id).join(','),
+      });
+      const { item } = res.data.data;
+      addToCart(item);
+      setLastScan({ ok: true, text: [item.product_name, formatColor(item), formatSize(item, locale)].filter(Boolean).join(' · ') });
+    } catch (err) {
+      const msg = err.response?.data?.message || t('pos.sale_failed');
+      setLastScan({ ok: false, text: msg });
+      toast.error(msg);
+    } finally {
+      setScanBusy(false);
+    }
+    // addToCart is redefined each render, but it only uses setters and refs, so the
+    // captured copy behaves identically to a fresh one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t]);
+
+  useEffect(() => { runScanRef.current = runScan; }, [runScan]);
+
+  // Hardware wedge scanner: active whenever no modal is capturing input.
+  useBarcodeScanner(handleScan, { enabled: !showScanner && !showCheckout });
+
+  const onCameraDetected = (code) => {
+    setShowScanner(false);
+    handleScan(code);
   };
 
   const updateCartItemPrice = (index, value) => {
@@ -166,9 +269,14 @@ export default function POSPage() {
   };
 
   const removeFromCart = (index) => {
-    setCart(cart.filter((_, i) => i !== index));
-    // If it matches the current search/store, put it back in the list
-    setTimeout(() => handleSearch(), 100);
+    setCart((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      cartRef.current = next;
+      return next;
+    });
+    // No refetch here: this used to re-query the entire store inventory 100ms after
+    // every single removal. The item is still in stock server-side until checkout,
+    // so the product list on screen is already correct.
   };
 
   const handleCheckout = async (paymentDetails) => {
@@ -297,6 +405,52 @@ export default function POSPage() {
           <button className="btn btn-primary" onClick={handleSearch} disabled={searching || !selectedStore}>
             {searching ? '...' : t('common.search')}
           </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => setShowScanner(true)}
+            disabled={!selectedStore || scanBusy}
+            title={t('barcode.scan')}
+            aria-label={t('barcode.scan')}
+            data-testid="pos-scan-button"
+          >
+            <HiOutlineCamera size={18} />
+          </button>
+        </div>
+
+        {categories.length > 0 && (
+          <div className="pos-category-chips" data-testid="pos-categories">
+            {[{ id: '', label: t('common.all') },
+              ...categories.map((c) => ({ id: c.id, label: localizedName(c, locale) }))].map((c) => (
+              <button
+                key={c.id || 'all'}
+                type="button"
+                className={`pos-category-chip ${categoryId === c.id ? 'pos-category-chip--on' : ''}`}
+                data-testid={`pos-category-${c.id || 'all'}`}
+                disabled={!selectedStore}
+                onClick={() => { setCategoryId(c.id); handleSearch(null, c.id); }}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Scan feedback. The hardware scanner needs no UI of its own, so this strip
+            is the only confirmation the cashier gets that a beep actually landed. */}
+        <div className="pos-scan-strip" data-testid="pos-scan-strip">
+          <HiOutlineQrCode size={16} />
+          {scanBusy ? (
+            <span>{t('barcode.decoding')}</span>
+          ) : lastScan ? (
+            <span
+              className={lastScan.ok ? 'pos-scan-ok' : 'pos-scan-err'}
+              data-testid={lastScan.ok ? 'scan-ok' : 'scan-err'}
+            >
+              {lastScan.ok ? '✓ ' : '✕ '}{lastScan.text}
+            </span>
+          ) : (
+            <span className="pos-scan-idle">{t('barcode.scan_hint')}</span>
+          )}
         </div>
 
         <div className="pos-products-scroll">
@@ -316,7 +470,12 @@ export default function POSPage() {
                 >
                   <div className="pos-product-img">
                     {item.product_image ? (
-                      <img src={item.product_image} alt={item.product_name} />
+                      <img
+                        src={item.product_image_thumb || item.product_image}
+                        alt={item.product_name}
+                        loading="lazy"
+                        decoding="async"
+                      />
                     ) : (
                       <span className="pos-product-img-placeholder">—</span>
                     )}
@@ -458,6 +617,15 @@ export default function POSPage() {
           onClose={() => setShowCheckout(false)}
           onConfirm={handleCheckout}
         />
+      )}
+
+      {showScanner && (
+        <Suspense fallback={null}>
+          <BarcodeScannerModal
+            onDetected={onCameraDetected}
+            onClose={() => setShowScanner(false)}
+          />
+        </Suspense>
       )}
 
       {selectedProduct && (

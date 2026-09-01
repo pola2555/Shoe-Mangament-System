@@ -1,6 +1,10 @@
 const db = require('../../config/database');
 const AppError = require('../../utils/AppError');
 const { generateUUID, generateDocumentNumber } = require('../../utils/generateCodes');
+const { applyStoreScope } = require('../../utils/storeScope');
+const { formatSize, formatColor } = require('../../utils/variantDisplay');
+const { applyDateRange } = require('../../utils/dateRange');
+const { userHasStoreAccess } = require('../../middleware/auth');
 
 /**
  * Sales service — POS checkout.
@@ -9,7 +13,7 @@ const { generateUUID, generateDocumentNumber } = require('../../utils/generateCo
  * Sale prices come from store-specific or default product prices.
  */
 class SalesService {
-  async list({ store_id, customer_id, search, days } = {}) {
+  async list({ store_id, store_ids, customer_id, search, days } = {}) {
     let query = db('sales')
       .join('stores', 'sales.store_id', 'stores.id')
       .leftJoin('customers', 'sales.customer_id', 'customers.id')
@@ -23,7 +27,7 @@ class SalesService {
       )
       .orderBy('sales.created_at', 'desc');
 
-    if (store_id) query = query.where('sales.store_id', store_id);
+    applyStoreScope(query, 'sales.store_id', { store_id, store_ids });
     if (customer_id) query = query.where('sales.customer_id', customer_id);
     
     if (days) {
@@ -70,9 +74,20 @@ class SalesService {
       .join('products', 'product_variants.product_id', 'products.id')
       .join('product_colors', 'product_variants.product_color_id', 'product_colors.id')
       // Left join to see if this exact sale item exists in customer_return_items
+      .leftJoin('product_categories as pcat', 'pcat.id', 'products.category_id')
+      .leftJoin('size_scales as sscale', 'sscale.id', 'pcat.size_scale_id')
+      .leftJoin('size_scale_values as ssv', 'ssv.id', 'product_variants.size_scale_value_id')
       .leftJoin('customer_return_items', 'sale_items.id', 'customer_return_items.sale_item_id')
       .where('sale_items.sale_id', id)
       .select(
+        // How this category writes a size, and whether the colour is the "no colour"
+        // placeholder. Without them variantFormat assumes a shoe and prints "EU KIDS".
+        'sscale.display_prefix as size_prefix',
+        'sscale.display_suffix as size_suffix',
+        'ssv.label_en as size_label_en',
+        'ssv.label_ar as size_label_ar',
+        'pcat.has_sizes',
+        'product_colors.is_placeholder as color_is_placeholder',
         'sale_items.*',
         'inventory_items.cost',
         'product_variants.sku',
@@ -87,26 +102,29 @@ class SalesService {
 
     sale.payments = await db('sale_payments').where('sale_id', id).orderBy('created_at');
 
+    // Surface the outstanding balance so a partially-paid sale is visible in the UI.
+    const paid = sale.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    sale.amount_paid = Math.round(paid * 100) / 100;
+    sale.amount_due = Math.round((parseFloat(sale.final_amount) - paid) * 100) / 100;
+
     return sale;
   }
 
-  async create(data, userId) {
-    // Store access check: verify user is assigned to this store
-    const userStore = await db('user_stores')
-      .where({ user_id: userId, store_id: data.store_id })
-      .first();
-    if (!userStore) {
-      // Check if user is admin (admins bypass store restriction)
-      const user = await db('users').where('id', userId).first();
-      if (user.role !== 'admin') {
-        throw new AppError('You are not assigned to this store', 403);
-      }
+  async create(data, user) {
+    // Store access check. This used to read `user.role`, but the users table has
+    // `role_id` — so the comparison was always `undefined !== 'admin'` and any admin
+    // not explicitly listed in user_stores was refused. userHasStoreAccess already
+    // handles admin, all_stores, assigned_stores and the legacy store_id fallback.
+    if (!userHasStoreAccess(user, data.store_id)) {
+      throw new AppError('You are not assigned to this store', 403);
     }
 
-    const saleNumber = await generateDocumentNumber('S', db, 'sales', 'sale_number');
+    const userId = user.id;
     const saleId = generateUUID();
 
     await db.transaction(async (trx) => {
+      // Inside the transaction: the advisory lock it takes must be held until commit.
+      const saleNumber = await generateDocumentNumber('S', trx, 'sales', 'sale_number');
       let totalAmount = 0;
 
       // Validate items and compute prices
@@ -186,46 +204,69 @@ class SalesService {
       // Insert sale items
       await trx('sale_items').insert(saleItems);
 
-      // Insert payments
-      for (const payment of data.payments) {
-        await trx('sale_payments').insert({
+      // Reconcile payments against the sale total. Nothing checked this before, so a
+      // sale could be recorded as paid for less (or more) than it was worth.
+      // Overpayment is rejected; underpayment is allowed but surfaced as amount_due,
+      // so a partially-paid sale is visible rather than silently lost.
+      const paymentsTotal = Math.round(
+        data.payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0) * 100
+      ) / 100;
+
+      // One-cent tolerance: the client sums its own cart to produce the payment
+      // amount while the server re-derives the total from per-item prices, so the two
+      // can differ in the last cent purely from rounding. Rejecting that would fail a
+      // legitimate checkout and roll the whole sale back.
+      if (paymentsTotal > finalAmount + 0.01) {
+        throw new AppError(
+          `Payments (${paymentsTotal.toFixed(2)}) exceed the sale total (${finalAmount.toFixed(2)})`,
+          400
+        );
+      }
+
+      // Single batch insert instead of one round-trip per payment method.
+      await trx('sale_payments').insert(
+        data.payments.map((payment) => ({
           id: generateUUID(),
           sale_id: saleId,
           amount: payment.amount,
           payment_method: payment.payment_method,
           reference_no: payment.reference_no || null,
-        });
-      }
+        }))
+      );
     });
 
     return this.getById(saleId);
   }
 
   async addPayment(saleId, paymentData) {
-    const sale = await db('sales').where('id', saleId).first();
-    if (!sale) throw new AppError('Sale not found', 404);
-
     // Validate payment amount
     const amount = parseFloat(paymentData.amount);
     if (isNaN(amount) || amount <= 0) throw new AppError('Payment amount must be positive', 400);
 
-    // Prevent overpayment
-    const existingPayments = await db('sale_payments').where('sale_id', saleId).sum('amount as total').first();
-    const totalPaid = Math.round((parseFloat(existingPayments.total || 0)) * 100) / 100;
-    const saleTotal = Math.round(parseFloat(sale.final_amount) * 100) / 100;
-    if (Math.round((totalPaid + amount) * 100) / 100 > saleTotal) {
-      throw new AppError(`Payment would exceed sale total. Remaining: ${(saleTotal - totalPaid).toFixed(2)}`, 400);
-    }
+    // The read-then-insert used to run outside any transaction, so two concurrent
+    // payments could each see the same total, both pass the overpayment check, and
+    // together overpay the sale. forUpdate serialises them on the sale row.
+    return db.transaction(async (trx) => {
+      const sale = await trx('sales').where('id', saleId).forUpdate().first();
+      if (!sale) throw new AppError('Sale not found', 404);
 
-    const [payment] = await db('sale_payments').insert({
-      id: generateUUID(),
-      sale_id: saleId,
-      amount: amount,
-      payment_method: paymentData.payment_method,
-      reference_no: paymentData.reference_no || null,
-    }).returning('*');
+      const existingPayments = await trx('sale_payments').where('sale_id', saleId).sum('amount as total').first();
+      const totalPaid = Math.round((parseFloat(existingPayments.total || 0)) * 100) / 100;
+      const saleTotal = Math.round(parseFloat(sale.final_amount) * 100) / 100;
+      if (Math.round((totalPaid + amount) * 100) / 100 > saleTotal) {
+        throw new AppError(`Payment would exceed sale total. Remaining: ${(saleTotal - totalPaid).toFixed(2)}`, 400);
+      }
 
-    return payment;
+      const [payment] = await trx('sale_payments').insert({
+        id: generateUUID(),
+        sale_id: saleId,
+        amount: amount,
+        payment_method: paymentData.payment_method,
+        reference_no: paymentData.reference_no || null,
+      }).returning('*');
+
+      return payment;
+    });
   }
 
   async exportExcel({ store_id, store_ids, startDate, endDate } = {}) {
@@ -241,10 +282,8 @@ class SalesService {
       .orderBy('sales.created_at', 'desc')
       .limit(5000);
 
-    if (store_id) query = query.where('sales.store_id', store_id);
-    else if (store_ids?.length) query = query.whereIn('sales.store_id', store_ids);
-    if (startDate) query = query.where('sales.created_at', '>=', startDate);
-    if (endDate) query = query.where('sales.created_at', '<=', endDate + 'T23:59:59');
+    applyStoreScope(query, 'sales.store_id', { store_id, store_ids });
+    applyDateRange(query, 'sales.created_at', { startDate, endDate });
 
     const sales = await query;
     if (!sales.length) return [];
@@ -256,13 +295,24 @@ class SalesService {
       .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
       .join('products', 'product_variants.product_id', 'products.id')
       .join('product_colors', 'product_variants.product_color_id', 'product_colors.id')
+      .leftJoin('product_categories as pcat', 'pcat.id', 'products.category_id')
+      .leftJoin('size_scales as sscale', 'sscale.id', 'pcat.size_scale_id')
+      .leftJoin('size_scale_values as ssv', 'ssv.id', 'product_variants.size_scale_value_id')
       .leftJoin('customer_return_items', 'sale_items.id', 'customer_return_items.sale_item_id')
       .whereIn('sale_items.sale_id', saleIds)
       .whereNull('customer_return_items.id')
       .select(
         'sale_items.sale_id', 'sale_items.sale_price',
         'products.product_code', 'products.model_name',
-        'product_colors.color_name', 'product_variants.size_eu'
+        'product_colors.color_name', 'product_variants.size_eu',
+        // How this category writes a size, and whether the colour is the "no colour"
+        // placeholder. Without them variantFormat assumes a shoe and prints "EU KIDS".
+        'sscale.display_prefix as size_prefix',
+        'sscale.display_suffix as size_suffix',
+        'ssv.label_en as size_label_en',
+        'ssv.label_ar as size_label_ar',
+        'pcat.has_sizes',
+        'product_colors.is_placeholder as color_is_placeholder'
       );
 
     const payments = await db('sale_payments')
@@ -298,8 +348,11 @@ class SalesService {
           store: sale.store_name,
           customer: sale.customer_name || 'Walk-in',
           product: `${item.product_code} - ${item.model_name}`,
-          color: item.color_name,
-          size: item.size_eu,
+          // Written the way the app writes a size and a colour anywhere else: a sock
+          // exports as "Kids", not "KIDS", and a knife's stand-in colour as blank
+          // rather than the word "Standard".
+          color: formatColor(item),
+          size: formatSize(item),
           price: parseFloat(item.sale_price),
           cash: i === 0 ? cashTotal : '',
           other: i === 0 ? otherTotal : '',

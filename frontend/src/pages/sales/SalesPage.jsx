@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { salesAPI, storesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
+import { formatSize } from '../../utils/variantFormat';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
@@ -15,7 +16,7 @@ export default function SalesPage() {
   const [detail, setDetail] = useState(null);
   const [exporting, setExporting] = useState(false);
   const { filterStores } = useAuth();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
   useEffect(() => { fetchStores(); }, []);
   useEffect(() => { fetchSales(); }, []);
@@ -166,7 +167,7 @@ export default function SalesPage() {
                         <td><span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           {item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
                           {item.color_name}</span></td>
-                        <td>EU {item.size_eu}</td>
+                        <td>{formatSize(item, locale)}</td>
                         <td>{fmt(item.cost_at_sale || item.cost)} {t('common.currency')}</td>
                         <td>{fmt(item.sale_price)} {t('common.currency')}</td>
                         <td style={{ color: profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>{fmt(profit)} {t('common.currency')}</td>

@@ -4,6 +4,7 @@ import { suppliersAPI, purchasesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../i18n/i18nContext';
 import toast from 'react-hot-toast';
+import { today } from '../../utils/dates';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import '../products/Products.css';
 
@@ -21,13 +22,13 @@ export default function SupplierDetailPage() {
   // Payment form
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentForm, setPaymentForm] = useState({
-    total_amount: '', payment_method: 'cash', payment_date: new Date().toISOString().split('T')[0], reference_no: '', notes: '',
+    total_amount: '', payment_method: 'cash', payment_date: today(), reference_no: '', notes: '',
   });
 
   // Withdrawal form
   const [showWithdrawalForm, setShowWithdrawalForm] = useState(false);
   const [withdrawalForm, setWithdrawalForm] = useState({
-    total_amount: '', payment_method: 'cash', payment_date: new Date().toISOString().split('T')[0], reference_no: '', notes: '',
+    total_amount: '', payment_method: 'cash', payment_date: today(), reference_no: '', notes: '',
   });
 
   useEffect(() => { fetchSupplier(); }, [id]);
@@ -58,7 +59,7 @@ export default function SupplierDetailPage() {
       });
       toast.success(t('common.success'));
       setShowPaymentForm(false);
-      setPaymentForm({ total_amount: '', payment_method: 'cash', payment_date: new Date().toISOString().split('T')[0], reference_no: '', notes: '' });
+      setPaymentForm({ total_amount: '', payment_method: 'cash', payment_date: today(), reference_no: '', notes: '' });
       fetchSupplier(); // Refresh to recalculate balances
     } catch (err) {
       toast.error(err.response?.data?.message || t('common.error'));
@@ -78,7 +79,7 @@ export default function SupplierDetailPage() {
       });
       toast.success(t('common.success'));
       setShowWithdrawalForm(false);
-      setWithdrawalForm({ total_amount: '', payment_method: 'cash', payment_date: new Date().toISOString().split('T')[0], reference_no: '', notes: '' });
+      setWithdrawalForm({ total_amount: '', payment_method: 'cash', payment_date: today(), reference_no: '', notes: '' });
       fetchSupplier();
     } catch (err) {
       toast.error(err.response?.data?.message || t('common.error'));

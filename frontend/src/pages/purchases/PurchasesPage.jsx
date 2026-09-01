@@ -4,6 +4,7 @@ import { purchasesAPI, suppliersAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../i18n/i18nContext';
 import toast from 'react-hot-toast';
+import { today } from '../../utils/dates';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import '../products/Products.css';
 
@@ -15,7 +16,7 @@ export default function PurchasesPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({ search: '', supplier_id: '', status: '', dateFrom: '', dateTo: '' });
   const [form, setForm] = useState({
-    supplier_id: '', total_amount: '', invoice_date: new Date().toISOString().split('T')[0], notes: '',
+    supplier_id: '', total_amount: '', invoice_date: today(), notes: '',
   });
   const { hasPermission } = useAuth();
   const { t } = useTranslation();

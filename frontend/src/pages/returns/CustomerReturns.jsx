@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
+import { formatSize } from '../../utils/variantFormat';
 import { salesAPI, returnsAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../i18n/i18nContext';
@@ -7,7 +8,7 @@ import { HiOutlineMagnifyingGlass, HiOutlineArrowUturnLeft } from 'react-icons/h
 
 export default function CustomerReturns() {
   const { user } = useAuth();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [daysFilter, setDaysFilter] = useState('');
   const [searching, setSearching] = useState(false);
@@ -278,7 +279,7 @@ export default function CustomerReturns() {
                       <td><span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         {item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
                         {item.color_name}</span></td>
-                      <td>EU {item.size_eu}</td>
+                      <td>{formatSize(item, locale)}</td>
                       <td>{parseFloat(item.sale_price).toLocaleString()} {t('common.currency')}</td>
                       <td>
                         <input 

@@ -1,6 +1,11 @@
 const db = require('../../config/database');
 const AppError = require('../../utils/AppError');
+const barcodesService = require('../barcodes/barcodes.service');
 const { generateUUID, generateDocumentNumber } = require('../../utils/generateCodes');
+const { getSupplierBalance } = require('../../utils/supplierBalance');
+const {
+  categoryOfProduct, ensurePlaceholderColor, resolveVariantTarget, generateSku,
+} = require('../../utils/variantIdentity');
 
 /**
  * Purchases service — Purchase invoices, boxes, box items, supplier payments.
@@ -47,52 +52,68 @@ class PurchasesService {
 
     if (!invoice) throw new AppError('Invoice not found', 404);
 
-    // Fetch boxes with their items
-    invoice.boxes = await db('purchase_invoice_boxes')
-      .where('invoice_id', id)
-      .leftJoin('products', 'purchase_invoice_boxes.product_id', 'products.id')
-      .leftJoin('stores', 'purchase_invoice_boxes.destination_store_id', 'stores.id')
-      .select(
-        'purchase_invoice_boxes.*',
-        'products.model_name as product_name',
-        'products.product_code',
-        'stores.name as store_name'
-      )
-      .orderBy('purchase_invoice_boxes.created_at', 'asc');
+    const [boxes, allocations, images] = await Promise.all([
+      db('purchase_invoice_boxes')
+        .where('invoice_id', id)
+        .leftJoin('products', 'purchase_invoice_boxes.product_id', 'products.id')
+        .leftJoin('stores', 'purchase_invoice_boxes.destination_store_id', 'stores.id')
+        .select(
+          'purchase_invoice_boxes.*',
+          'products.model_name as product_name',
+          'products.product_code',
+          'stores.name as store_name'
+        )
+        .orderBy('purchase_invoice_boxes.created_at', 'asc'),
 
-    for (const box of invoice.boxes) {
-      box.items = await db('box_items')
-        .where('invoice_box_id', box.id)
+      db('supplier_payment_allocations')
+        .join('supplier_payments', 'supplier_payment_allocations.payment_id', 'supplier_payments.id')
+        .where('invoice_id', id)
+        .select(
+          'supplier_payment_allocations.*',
+          'supplier_payments.payment_method',
+          'supplier_payments.payment_date',
+          'supplier_payments.reference_no'
+        ),
+
+      db('attached_images')
+        .where({ entity_type: 'purchase_invoice', entity_id: id })
+        .orderBy('created_at', 'asc'),
+    ]);
+
+    // All box items in one query rather than one query per box.
+    if (boxes.length > 0) {
+      const allItems = await db('box_items')
+        .whereIn('invoice_box_id', boxes.map((b) => b.id))
         .leftJoin('product_colors', 'box_items.product_color_id', 'product_colors.id')
         .select('box_items.*', 'product_colors.color_name')
-        .orderBy('size_eu', 'asc');
+        // Numeric ordering: size_eu is a varchar, so a plain sort puts '10' before '9'.
+        // Extracts the first number; stripping non-digits instead would make
+        // '36.5-37.5' into the un-castable '36.537.5' and 500 this endpoint.
+        .orderByRaw("NULLIF(substring(box_items.size_eu from '[0-9]+[.]{0,1}[0-9]*'), '')::numeric ASC NULLS LAST");
+
+      const itemsByBox = new Map();
+      for (const item of allItems) {
+        if (!itemsByBox.has(item.invoice_box_id)) itemsByBox.set(item.invoice_box_id, []);
+        itemsByBox.get(item.invoice_box_id).push(item);
+      }
+      for (const box of boxes) {
+        box.items = itemsByBox.get(box.id) || [];
+      }
     }
 
-    // Fetch payment allocations
-    invoice.allocations = await db('supplier_payment_allocations')
-      .join('supplier_payments', 'supplier_payment_allocations.payment_id', 'supplier_payments.id')
-      .where('invoice_id', id)
-      .select(
-        'supplier_payment_allocations.*',
-        'supplier_payments.payment_method',
-        'supplier_payments.payment_date',
-        'supplier_payments.reference_no'
-      );
-
-    // Fetch attached images
-    invoice.images = await db('attached_images')
-      .where({ entity_type: 'purchase_invoice', entity_id: id })
-      .orderBy('created_at', 'asc');
+    invoice.boxes = boxes;
+    invoice.allocations = allocations;
+    invoice.images = images;
 
     return invoice;
   }
 
   async createInvoice(data, userId) {
-    const invoiceNumber = await generateDocumentNumber('PI', db, 'purchase_invoices', 'invoice_number');
     const { boxes, ...invoiceData } = data;
     const invoiceId = generateUUID();
 
     await db.transaction(async (trx) => {
+      const invoiceNumber = await generateDocumentNumber('PI', trx, 'purchase_invoices', 'invoice_number');
       await trx('purchase_invoices').insert({
         id: invoiceId,
         invoice_number: invoiceNumber,
@@ -123,32 +144,13 @@ class PurchasesService {
       }
 
       // ── Auto-apply supplier credit (overpayments + returns) to this new invoice ──
-      // Calculate supplier balance BEFORE this new invoice
-      const priorInvoicesSum = await trx('purchase_invoices')
-        .where('supplier_id', invoiceData.supplier_id)
-        .where('id', '!=', invoiceId)
-        .select(trx.raw('COALESCE(SUM(total_amount - COALESCE(discount_amount, 0)), 0) as total'))
-        .first();
-      const returnsSum = await trx('supplier_returns')
-        .where('supplier_id', invoiceData.supplier_id)
-        .sum('total_amount as total')
-        .first();
-      const paymentsSumResult = await trx('supplier_payments')
-        .where('supplier_id', invoiceData.supplier_id)
-        .where('type', 'payment')
-        .sum('total_amount as total')
-        .first();
-      const withdrawalsSumResult = await trx('supplier_payments')
-        .where('supplier_id', invoiceData.supplier_id)
-        .where('type', 'withdrawal')
-        .sum('total_amount as total')
-        .first();
-
-      const priorInvoiced = parseFloat(priorInvoicesSum.total) || 0;
-      const totalReturns = parseFloat(returnsSum.total) || 0;
-      const totalPayments = parseFloat(paymentsSumResult.total) || 0;
-      const totalWithdrawals = parseFloat(withdrawalsSumResult.total) || 0;
-      const priorBalance = priorInvoiced - totalReturns - totalPayments + totalWithdrawals;
+      // Balance BEFORE this invoice: it has already been inserted above, so exclude it.
+      // Shared formula, so this cannot drift from the suppliers page or the reports.
+      const prior = await getSupplierBalance(trx, invoiceData.supplier_id, {
+        excludeInvoiceId: invoiceId,
+      });
+      const totalPayments = prior.total_paid;
+      const priorBalance = prior.balance;
 
       // If priorBalance < 0, supplier has credit we can apply to this invoice
       if (priorBalance < 0) {
@@ -431,68 +433,79 @@ class PurchasesService {
   }
 
   async completeBox(boxId) {
-    const box = await db('purchase_invoice_boxes').where('id', boxId).first();
-    if (!box) throw new AppError('Box not found', 404);
-    if (box.detail_status === 'complete') {
-      throw new AppError('Box is already complete', 400);
-    }
-    if (!box.product_id || !box.destination_store_id) {
-      throw new AppError('Product and destination store must be set before completing', 400);
-    }
-
-    const items = await db('box_items').where('invoice_box_id', boxId);
-    if (items.length === 0) {
-      throw new AppError('Box has no item details. Add sizes/quantities first.', 400);
-    }
-
-    // Verify totals match
-    const totalQty = items.reduce((sum, item) => sum + item.quantity, 0);
-    if (totalQty !== box.total_items) {
-      throw new AppError(
-        `Item quantities sum to ${totalQty}, but box expects ${box.total_items}`,
-        400
-      );
-    }
-
     await db.transaction(async (trx) => {
-      // Create inventory items — one row per physical shoe
+      // Read and lock the box INSIDE the transaction. Previously the status check ran
+      // against a read taken before the transaction opened, so two concurrent calls
+      // both saw detail_status !== 'complete' and each created the full set of
+      // inventory rows — silently doubling physical stock.
+      const box = await trx('purchase_invoice_boxes').where('id', boxId).forUpdate().first();
+      if (!box) throw new AppError('Box not found', 404);
+      if (box.detail_status === 'complete') {
+        throw new AppError('Box is already complete', 400);
+      }
+      if (!box.product_id || !box.destination_store_id) {
+        throw new AppError('Product and destination store must be set before completing', 400);
+      }
+
+      const items = await trx('box_items').where('invoice_box_id', boxId);
+      if (items.length === 0) {
+        throw new AppError('Box has no item details. Add sizes/quantities first.', 400);
+      }
+
+      // Verify totals match
+      const totalQty = items.reduce((sum, item) => sum + item.quantity, 0);
+      if (totalQty !== box.total_items) {
+        throw new AppError(
+          `Item quantities sum to ${totalQty}, but box expects ${box.total_items}`,
+          400
+        );
+      }
+
+      // Collected across all sizes and inserted in one batch at the end, rather than
+      // one INSERT round-trip per physical shoe (a 100-item box meant 100 round-trips).
+      const inventoryRows = [];
+
+      const product = await trx('products').where('id', box.product_id).first();
+      const category = await categoryOfProduct(trx, box.product_id);
+
       for (const item of items) {
-        if (!item.product_color_id) {
-          throw new AppError(`Item EU ${item.size_eu} is missing a color assignment`, 400);
+        // A colourless category has no colour to assign — resolve its placeholder
+        // instead of refusing the receipt. Only categories that DO use colours still
+        // require one to have been picked.
+        let colorId = item.product_color_id;
+        if (!colorId) {
+          if (category.has_colors) {
+            throw new AppError(`Item ${item.size_eu} is missing a color assignment`, 400);
+          }
+          colorId = (await ensurePlaceholderColor(trx, box.product_id, category)).id;
         }
+
+        // Same resolution the catalogue uses, so a variant born from a purchase is
+        // indistinguishable from one created by hand — including its sort key and its
+        // link to the category's size list.
+        const target = await resolveVariantTarget(
+          trx, product, { product_color_id: colorId, size_eu: item.size_eu }, category,
+          { allowOffScale: true }
+        );
 
         // Find or create the product variant
         let variant = await trx('product_variants')
           .where({
             product_id: box.product_id,
-            product_color_id: item.product_color_id,
-            size_eu: item.size_eu,
+            product_color_id: target.color.id,
+            size_eu: target.size_eu,
           })
           .first();
 
         if (!variant) {
-          // Auto-create variant
-          const product = await trx('products').where('id', box.product_id).first();
-          const color = await trx('product_colors').where('id', item.product_color_id).first();
-          const colorAbbr = color.color_name.substring(0, 3).toUpperCase();
-          const code = product.product_code || 'NOCODE';
-          let sku = `${code}-${colorAbbr}-${item.size_eu}`;
-
-          // Ensure SKU is unique — append suffix if collision
-          const existing = await trx('product_variants').where('sku', sku).first();
-          if (existing) {
-            const count = await trx('product_variants')
-              .where('sku', 'like', `${sku}%`)
-              .count('id as cnt')
-              .first();
-            sku = `${sku}-${Number(count.cnt) + 1}`;
-          }
-
+          const sku = await generateSku(trx, product, target.color, target.size_eu);
           [variant] = await trx('product_variants').insert({
             id: generateUUID(),
             product_id: box.product_id,
-            product_color_id: item.product_color_id,
-            size_eu: item.size_eu,
+            product_color_id: target.color.id,
+            size_eu: target.size_eu,
+            size_sort: target.size_sort,
+            size_scale_value_id: target.size_scale_value_id,
             size_us: item.size_us || null,
             size_uk: item.size_uk || null,
             size_cm: item.size_cm || null,
@@ -500,9 +513,14 @@ class PurchasesService {
           }).returning('*');
         }
 
-        // Create N inventory items for this size
+        // Mint the barcode here, not only for freshly created variants: receiving
+        // stock is exactly when labels get printed, so an older variant that predates
+        // barcodes must pick one up too. assignForVariant is idempotent.
+        await barcodesService.assignForVariant(variant.id, trx);
+
+        // Queue N inventory rows for this size — one row per physical shoe.
         for (let i = 0; i < item.quantity; i++) {
-          await trx('inventory_items').insert({
+          inventoryRows.push({
             id: generateUUID(),
             variant_id: variant.id,
             store_id: box.destination_store_id,
@@ -512,6 +530,12 @@ class PurchasesService {
             status: 'in_stock',
           });
         }
+      }
+
+      // Batched insert. Chunked because Postgres caps bind parameters at 65535 and
+      // each row here carries 8 of them.
+      if (inventoryRows.length > 0) {
+        await trx.batchInsert('inventory_items', inventoryRows, 500);
       }
 
       // Phase 18: Dynamic Cost Updates & Notifications
@@ -554,7 +578,8 @@ class PurchasesService {
 
   async createPayment(data, userId) {
     const paymentId = generateUUID();
-    let remaining = data.total_amount;
+    let remaining = parseFloat(data.total_amount);
+    let unallocated = 0;
 
     await db.transaction(async (trx) => {
       // 1. Create payment record
@@ -607,9 +632,15 @@ class PurchasesService {
 
         remaining = Math.round((remaining - allocAmount) * 100) / 100;
       }
+
+      // Anything FIFO could not place stays as supplier credit and is picked up by
+      // the balance formula / auto-applied to the next invoice. Reported so the caller
+      // can tell the user, rather than disappearing silently.
+      unallocated = Math.max(0, remaining);
     });
 
-    return this.getPaymentById(paymentId);
+    const payment = await this.getPaymentById(paymentId);
+    return { ...payment, unallocated_credit: unallocated };
   }
 
   /**
@@ -617,30 +648,38 @@ class PurchasesService {
    * No FIFO allocation — just records the withdrawal.
    */
   async createWithdrawal(data, userId) {
-    // Verify supplier has a negative balance (they owe us)
-    const suppliersService = require('../suppliers/suppliers.service');
-    const supplier = await suppliersService.getById(data.supplier_id);
-    
-    if (supplier.balance >= 0) {
-      throw new AppError('Supplier does not owe you money. Withdrawal not allowed.', 400);
-    }
-
-    const maxWithdrawal = Math.abs(supplier.balance);
-    if (data.total_amount > maxWithdrawal) {
-      throw new AppError(`Withdrawal amount exceeds supplier debt. Maximum: ${maxWithdrawal.toFixed(2)}`, 400);
-    }
-
     const paymentId = generateUUID();
-    await db('supplier_payments').insert({
-      id: paymentId,
-      supplier_id: data.supplier_id,
-      total_amount: data.total_amount,
-      payment_method: data.payment_method,
-      payment_date: data.payment_date,
-      reference_no: data.reference_no || null,
-      notes: data.notes || null,
-      type: 'withdrawal',
-      created_by: userId,
+
+    // Wrapped in a transaction so the balance check and the insert are atomic —
+    // otherwise two concurrent withdrawals could each pass a check against the same
+    // pre-withdrawal balance and together overdraw the supplier's credit.
+    await db.transaction(async (trx) => {
+      // Lock the supplier row to serialise concurrent withdrawals for this supplier.
+      await trx('suppliers').where('id', data.supplier_id).forUpdate().first();
+
+      // Reads only the balance, not the supplier's entire invoice/payment/return history.
+      const { balance } = await getSupplierBalance(trx, data.supplier_id);
+
+      if (balance >= 0) {
+        throw new AppError('Supplier does not owe you money. Withdrawal not allowed.', 400);
+      }
+
+      const maxWithdrawal = Math.abs(balance);
+      if (parseFloat(data.total_amount) > maxWithdrawal) {
+        throw new AppError(`Withdrawal amount exceeds supplier debt. Maximum: ${maxWithdrawal.toFixed(2)}`, 400);
+      }
+
+      await trx('supplier_payments').insert({
+        id: paymentId,
+        supplier_id: data.supplier_id,
+        total_amount: data.total_amount,
+        payment_method: data.payment_method,
+        payment_date: data.payment_date,
+        reference_no: data.reference_no || null,
+        notes: data.notes || null,
+        type: 'withdrawal',
+        created_by: userId,
+      });
     });
 
     return this.getPaymentById(paymentId);

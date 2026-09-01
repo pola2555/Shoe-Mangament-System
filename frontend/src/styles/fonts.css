@@ -1,0 +1,26 @@
+/*
+ * Inter, served from our own origin.
+ *
+ * This used to come from fonts.googleapis.com as a render-blocking <link>. That host
+ * turned out to be reachable only intermittently from here — a successful 0.3 s fetch
+ * followed by two 20 s connection timeouts — and each timeout froze the whole app for
+ * the duration. On a till that is not a cosmetic problem, so the dependency is gone.
+ *
+ * One file, not five: Google serves Inter as a VARIABLE font, so every weight we used
+ * to request returned the identical woff2. Declaring the `font-weight` range here is
+ * what actually lets the browser interpolate; five fixed-weight faces pointing at the
+ * same variable file would all render at its default instance instead.
+ *
+ * Only the `latin` subset is shipped. A glyph outside this unicode-range falls through
+ * to the next family in --font-family automatically, which is also what renders the
+ * Arabic UI, since Inter has no Arabic coverage.
+ */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('/fonts/inter-latin-var.woff2') format('woff2-variations'),
+       url('/fonts/inter-latin-var.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

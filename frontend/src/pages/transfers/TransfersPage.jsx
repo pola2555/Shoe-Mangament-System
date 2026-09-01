@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { transfersAPI, storesAPI, inventoryAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
+import { formatSize } from '../../utils/variantFormat';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
@@ -13,7 +14,7 @@ export default function TransfersPage() {
   const [detail, setDetail] = useState(null);
   const { hasPermission, filterStores } = useAuth();
   const canWrite = hasPermission('transfers', 'write');
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
   // List filters
   const [filters, setFilters] = useState({ status: '', from_store: '', to_store: '' });
@@ -255,7 +256,7 @@ export default function TransfersPage() {
                                 {item.color_name}
                               </span>
                             </td>
-                            <td>EU {item.size_eu}</td>
+                            <td>{formatSize(item, locale)}</td>
                             <td>{item.cost} {t('common.currency')}</td>
                           </tr>
                         ))}
@@ -314,7 +315,7 @@ export default function TransfersPage() {
                           {item.color_name}
                         </span>
                       </td>
-                      <td>EU {item.size_eu}</td>
+                      <td>{formatSize(item, locale)}</td>
                     </tr>
                   ))}
                 </tbody>

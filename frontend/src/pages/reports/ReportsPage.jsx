@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { reportsAPI, storesAPI } from '../../api';
+import { reportsAPI, storesAPI, productCategoriesAPI } from '../../api';
 import { useTranslation } from '../../i18n/i18nContext';
 import SearchableSelect from '../../components/common/SearchableSelect';
+import { today, weekStart, monthRange, yearRange } from '../../utils/dates';
+import { formatSize, localizedName } from '../../utils/variantFormat';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend
@@ -12,13 +14,20 @@ import '../dashboard/Dashboard.css';
 const COLORS = ['#818cf8', '#34d399', '#f87171', '#fbbf24', '#a78bfa', '#38bdf8', '#ec4899', '#22d3ee', '#fb923c'];
 const TABS = ['overview', 'sales_analytics', 'products_analytics', 'inventory_analytics', 'financial', 'customers_analytics', 'employees_analytics'];
 
+// Only these two tabs count things that belong to a product, so only these two can be
+// filtered by category. The financial tab deliberately cannot: a discount is recorded
+// against the sale, not its lines, so "revenue for Socks" would be a number with no
+// honest definition — better to withhold the filter than to answer wrongly.
+const CATEGORY_TABS = ['products_analytics', 'inventory_analytics'];
+
 export default function ReportsPage() {
   const { user, filterStores } = useAuth();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const isAdmin = user?.role_name === 'admin' || user?.role_name === 'System Administrator';
 
   const [activeTab, setActiveTab] = useState('overview');
   const [stores, setStores] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
 
@@ -33,21 +42,35 @@ export default function ReportsPage() {
 
   useEffect(() => {
     if (isAdmin) storesAPI.list().then(r => setStores(filterStores(r.data.data))).catch(() => {});
+    productCategoriesAPI.list({ is_active: true }).then(r => setCategories(r.data.data || [])).catch(() => {});
   }, [isAdmin]);
+
+  // Leaving a category-aware tab drops the filter rather than carrying an invisible
+  // one into a tab that cannot honour it.
+  useEffect(() => {
+    if (!CATEGORY_TABS.includes(activeTab)) setFilters(p => (p.category_id ? { ...p, category_id: '' } : p));
+  }, [activeTab]);
 
   useEffect(() => {
     if (dateOption === 'Custom') return;
     let s = '', e = '';
     const now = new Date();
-    if (dateOption === 'Today') { s = e = now.toISOString().split('T')[0]; }
-    else if (dateOption === 'This Week') { const d = new Date(); d.setDate(d.getDate() - d.getDay()); s = d.toISOString().split('T')[0]; e = now.toISOString().split('T')[0]; }
-    else if (dateOption === 'This Month') { s = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]; e = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]; }
-    else if (dateOption === 'This Year') { s = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0]; e = new Date(now.getFullYear(), 11, 31).toISOString().split('T')[0]; }
-    setFilters(p => ({ ...p, startDate: s, endDate: e, limit: limitOption }));
+    // Built from local calendar fields. Going through toISOString() moved the 1st of
+    // the month back to the previous month's last day in any timezone east of
+    // Greenwich, so every "This Month" report began a day early.
+    if (dateOption === 'Today') { s = e = today(); }
+    else if (dateOption === 'This Week') { s = weekStart(now); e = today(); }
+    else if (dateOption === 'This Month') { const r = monthRange(now); s = r.start; e = r.end; }
+    else if (dateOption === 'This Year') { const r = yearRange(now); s = r.start; e = r.end; }
+    // "All Time" leaves the dates empty, which the backend cannot tell apart from a
+    // caller that simply omitted them (and would then default to a 90-day window).
+    // The explicit flag says the omission is deliberate.
+    const allTime = dateOption === 'All Time' ? '1' : undefined;
+    setFilters(p => ({ ...p, startDate: s, endDate: e, all_time: allTime, limit: limitOption }));
   }, [dateOption, limitOption]);
 
   useEffect(() => {
-    if (dateOption === 'Custom' && customStart && customEnd) setFilters(p => ({ ...p, startDate: customStart, endDate: customEnd, limit: limitOption }));
+    if (dateOption === 'Custom' && customStart && customEnd) setFilters(p => ({ ...p, startDate: customStart, endDate: customEnd, all_time: undefined, limit: limitOption }));
   }, [dateOption, customStart, customEnd, limitOption]);
 
   const fetchData = useCallback(async () => {
@@ -71,6 +94,19 @@ export default function ReportsPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const fmt = (v) => v != null ? parseFloat(v).toLocaleString() : '—';
+
+  /**
+   * Size buckets, written the way the rest of the app writes a size.
+   *
+   * The rows carry their size list's prefix and suffix, so this is the same
+   * formatSize every label, receipt and inventory row goes through — not a second
+   * copy of the rule. A one-size product has no size worth showing, so it gets the
+   * category's own wording instead of an empty axis label.
+   */
+  const sizeChartData = (rows) => (rows || []).map(r => ({
+    ...r,
+    label: formatSize(r, locale) || t('categories.one_size_short'),
+  }));
   const tooltipStyle = { backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border)', borderRadius: 8 };
   const itemStyle = { color: 'var(--color-text-primary)' };
   const DOW_LABELS = [t('reports.sun'), t('reports.mon'), t('reports.tue'), t('reports.wed'), t('reports.thu'), t('reports.fri'), t('reports.sat')];
@@ -261,9 +297,9 @@ export default function ReportsPage() {
           <div className="chart-card card">
             <h3>{t('reports.size_distribution')}</h3>
             <div className="chart-wrapper"><ResponsiveContainer width="100%" height={300}>
-              <BarChart data={data.size_distribution || []}>
+              <BarChart data={sizeChartData(data.size_distribution)}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="size" stroke="var(--color-text-muted)" fontSize={12} />
+                <XAxis dataKey="label" stroke="var(--color-text-muted)" fontSize={12} />
                 <YAxis stroke="var(--color-text-muted)" fontSize={12} />
                 <RechartsTooltip contentStyle={tooltipStyle} itemStyle={itemStyle} />
                 <Bar name={t('reports.count')} dataKey="count" fill="#fbbf24" radius={[4, 4, 0, 0]} />
@@ -347,9 +383,9 @@ export default function ReportsPage() {
           <div className="chart-card card">
             <h3>{t('reports.size_distribution')}</h3>
             <div className="chart-wrapper"><ResponsiveContainer width="100%" height={300}>
-              <BarChart data={data.stock_by_size || []}>
+              <BarChart data={sizeChartData(data.stock_by_size)}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                <XAxis dataKey="size" stroke="var(--color-text-muted)" fontSize={12} />
+                <XAxis dataKey="label" stroke="var(--color-text-muted)" fontSize={12} />
                 <YAxis stroke="var(--color-text-muted)" fontSize={12} />
                 <RechartsTooltip contentStyle={tooltipStyle} itemStyle={itemStyle} />
                 <Bar name={t('reports.count')} dataKey="count" fill="#38bdf8" radius={[4, 4, 0, 0]} />
@@ -384,6 +420,15 @@ export default function ReportsPage() {
       { label: t('reports.total_expenses'), value: fmt(s.total_expenses), color: '#ec4899' },
       { label: t('reports.net_profit'), value: fmt(s.net_profit), color: s.net_profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)' },
     ];
+    // Shown without a currency: it is a ratio, and printing "EGP" after it would be
+    // wrong. Hidden entirely when there was no revenue to be a share of.
+    const expenseRatio = s.expense_ratio_pct;
+    // Category names live in the database, not the translation files, so t() cannot
+    // reach them — pick the language here.
+    const expenseSlices = (data.expenses_by_category || []).map((r) => ({
+      ...r,
+      category: (locale === 'ar' && r.category_ar) ? r.category_ar : r.category,
+    }));
     return (
       <>
         <div className="metrics-grid">
@@ -393,6 +438,14 @@ export default function ReportsPage() {
               <div className="metric-val" style={{ color: c.color }}>{c.value} {t('common.currency')}</div>
             </div>
           ))}
+          {expenseRatio !== null && expenseRatio !== undefined && (
+            <div className="metric-card card" data-testid="expense-ratio">
+              <h4>{t('reports.expense_ratio')}</h4>
+              <div className="metric-val" style={{ color: expenseRatio > 40 ? 'var(--color-danger)' : '#ec4899' }}>
+                {expenseRatio}%
+              </div>
+            </div>
+          )}
         </div>
         <div className="charts-grid">
           <div className="chart-card card" style={{ gridColumn: 'span 2' }}>
@@ -414,13 +467,30 @@ export default function ReportsPage() {
             <h3>{t('reports.expenses_by_category')}</h3>
             <div className="chart-wrapper" style={{ display: 'flex', justifyContent: 'center' }}>
               <ResponsiveContainer width="100%" height={300}>
-                <PieChart><Pie data={data.expenses_by_category || []} dataKey="total" nameKey="category" cx="50%" cy="50%" innerRadius={50} outerRadius={100} paddingAngle={3}>
-                  {(data.expenses_by_category || []).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                <PieChart><Pie data={expenseSlices} dataKey="total" nameKey="category" cx="50%" cy="50%" innerRadius={50} outerRadius={100} paddingAngle={3}>
+                  {expenseSlices.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie><RechartsTooltip formatter={v => `${fmt(v)} ${t('common.currency')}`} contentStyle={tooltipStyle} /><Legend /></PieChart>
               </ResponsiveContainer>
             </div>
           </div>
         </div>
+        {(data.expense_trend || []).length > 0 && (
+          <div className="charts-grid">
+            <div className="chart-card card" style={{ gridColumn: 'span 2' }}>
+              <h3>{t('reports.expense_trend')}</h3>
+              <div className="chart-wrapper"><ResponsiveContainer width="100%" height={260}>
+                <BarChart data={data.expense_trend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                  <XAxis dataKey="month" stroke="var(--color-text-muted)" fontSize={12} />
+                  <YAxis stroke="var(--color-text-muted)" fontSize={12} />
+                  <RechartsTooltip contentStyle={tooltipStyle} itemStyle={itemStyle}
+                    formatter={v => `${fmt(v)} ${t('common.currency')}`} />
+                  <Bar name={t('reports.expenses')} dataKey="total" fill="#ec4899" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer></div>
+            </div>
+          </div>
+        )}
         <div className="leaderboards-grid">
           <div className="leaderboard-card card">
             <div className="card-header"><h3>{t('reports.supplier_balances')}</h3></div>
@@ -573,6 +643,17 @@ export default function ReportsPage() {
                 options={[{ value: '', label: t('stores.all_stores') }, ...stores.map(s => ({ value: s.id, label: s.name }))]}
                 value={filters.store_id}
                 onChange={e => setFilters(p => ({ ...p, store_id: e.target.value }))}
+              />
+            </div>
+          )}
+          {CATEGORY_TABS.includes(activeTab) && categories.length > 0 && (
+            <div className="ribbon-group">
+              <label>{t('products.category')}</label>
+              <SearchableSelect
+                options={[{ value: '', label: t('common.all') },
+                  ...categories.map(c => ({ value: c.id, label: localizedName(c, locale) }))]}
+                value={filters.category_id || ''}
+                onChange={e => setFilters(p => ({ ...p, category_id: e.target.value }))}
               />
             </div>
           )}

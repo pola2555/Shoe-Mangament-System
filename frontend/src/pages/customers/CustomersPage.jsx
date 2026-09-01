@@ -3,6 +3,7 @@ import { customersAPI } from '../../api';
 import ClickableImage from '../../components/common/ClickableImage';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
+import { formatSize, formatColor } from '../../utils/variantFormat';
 import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
 
@@ -16,7 +17,7 @@ export default function CustomersPage() {
   const [detail, setDetail] = useState(null);
   const { hasPermission } = useAuth();
   const canWrite = hasPermission('sales', 'write');
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
   useEffect(() => { fetchCustomers(); }, []);
 
@@ -115,6 +116,7 @@ export default function CustomersPage() {
                             {item.color_image_url ? (
                               <ClickableImage
                                 src={item.color_image_url}
+                                thumbSrc={item.color_image_thumb_url}
                                 alt={item.color_name}
                                 style={{ width: 44, height: 44, borderRadius: 6, objectFit: 'cover' }}
                               />
@@ -124,7 +126,7 @@ export default function CustomersPage() {
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontWeight: 600, fontSize: '0.9em' }}>{item.brand} {item.product_name}</div>
                               <div style={{ color: 'var(--color-text-muted)', fontSize: '0.8em' }}>
-                                {item.product_code} • {item.color_name} • EU {item.size_eu}
+                                {[item.product_code, formatColor(item), formatSize(item, locale)].filter(Boolean).join(' • ')}
                                 {item.is_returned && <span style={{ color: 'var(--color-danger)', marginInlineStart: 6 }}>({t('common.returned')})</span>}
                               </div>
                             </div>
