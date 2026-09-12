@@ -143,7 +143,7 @@ app.use('/api/discounts', discountRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ success: true, message: 'Shoe ERP API is running', timestamp: new Date().toISOString() });
+  res.json({ success: true, message: 'Bavly Shoes API is running', timestamp: new Date().toISOString() });
 });
 
 // 404 handler
@@ -156,7 +156,7 @@ app.use(errorHandler);
 
 // --- Start Server ---
 const server = app.listen(env.port, () => {
-  console.log(`\n🚀 Shoe ERP Backend running on port ${env.port}`);
+  console.log(`\n🚀 Bavly Shoes Backend running on port ${env.port}`);
   console.log(`   Environment: ${env.nodeEnv}`);
   console.log(`   Health: http://localhost:${env.port}/api/health\n`);
 

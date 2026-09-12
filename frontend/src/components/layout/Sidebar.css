@@ -33,6 +33,20 @@
   gap: var(--spacing-sm);
 }
 
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+
+.sidebar__logo-img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .sidebar__logo-text {
   font-size: var(--font-size-lg);
   font-weight: 700;

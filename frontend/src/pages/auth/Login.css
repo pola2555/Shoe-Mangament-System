@@ -38,6 +38,14 @@
   margin-bottom: var(--spacing-xl);
 }
 
+.login-logo {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto var(--spacing-md);
+}
+
 .login-title {
   font-size: var(--font-size-2xl);
   font-weight: 700;

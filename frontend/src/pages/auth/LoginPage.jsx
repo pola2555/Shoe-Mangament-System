@@ -38,7 +38,8 @@ export default function LoginPage() {
         <div className="login-glow" />
         <div className="login-card glass">
           <div className="login-header">
-            <h1 className="login-title">Shoe ERP</h1>
+            <img src="/logo.png?v=bavly" alt="Bavly Shoes" className="login-logo" />
+            <h1 className="login-title">Bavly Shoes</h1>
             <p className="login-subtitle">{t('auth.sign_in_subtitle')}</p>
           </div>
 

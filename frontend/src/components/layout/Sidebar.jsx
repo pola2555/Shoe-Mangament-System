@@ -136,7 +136,12 @@ export default function Sidebar({ mobileOpen }) {
     <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''} ${mobileOpen ? 'sidebar--open' : ''}`}>
       <div className="sidebar__header">
         <div className="sidebar__logo">
-          {!collapsed && <span className="sidebar__logo-text">Shoe ERP</span>}
+          {!collapsed && (
+            <span className="sidebar__brand">
+              <img src="/logo.png?v=bavly" alt="Bavly Shoes" className="sidebar__logo-img" />
+              <span className="sidebar__logo-text">Bavly Shoes</span>
+            </span>
+          )}
           <button className="sidebar__toggle" onClick={() => setCollapsed(!collapsed)}>
             <HiOutlineBars3 size={20} />
           </button>

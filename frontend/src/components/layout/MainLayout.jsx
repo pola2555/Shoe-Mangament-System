@@ -17,7 +17,10 @@ export default function MainLayout() {
     <div className="layout">
       {/* Mobile hamburger header */}
       <div className="mobile-header">
-        <span className="mobile-header__logo">Shoe ERP</span>
+        <span className="mobile-header__logo">
+          <img src="/logo.png?v=bavly" alt="" className="mobile-header__logo-img" />
+          <span className="mobile-header__logo-text">Bavly Shoes</span>
+        </span>
         <button
           className="mobile-header__btn"
           onClick={() => setMobileOpen((v) => !v)}

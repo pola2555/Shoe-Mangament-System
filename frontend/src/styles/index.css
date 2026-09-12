@@ -591,6 +591,18 @@ a:hover { color: var(--color-accent-hover); }
   }
 
   .mobile-header__logo {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .mobile-header__logo-img {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+  }
+
+  .mobile-header__logo-text {
     font-size: var(--font-size-lg);
     font-weight: 700;
     background: linear-gradient(135deg, var(--color-accent), #a29bfe);
