@@ -1,0 +1,102 @@
+/* Store cards, the store detail header, and the price editor.
+   Everything here uses logical properties (inline-start/end) rather than left/right,
+   because the whole UI mirrors under Arabic. */
+
+.store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--spacing-md);
+}
+
+.store-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  text-align: start;
+  border: 1px solid var(--color-border);
+}
+
+.store-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+.store-card--closed {
+  opacity: 0.65;
+}
+
+.store-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+
+.store-card__name {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  margin: 0;
+}
+
+.store-card__where {
+  color: var(--color-text-muted);
+  font-size: 0.85em;
+  margin: 0;
+}
+
+.store-card__stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-sm);
+  margin-top: auto;
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.store-stat__label {
+  display: block;
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.store-stat__value {
+  display: block;
+  font-weight: 700;
+  font-size: 1.05em;
+}
+
+.store-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.8em;
+  color: var(--color-text-secondary);
+}
+
+/* A store's own figures need no colour-coded chart to be readable, but a negative
+   month should not look like a positive one. */
+.store-num--good { color: var(--color-success); }
+.store-num--bad { color: var(--color-danger); }
+
+.store-detail__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.store-price-row input {
+  max-width: 120px;
+}
+
+@media (max-width: 640px) {
+  .store-grid { grid-template-columns: 1fr; }
+  .store-card__stats { grid-template-columns: repeat(2, 1fr); }
+}

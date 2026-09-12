@@ -2,16 +2,45 @@ import { useState } from 'react';
 import { useTranslation } from '../../i18n/i18nContext';
 import './POS.css';
 
-export default function CheckoutModal({ total, onClose, onConfirm }) {
+/**
+ * Taking the money.
+ *
+ * A registered customer may pay part of the total and owe the rest — that is what
+ * `payNow` is. A walk-in may not: an unpaid balance against nobody is a debt with
+ * no name and no phone number, so the field is disabled and says why.
+ *
+ * `customerName` doubles as the test for whether a customer is selected, and as what
+ * to show beside their outstanding balance.
+ */
+export default function CheckoutModal({
+  total, onClose, onConfirm, customerName, customerOutstanding = 0,
+  // How much this sale may be left unpaid. `undefined` means no limit (the person
+  // checking out can approve credit themselves); 0 means they must ask first.
+  maxUnpaid,
+}) {
   const { t } = useTranslation();
   const [method, setMethod] = useState('cash');
   const [amountReceived, setAmountReceived] = useState('');
   const [reference, setReference] = useState('');
   const [image, setImage] = useState(null);
+  // What is actually being handed over now. Empty means the whole total, which is the
+  // overwhelmingly common case and must stay a single keystroke.
+  const [payNow, setPayNow] = useState('');
+
+  const limited = maxUnpaid !== undefined;
+  // A registered customer can owe; a walk-in cannot. On top of that, a cashier can
+  // only leave unpaid what a manager has approved — the server enforces both, this
+  // stops the sale being typed out and then refused at the last button.
+  const canOwe = Boolean(customerName) && (!limited || maxUnpaid > 0);
+  const paying = payNow === '' ? total : Math.max(0, Math.min(total, parseFloat(payNow) || 0));
+  const owed = Math.round((total - paying) * 100) / 100;
+  const overApproved = limited && owed > (maxUnpaid || 0) + 0.01;
 
   const handleConfirm = (e) => {
     e.preventDefault();
-    onConfirm({ method, reference, image });
+    if (owed > 0.01 && !canOwe) return;
+    if (overApproved) return;
+    onConfirm({ method, reference, image, amount: paying });
   };
 
   const handleImageChange = (e) => {
@@ -19,7 +48,7 @@ export default function CheckoutModal({ total, onClose, onConfirm }) {
     if (file) setImage(file);
   };
 
-  const change = amountReceived ? Math.max(0, parseFloat(amountReceived) - total) : 0;
+  const change = amountReceived ? Math.max(0, parseFloat(amountReceived) - paying) : 0;
 
   return (
     <div className="modal-overlay pos-checkout-modal" onClick={onClose}>
@@ -34,6 +63,49 @@ export default function CheckoutModal({ total, onClose, onConfirm }) {
         </div>
 
         <form onSubmit={handleConfirm} className="product-form">
+          {/* Paying less than the total puts the rest on the customer's account. */}
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">{t('pos.paying_now')}</label>
+              <input
+                type="number" step="0.01" min="0" max={total}
+                className="form-input"
+                data-testid="pos-pay-now"
+                value={payNow}
+                placeholder={total.toLocaleString()}
+                disabled={!canOwe}
+                onChange={(e) => setPayNow(e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">{t('pos.on_account')}</label>
+              <div data-testid="pos-on-account" style={{
+                padding: '0.75rem', background: 'var(--color-bg-base)',
+                borderRadius: 'var(--radius-sm)', fontWeight: 600,
+                color: owed > 0 ? 'var(--color-danger)' : 'inherit',
+              }}>
+                {owed.toLocaleString()} {t('common.currency')}
+              </div>
+            </div>
+          </div>
+
+          {!canOwe ? (
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', marginTop: '-.5rem' }}
+              data-testid="pos-walkin-note">
+              {t('pos.walkin_must_pay')}
+            </p>
+          ) : overApproved ? (
+            <p style={{ color: 'var(--color-danger)', fontSize: 'var(--font-size-sm)', marginTop: '-.5rem' }}
+              data-testid="pos-over-approved">
+              {t('credit.over_approved', { amount: (maxUnpaid || 0).toLocaleString() })}
+            </p>
+          ) : customerOutstanding > 0 ? (
+            <p style={{ color: 'var(--color-danger)', fontSize: 'var(--font-size-sm)', marginTop: '-.5rem' }}
+              data-testid="pos-customer-outstanding">
+              {t('pos.customer_owes', { name: customerName, amount: customerOutstanding.toLocaleString() })}
+            </p>
+          ) : null}
+
           <div className="form-group">
             <label className="form-label">{t('pos.payment_method')}</label>
             <select className="form-input" value={method} onChange={(e) => setMethod(e.target.value)}>
@@ -98,7 +170,7 @@ export default function CheckoutModal({ total, onClose, onConfirm }) {
 
           <div className="form-actions" style={{ marginTop: 'var(--spacing-xl)' }}>
             <button type="button" className="btn btn-secondary" onClick={onClose}>{t('common.cancel')}</button>
-            <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>{t('pos.confirm_payment')}</button>
+            <button type="submit" className="btn btn-primary" style={{ flex: 1 }} disabled={overApproved} data-testid="pos-confirm-payment">{t('pos.confirm_payment')}</button>
           </div>
         </form>
       </div>

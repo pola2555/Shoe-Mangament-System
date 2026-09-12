@@ -179,3 +179,24 @@
 @media (max-width: 768px) {
   [dir="rtl"] .notifications-dropdown { left: 0; right: 0; margin-right: 0; }
 }
+
+/* The action strip under the bell's header: the count and Clear, or the date range. */
+.notifications-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.notifications-actions--range {
+  flex-wrap: wrap;
+}
+
+.notifications-actions--range .form-input {
+  flex: 1 1 120px;
+  min-width: 0;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+}

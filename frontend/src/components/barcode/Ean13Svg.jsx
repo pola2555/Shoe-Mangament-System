@@ -19,6 +19,10 @@ export default function Ean13Svg({
   barHeightMm = 8.5,
   guardExtendMm = 0.9,
   hriFontMm = 2.3,
+  // The digits are read by a person when a scan fails, often off a small thermal label
+  // in poor light. Bold is the default because that is the case they exist for; the bars
+  // above are unaffected, so the symbol still decodes exactly as before.
+  hriFontWeight = 700,
   showHri = true,
   color = '#000',
   className,
@@ -95,6 +99,7 @@ export default function Ean13Svg({
           textAnchor="middle"
           fontSize={hriFontMm}
           fontFamily="'Courier New', ui-monospace, monospace"
+          fontWeight={hriFontWeight}
           letterSpacing={moduleMm * 0.35}
           fill={color}
         >

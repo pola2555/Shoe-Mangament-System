@@ -5,6 +5,7 @@ import SearchableSelect from '../../components/common/SearchableSelect';
 import ClickableImage from '../../components/common/ClickableImage';
 import { useTranslation } from '../../i18n/i18nContext';
 import { categoryOptions, PAYMENT_METHODS, today, dateInput } from './expenseHelpers';
+import '../inventory/StockIntake.css';
 
 /**
  * Adding or editing one expense, with its receipts.
@@ -30,6 +31,7 @@ export default function ExpenseFormModal({ expense, categories, stores, onClose,
     expense_date: dateInput(expense?.expense_date) || today(),
     payment_method: expense?.payment_method || 'cash',
     paid_to: expense?.paid_to || '',
+    paid_from_drawer: expense?.paid_from_drawer || false,
   });
   const [saving, setSaving] = useState(false);
   const [receipts, setReceipts] = useState([]);
@@ -53,6 +55,7 @@ export default function ExpenseFormModal({ expense, categories, stores, onClose,
         // '' would fail uuid/int validation; null is what "no category" means.
         category_id: form.category_id ? Number(form.category_id) : null,
         paid_to: form.paid_to || null,
+        paid_from_drawer: !!form.paid_from_drawer,
       };
       if (isEdit) {
         await expensesAPI.update(expense.id, payload);
@@ -148,6 +151,19 @@ export default function ExpenseFormModal({ expense, categories, stores, onClose,
               <label className="form-label">{t('expenses.paid_to')}</label>
               <input className="form-input" value={form.paid_to} data-testid="expense-paid-to"
                 onChange={(e) => setForm({ ...form, paid_to: e.target.value })} placeholder="e.g. Ahmed / Electricity Co." />
+            </div>
+
+            {/* Money that physically came out of the till, as opposed to a transfer or
+                someone's own pocket. Only this kind is subtracted at cash-up — marking
+                a bank payment as drawer-paid would show the drawer short every night. */}
+            <div className="form-group">
+              <label className="intake-known" style={{ marginTop: '1.6rem' }}>
+                <input type="checkbox" data-testid="expense-from-drawer"
+                  checked={!!form.paid_from_drawer}
+                  onChange={(e) => setForm({ ...form, paid_from_drawer: e.target.checked })} />
+                <span>{t('expenses.paid_from_drawer')}</span>
+              </label>
+              <div className="form-hint">{t('expenses.paid_from_drawer_hint')}</div>
             </div>
           </div>
 

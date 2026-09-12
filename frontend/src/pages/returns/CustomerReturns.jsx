@@ -1,10 +1,33 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
 import toast from 'react-hot-toast';
-import { formatSize } from '../../utils/variantFormat';
+import { formatSize, formatColor } from '../../utils/variantFormat';
 import { salesAPI, returnsAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../i18n/i18nContext';
-import { HiOutlineMagnifyingGlass, HiOutlineArrowUturnLeft } from 'react-icons/hi2';
+import { HiOutlineMagnifyingGlass, HiOutlineArrowUturnLeft, HiOutlineQrCode } from 'react-icons/hi2';
+import ClickableImage from '../../components/common/ClickableImage';
+import useBarcodeScanner from '../../hooks/useBarcodeScanner';
+
+const BarcodeScannerModal = lazy(() => import('../../components/barcode/BarcodeScannerModal'));
+
+/**
+ * What one line of a sale is actually worth back.
+ *
+ * NOT the price on the line. A sale-level discount belongs to the whole sale, so a
+ * 1000 EGP cart with 100 off means each 500 EGP pair really cost 450. Refunding the
+ * printed 500 hands back money that was never taken, and the server only notices when
+ * the WHOLE sale is returned — a partial return sails straight through.
+ *
+ * The same pro-rata allocation the exchange screen and the server's own profit
+ * calculation use, so all three agree.
+ */
+function netOf(item, sale) {
+  const gross = Number(item.sale_price) || 0;
+  const total = Number(sale?.total_amount) || 0;
+  const disc = Number(sale?.discount_amount) || 0;
+  if (!(total > 0) || !(disc > 0)) return Math.round(gross * 100) / 100;
+  return Math.round((gross - (disc * gross) / total) * 100) / 100;
+}
 
 export default function CustomerReturns() {
   const { user } = useAuth();
@@ -24,6 +47,32 @@ export default function CustomerReturns() {
   const [notes, setNotes] = useState('');
   
   const [submitting, setSubmitting] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+
+  // A customer bringing something back is usually holding it, and it usually still has
+  // its label. Scanning that is faster and more reliable than asking for a receipt.
+  const saleRef = useRef(null);
+  useEffect(() => { saleRef.current = selectedSale; }, [selectedSale]);
+
+  const findByCode = useCallback(async (code) => {
+    if (saleRef.current) return; // a sale is already open; nothing to look up
+    setSearchQuery(code);
+    try {
+      setSearching(true);
+      const res = await salesAPI.list({ search: code });
+      const found = (res.data.data || [])
+        .filter((x) => !x.voided_at)
+        .filter((x) => parseFloat(x.refunded_amount || 0) < parseFloat(x.final_amount));
+      setSearchResults(found);
+      if (found.length === 1) loadSaleDetails(found[0].id);
+      else if (found.length === 0) toast.error(t('returns.no_sales_found'));
+    } catch {
+      toast.error(t('returns.failed_search_sales'));
+    } finally { setSearching(false); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t]);
+
+  useBarcodeScanner(findByCode, { enabled: !showScanner && !selectedSale });
 
   // Search Sales
   const handleSearch = async (e) => {
@@ -35,12 +84,12 @@ export default function CustomerReturns() {
       if (daysFilter) params.days = daysFilter;
 
       const res = await salesAPI.list(params);
+      // The server scopes to the caller's branches already (utils/storeScope.js).
+      // Filtering again here meant two places had to agree, and when they did not the
+      // symptom was a sale that exists refusing to appear.
       let results = res.data.data;
-      // Filter by assigned stores
-      if (user?.role_name !== 'admin' && !user?.permissions?.all_stores && user?.assigned_stores?.length > 0) {
-        results = results.filter(s => user.assigned_stores.includes(s.store_id));
-      }
-      // Exclude fully refunded sales
+      // A voided sale was undone in full; there is nothing left to give back.
+      results = results.filter((s) => !s.voided_at);
       results = results.filter(s => parseFloat(s.refunded_amount || 0) < parseFloat(s.final_amount));
       setSearchResults(results);
       if (results.length === 0) {
@@ -69,7 +118,9 @@ export default function CustomerReturns() {
         if (!item.is_returned) {
           itemsMap[item.id] = {
             selected: false,
-            refund_amount: parseFloat(item.sale_price) || 0
+            // Defaults to what the customer actually paid for this line, discount
+            // included. Still editable — a damaged return might be refunded less.
+            refund_amount: netOf(item, sale)
           };
         }
       });
@@ -190,6 +241,10 @@ export default function CustomerReturns() {
           <button type="submit" className="btn btn-primary" disabled={searching}>
             {searching ? t('returns.searching') : t('common.search')}
           </button>
+          <button type="button" className="btn btn-secondary" data-testid="returns-scan"
+            onClick={() => setShowScanner(true)}>
+            <HiOutlineQrCode /> {t('barcode.scan')}
+          </button>
         </form>
 
         {/* Search Results (if multiple) */}
@@ -203,6 +258,7 @@ export default function CustomerReturns() {
                     <th>{t('sales.sale_number')}</th>
                     <th>{t('sales.customer')}</th>
                     <th>{t('sales.store')}</th>
+                    <th>{t('sales.items')}</th>
                     <th>{t('common.date')}</th>
                     <th>{t('common.total')}</th>
                     <th></th>
@@ -214,6 +270,22 @@ export default function CustomerReturns() {
                       <td><strong>{s.sale_number}</strong></td>
                       <td>{s.customer_name || t('pos.walk_in')} {s.customer_phone ? `(${s.customer_phone})` : ''}</td>
                       <td>{s.store_name}</td>
+                      {/* The sale can now be found by its product, so the row has to
+                          say which products it holds — otherwise a product search
+                          returns receipt numbers that explain nothing. */}
+                      <td>
+                        {s.item_count ? (
+                          <>
+                            <strong>{s.item_count}</strong>
+                            {s.item_products?.length > 0 && (
+                              <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-muted)' }}>
+                                {s.item_products.join(', ')}
+                                {s.item_products_more > 0 ? ` +${s.item_products_more}` : ''}
+                              </div>
+                            )}
+                          </>
+                        ) : '—'}
+                      </td>
                       <td>{new Date(s.created_at).toLocaleDateString()}</td>
                       <td>{parseFloat(s.final_amount).toLocaleString()} {t('common.currency')}</td>
                       <td>
@@ -275,12 +347,33 @@ export default function CustomerReturns() {
                           style={{ width: 18, height: 18, cursor: 'pointer' }}
                         />
                       </td>
-                      <td>{item.product_name} <br/> <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{item.sku}</span></td>
+                      <td>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <ClickableImage src={item.image_url} thumbSrc={item.thumb_url}
+                            alt={item.product_name} width={40} height={40}
+                            style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 4 }} />
+                          <span>
+                            {item.product_name}
+                            <br />
+                            <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{item.sku}</span>
+                          </span>
+                        </span>
+                      </td>
                       <td><span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
-                        {item.color_name}</span></td>
+                        {!item.color_is_placeholder && item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
+                        {formatColor(item) || '—'}</span></td>
                       <td>{formatSize(item, locale)}</td>
-                      <td>{parseFloat(item.sale_price).toLocaleString()} {t('common.currency')}</td>
+                      <td>
+                        {parseFloat(item.sale_price).toLocaleString()} {t('common.currency')}
+                        {/* When a sale carried a discount, the printed line price is
+                            not what was taken for it. Saying so is the difference
+                            between a refund and a small gift. */}
+                        {netOf(item, selectedSale) < parseFloat(item.sale_price) - 0.01 && (
+                          <div style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                            {t('returns.actually_paid', { amount: netOf(item, selectedSale).toLocaleString() })}
+                          </div>
+                        )}
+                      </td>
                       <td>
                         <input 
                           type="number"
@@ -354,6 +447,14 @@ export default function CustomerReturns() {
         </form>
       )}
 
+      {showScanner && (
+        <Suspense fallback={null}>
+          <BarcodeScannerModal
+            onDetected={(code) => { setShowScanner(false); findByCode(code); }}
+            onClose={() => setShowScanner(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

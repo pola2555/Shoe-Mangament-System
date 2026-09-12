@@ -9,10 +9,23 @@ export const authAPI = {
 };
 
 export const storesAPI = {
-  list: () => api.get('/stores'),
+  // `list()` stays parameterless for the dozen callers that only want names — the POS,
+  // the transfer form, every store filter. Stats cost eight aggregates, so they are
+  // asked for explicitly.
+  list: (params) => api.get('/stores', { params }),
+  withStats: () => api.get('/stores', { params: { include_stats: 1 } }),
   getById: (id) => api.get(`/stores/${id}`),
   create: (data) => api.post('/stores', data),
   update: (id, data) => api.put(`/stores/${id}`, data),
+
+  overview: (id, params) => api.get(`/stores/${id}/overview`, { params }),
+  comparison: (params) => api.get('/stores/comparison', { params }),
+
+  listStaff: (id) => api.get(`/stores/${id}/staff`),
+  setStaff: (id, userIds) => api.put(`/stores/${id}/staff`, { user_ids: userIds }),
+
+  listPrices: (id, params) => api.get(`/stores/${id}/prices`, { params }),
+  setPrice: (id, productId, data) => api.put(`/stores/${id}/prices/${productId}`, data),
 };
 
 export const usersAPI = {
@@ -25,6 +38,9 @@ export const usersAPI = {
   changePassword: (data) => api.put('/users/change-password', data),
   listRoles: () => api.get('/users/roles'),
   listPermissions: () => api.get('/users/permissions'),
+  // Screens kept out of somebody's way. A tidier menu, not a permission.
+  getHiddenPages: (id) => api.get(`/users/${id}/hidden-pages`),
+  setHiddenPages: (id, pages) => api.put(`/users/${id}/hidden-pages`, { pages }),
   getStores: (id) => api.get(`/users/${id}/stores`),
   setStores: (id, storeIds) => api.put(`/users/${id}/stores`, { store_ids: storeIds }),
 };
@@ -121,6 +137,9 @@ export const purchasesAPI = {
   deleteBox: (boxId) => api.delete(`/purchases/boxes/${boxId}`),
   setBoxItems: (boxId, items) => api.put(`/purchases/boxes/${boxId}/items`, { items }),
   completeBox: (boxId) => api.post(`/purchases/boxes/${boxId}/complete`),
+  duplicateBox: (boxId) => api.post(`/purchases/boxes/${boxId}/duplicate`),
+  // What the last box of this product looked like: cost, count and its size run.
+  boxSuggestion: (productId) => api.get('/purchases/boxes/suggestion', { params: { product_id: productId } }),
   // Payments
   listPayments: (params) => api.get('/purchases/payments', { params }),
   getPayment: (id) => api.get(`/purchases/payments/${id}`),
@@ -133,9 +152,86 @@ export const purchasesAPI = {
 export const inventoryAPI = {
   list: (params) => api.get('/inventory', { params }),
   summary: (params) => api.get('/inventory/summary', { params }),
+  // One row per product, for the till's grid. summary() returns one row per
+  // (product, colour, size, store) — 58 rows and 49 KB to draw 13 cards here, growing
+  // as products x colours x sizes. See inventory.service#productGrid.
+  productGrid: (params) => api.get('/inventory/product-grid', { params }),
+  // Which colours, sizes and categories actually have stock right now. Three grouped
+  // counts, so a filter row can be built without pulling the rows themselves.
+  facets: (params) => api.get('/inventory/facets', { params }),
   exportImage: (url) => api.get('/inventory/export-image', { params: { url }, responseType: 'blob' }),
   manualEntry: (data) => api.post('/inventory/manual', data),
   markDamaged: (id, notes) => api.put(`/inventory/${id}/damaged`, { notes }),
+};
+
+// Stock entered without a purchase invoice: opening stock, counts, write-offs.
+// A sheet is a draft until it is posted; posting is the moment stock exists.
+export const stockIntakesAPI = {
+  list: (params) => api.get('/stock-intakes', { params }),
+  getById: (id) => api.get(`/stock-intakes/${id}`),
+  create: (data) => api.post('/stock-intakes', data),
+  update: (id, data) => api.put(`/stock-intakes/${id}`, data),
+  delete: (id) => api.delete(`/stock-intakes/${id}`),
+  post: (id) => api.post(`/stock-intakes/${id}/post`),
+  reverse: (id, reason) => api.post(`/stock-intakes/${id}/reverse`, { reason }),
+  // The best cost we can offer for a product, and where it came from.
+  costHint: (params) => api.get('/stock-intakes/cost-hint', { params }),
+  // Products still carrying guessed costs, including ones already sold.
+  estimated: (params) => api.get('/stock-intakes/estimated', { params }),
+  recost: (productId, data) => api.put(`/stock-intakes/estimated/${productId}/recost`, data),
+  corrections: (params) => api.get('/stock-intakes/corrections', { params }),
+  revertCorrection: (batchId) => api.post(`/stock-intakes/corrections/${batchId}/revert`),
+};
+
+// The till drawer: opening a shift, counting it at the end, and the money that moves
+// in and out for reasons that are not sales.
+export const shiftsAPI = {
+  list: (params) => api.get('/shifts', { params }),
+  getById: (id) => api.get(`/shifts/${id}`),
+  // The open shift at a branch, or null. Drives the POS banner.
+  current: (storeId) => api.get('/shifts/current', { params: { store_id: storeId } }),
+  open: (data) => api.post('/shifts', data),
+  close: (id, data) => api.post(`/shifts/${id}/close`, data),
+  reopen: (id) => api.post(`/shifts/${id}/reopen`),
+  // Fixing a mistyped count. Keeps the shift closed; reopen() is the heavier tool that
+  // puts it back into trading.
+  recount: (id, data) => api.post(`/shifts/${id}/recount`, data),
+  position: (id) => api.get(`/shifts/${id}/position`),
+  movements: (params) => api.get('/shifts/movements', { params }),
+  addMovement: (data) => api.post('/shifts/movements', data),
+  unassignedCash: (params) => api.get('/shifts/unassigned-cash', { params }),
+};
+
+// A return and a sale in one transaction: another size, or another product entirely.
+export const exchangesAPI = {
+  list: (params) => api.get('/exchanges', { params }),
+  getById: (id) => api.get(`/exchanges/${id}`),
+  create: (data) => api.post('/exchanges', data),
+};
+
+// Counting the shelf and facing the difference.
+export const stockCountsAPI = {
+  list: (params) => api.get('/stock-counts', { params }),
+  getById: (id) => api.get(`/stock-counts/${id}`),
+  create: (data) => api.post('/stock-counts', data),
+  setCounts: (id, lines) => api.put(`/stock-counts/${id}/counts`, { lines }),
+  addLine: (id, data) => api.post(`/stock-counts/${id}/lines`, data),
+  post: (id) => api.post(`/stock-counts/${id}/post`),
+  cancel: (id) => api.post(`/stock-counts/${id}/cancel`),
+};
+
+// PLAN 3: a cashier asks for a discount, a manager answers, and the short codes that
+// say whose sale it was.
+export const discountsAPI = {
+  list: (params) => api.get('/discounts', { params }),
+  getById: (id) => api.get(`/discounts/${id}`),
+  request: (data) => api.post('/discounts', data),
+  decide: (id, data) => api.post(`/discounts/${id}/decide`, data),
+  cancel: (id) => api.post(`/discounts/${id}/cancel`),
+  resume: (id) => api.get(`/discounts/${id}/resume`),
+  sellers: (storeId) => api.get('/discounts/sellers', { params: { store_id: storeId } }),
+  setSellerCode: (userId, code) => api.put(`/discounts/sellers/${userId}/code`, { code }),
+  clearSellerCode: (userId) => api.delete(`/discounts/sellers/${userId}/code`),
 };
 
 export const transfersAPI = {
@@ -164,6 +260,12 @@ export const salesAPI = {
   uploadPaymentImage: (saleId, paymentId, formData) =>
     api.post(`/sales/${saleId}/payments/${paymentId}/images`, formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   exportExcel: (params) => api.get('/sales/export-excel', { params, responseType: 'blob' }),
+  // Undo: returns the stock and drops the sale out of every report. Kept for the
+  // record, never deleted.
+  void: (id, data) => api.post(`/sales/${id}/void`, data || {}),
+  // Customer and notes only. A mis-rung sale is voided and rung again.
+  update: (id, data) => api.patch(`/sales/${id}`, data),
+  customerBalance: (customerId, params) => api.get(`/sales/customer-balance/${customerId}`, { params }),
 };
 
 export const dealersAPI = {
@@ -185,6 +287,17 @@ export const returnsAPI = {
 export const notificationsAPI = {
   getUnread: () => api.get('/notifications'),
   markAsRead: (id) => api.put(`/notifications/${id}/read`),
+  // Everything ever raised, archived included — the bell only shows what is unread.
+  history: (params) => api.get('/notifications/history', { params }),
+  clear: () => api.post('/notifications/clear'),
+  // The only call here that loses anything, so the UI confirms it.
+  deleteRange: (params) => api.delete('/notifications', { params }),
+  // Which topics reach the bell. Mine, and — with notification_topics — anybody's.
+  getPreferences: () => api.get('/notifications/preferences'),
+  setPreferences: (preferences) => api.put('/notifications/preferences', { preferences }),
+  getUserPreferences: (userId) => api.get(`/notifications/preferences/users/${userId}`),
+  setUserPreferences: (userId, preferences) =>
+    api.put(`/notifications/preferences/users/${userId}`, { preferences }),
 };
 
 export const expensesAPI = {
@@ -197,6 +310,7 @@ export const expensesAPI = {
   delete: (id) => api.delete(`/expenses/${id}`),
   summary: (params) => api.get('/expenses/summary', { params }),
   monthlyTrend: (params) => api.get('/expenses/monthly-trend', { params }),
+  byStore: (params) => api.get('/expenses/by-store', { params }),
 
   getCategories: (params) => api.get('/expenses/categories', { params }),
   createCategory: (data) => api.post('/expenses/categories', data),
@@ -222,6 +336,8 @@ export const expensesAPI = {
 
 export const reportsAPI = {
   dashboard: (params) => api.get('/reports/dashboard', { params }),
+  // This period vs the same length immediately before it.
+  comparison: (params) => api.get('/reports/comparison', { params }),
   dashboardHome: (params) => api.get('/reports/dashboard-home', { params }),
   dashboardAdmin: (params) => api.get('/reports/dashboard-admin', { params }),
   salesAnalytics: (params) => api.get('/reports/sales-analytics', { params }),
@@ -230,6 +346,13 @@ export const reportsAPI = {
   financial: (params) => api.get('/reports/financial', { params }),
   customerAnalytics: (params) => api.get('/reports/customer-analytics', { params }),
   employeeAnalytics: (params) => api.get('/reports/employee-analytics', { params }),
+  // How much of a period's profit still rests on a guessed cost, and whether that
+  // period has since been restated because a real invoice arrived.
+  costBasis: (params) => api.get('/reports/cost-basis', { params }),
+  // What to buy and what to stop buying, by days of cover rather than a bare number.
+  reorder: (params) => api.get('/reports/reorder', { params }),
+  // The findings a careful reader would reach, ranked by the money attached.
+  insights: (params) => api.get('/reports/insights', { params }),
 };
 
 export const auditLogAPI = {

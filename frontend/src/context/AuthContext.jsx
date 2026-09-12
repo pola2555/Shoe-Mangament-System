@@ -71,16 +71,42 @@ export function AuthProvider({ children }) {
    * Filter a list of stores to only those the user is assigned to.
    * Admins and users with all_stores permission see all stores.
    */
+  /**
+   * The branches this user may actually work in.
+   *
+   * The union of their `user_stores` rows and their older `users.store_id` home
+   * branch — deliberately the same rule as the server's `resolveStoreScope`, because
+   * the two disagreeing is worse than either being wrong. It used to fall back to
+   * "no assignments = every store", which meant somebody with no branch was offered
+   * all of them in the picker and then got nothing back from any of them: a full
+   * dropdown and an empty screen, with no way to tell that the account was the problem.
+   */
   const filterStores = (stores) => {
     if (!user) return [];
     if (user.role_name === 'admin' || user.permissions?.all_stores) return stores;
-    const assigned = user.assigned_stores || [];
-    if (assigned.length === 0) return stores; // no assignments = all stores (backwards compat)
+    const assigned = [...new Set([
+      ...(user.assigned_stores || []),
+      ...(user.store_id ? [user.store_id] : []),
+    ])];
+    if (assigned.length === 0) return [];
     return stores.filter(s => assigned.includes(s.id));
   };
 
+  /**
+   * Has this person been told not to be shown this screen?
+   *
+   * A convenience, NOT a guard. The data behind every page is protected by the
+   * permission on its API routes; this only keeps a menu tidy. An admin is never
+   * hidden from anything, because the person configuring this must be able to see
+   * what they are configuring.
+   */
+  const isPageHidden = (path) => {
+    if (!user || user.role_name === 'admin') return false;
+    return (user.hidden_pages || []).includes(path);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, hasPermission, filterStores, applyUserPreferences }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, hasPermission, filterStores, applyUserPreferences, isPageHidden }}>
       {children}
     </AuthContext.Provider>
   );

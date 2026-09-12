@@ -1,0 +1,130 @@
+/**
+ * The approvals queue.
+ *
+ * A card per request rather than a table row: the decision needs the goods on screen,
+ * and a picture in a table cell either wrecks the row height or is too small to read.
+ */
+
+.approval-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.approval-card {
+  padding: var(--spacing-md);
+}
+
+/* A notification links straight to one request; this is how it announces itself. */
+.approval-card--highlight {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.approval-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+
+.approval-card__figures {
+  display: flex;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+
+.approval-card__figures > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.approval-card__reason {
+  margin: var(--spacing-sm) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.approval-card__items {
+  margin-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.approval-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.approval-item__img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+/* Takes the slack so the price column stays hard against the end edge. */
+.approval-item__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.approval-item__name {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-item__price {
+  text-align: end;
+  white-space: nowrap;
+}
+
+.approval-card__decided,
+.approval-card__actions {
+  margin-top: var(--spacing-md);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.approval-card__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.approval-warning {
+  margin-top: var(--spacing-sm);
+  color: var(--color-danger, #c0392b);
+  font-size: var(--font-size-sm);
+}
+
+.approval-blocked {
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-danger, #c0392b);
+  border-radius: var(--radius-md);
+}
+
+.approval-blocked p {
+  margin: 0 0 var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-width: 640px) {
+  .approval-card__head {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+
+  .approval-card__figures > div {
+    align-items: flex-start;
+  }
+}

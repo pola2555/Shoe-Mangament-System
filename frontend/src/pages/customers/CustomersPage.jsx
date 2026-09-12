@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { customersAPI } from '../../api';
 import ClickableImage from '../../components/common/ClickableImage';
+import Pagination from '../../components/common/Pagination';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import { formatSize, formatColor } from '../../utils/variantFormat';
@@ -15,18 +16,29 @@ export default function CustomersPage() {
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState('');
   const [detail, setDetail] = useState(null);
+  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1 });
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
   const { hasPermission } = useAuth();
   const canWrite = hasPermission('sales', 'write');
   const { t, locale } = useTranslation();
 
-  useEffect(() => { fetchCustomers(); }, []);
+  // Server-side search and paging: the customer book grows without bound, so the browser
+  // holds one page. Debounced so typing a name is one request, not one per letter.
+  useEffect(() => {
+    const id = setTimeout(() => fetchCustomers(), 300);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, page, limit]);
 
   const fetchCustomers = async () => {
     try {
       setLoading(true);
-      const params = search ? { search } : {};
+      const params = { page, limit };
+      if (search) params.search = search;
       const { data } = await customersAPI.list(params);
       setCustomers(data.data);
+      if (data.pagination) setPagination(data.pagination);
     } catch { toast.error('Failed to load'); }
     finally { setLoading(false); }
   };
@@ -47,7 +59,10 @@ export default function CustomersPage() {
     catch { toast.error('Failed'); }
   };
 
-  const handleSearch = (e) => { e.preventDefault(); fetchCustomers(); };
+  // Typing resets to the first page — page 3 of the old search is meaningless under a
+  // new one. The debounced effect above does the fetch.
+  const handleSearch = (e) => { e.preventDefault(); setPage(1); fetchCustomers(); };
+  const onSearchChange = (v) => { setSearch(v); setPage(1); };
 
   return (
     <div>
@@ -60,7 +75,7 @@ export default function CustomersPage() {
       <form onSubmit={handleSearch} className="card" style={{ marginBottom: 'var(--spacing-lg)', display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'flex-end' }}>
         <div className="form-group" style={{ flex: 1 }}>
           <label className="form-label">{t('customers.search_placeholder')}</label>
-          <input className="form-input" value={search} placeholder={t('customers.search_placeholder')} onChange={(e) => setSearch(e.target.value)} />
+          <input className="form-input" value={search} placeholder={t('customers.search_placeholder')} onChange={(e) => onSearchChange(e.target.value)} />
         </div>
         <button type="submit" className="btn btn-secondary">{t('common.search')}</button>
       </form>
@@ -117,7 +132,7 @@ export default function CustomersPage() {
                               <ClickableImage
                                 src={item.color_image_url}
                                 thumbSrc={item.color_image_thumb_url}
-                                alt={item.color_name}
+                                alt={formatColor(item) || item.product_name}
                                 style={{ width: 44, height: 44, borderRadius: 6, objectFit: 'cover' }}
                               />
                             ) : (
@@ -165,6 +180,11 @@ export default function CustomersPage() {
               ))}
             </tbody>
           </table>
+          <Pagination
+            pagination={pagination}
+            onPage={setPage}
+            onLimit={(n) => { setLimit(n); setPage(1); }}
+          />
         </div>
       )}
     </div>

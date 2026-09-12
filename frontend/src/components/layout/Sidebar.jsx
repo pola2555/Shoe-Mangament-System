@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../i18n/i18nContext';
 import {
@@ -19,6 +19,7 @@ import {
   HiOutlineBars3,
   HiOutlineUserCircle,
   HiOutlineCog6Tooth,
+  HiOutlineChevronDown,
 } from 'react-icons/hi2';
 import NotificationsPanel from './NotificationsPanel';
 import './Sidebar.css';
@@ -33,10 +34,16 @@ const navGroups = [
   {
     titleKey: 'sidebar.sales_returns',
     items: [
+      // Ordered the way a day runs, not alphabetically: open the till, sell, deal with
+      // what comes back, then the people. Discount requests sit last because they are
+      // answered between other things rather than worked through.
       { path: '/pos', icon: HiOutlineShoppingBag, labelKey: 'sidebar.pos', perm: 'pos' },
+      { path: '/shifts', icon: HiOutlineBanknotes, labelKey: 'sidebar.shifts', perm: 'shifts' },
       { path: '/sales', icon: HiOutlineDocumentText, labelKey: 'sidebar.sales_history', perm: 'sales' },
       { path: '/returns', icon: HiOutlineTruck, labelKey: 'sidebar.returns', perm: 'customer_returns' },
+      { path: '/exchanges', icon: HiOutlineArrowsRightLeft, labelKey: 'sidebar.exchanges', perm: 'exchanges' },
       { path: '/customers', icon: HiOutlineUserGroup, labelKey: 'sidebar.customers', perm: 'customers' },
+      { path: '/approvals', icon: HiOutlineDocumentText, labelKey: 'sidebar.approvals', perm: 'pos' },
     ]
   },
   {
@@ -46,6 +53,8 @@ const navGroups = [
       { path: '/box-templates', icon: HiOutlineCube, labelKey: 'sidebar.box_templates', perm: 'box_templates' },
       { path: '/catalog-setup', icon: HiOutlineCube, labelKey: 'sidebar.catalog_setup', perm: 'products' },
       { path: '/inventory', icon: HiOutlineClipboardDocumentList, labelKey: 'sidebar.inventory', perm: 'inventory' },
+      { path: '/stock-intakes', icon: HiOutlineClipboardDocumentList, labelKey: 'sidebar.stock_intakes', perm: 'inventory' },
+      { path: '/stock-counts', icon: HiOutlineClipboardDocumentList, labelKey: 'sidebar.stock_counts', perm: 'inventory' },
       { path: '/transfers', icon: HiOutlineArrowsRightLeft, labelKey: 'sidebar.transfers', perm: 'transfers' },
     ]
   },
@@ -70,11 +79,53 @@ const navGroups = [
   }
 ];
 
+const COLLAPSED_GROUPS_KEY = 'sidebar_collapsed_groups';
+
 export default function Sidebar({ mobileOpen }) {
   const [collapsed, setCollapsed] = useState(false);
-  const { user, logout, hasPermission } = useAuth();
+  const { user, logout, hasPermission, isPageHidden } = useAuth();
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Which groups the user has folded away, remembered between sessions. Stored as the
+  // collapsed set rather than the open one, so a group added later starts open instead
+  // of hidden.
+  const [closedGroups, setClosedGroups] = useState(() => {
+    try {
+      const raw = localStorage.getItem(COLLAPSED_GROUPS_KEY);
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch { return new Set(); }
+  });
+
+  const toggleGroup = (titleKey) => {
+    setClosedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(titleKey)) next.delete(titleKey); else next.add(titleKey);
+      try { localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify([...next])); } catch { /* private mode */ }
+      return next;
+    });
+  };
+
+  /**
+   * The group holding the current page always opens.
+   *
+   * A collapsed sidebar must never hide where you already are — otherwise the active
+   * link is invisible and the app looks like it has lost the page.
+   */
+  useEffect(() => {
+    const owning = navGroups.find((g) => g.items.some((i) =>
+      i.path === '/' ? location.pathname === '/' : location.pathname.startsWith(i.path)
+    ));
+    if (!owning) return;
+    setClosedGroups((prev) => {
+      if (!prev.has(owning.titleKey)) return prev;
+      const next = new Set(prev);
+      next.delete(owning.titleKey);
+      try { localStorage.setItem(COLLAPSED_GROUPS_KEY, JSON.stringify([...next])); } catch { /* private mode */ }
+      return next;
+    });
+  }, [location.pathname]);
 
   const handleLogout = async () => {
     await logout();
@@ -95,19 +146,33 @@ export default function Sidebar({ mobileOpen }) {
       <nav className="sidebar__nav">
         {navGroups.map((group, groupIndex) => {
           const visibleGroupItems = group.items.filter(
-            (item) => !item.perm || hasPermission(item.perm, 'read')
+            // Two different reasons a link is absent: the person may not use the page
+            // (permission), or has been told not to be shown it (hidden_pages).
+            (item) => (!item.perm || hasPermission(item.perm, 'read')) && !isPageHidden(item.path)
           );
           
           if (visibleGroupItems.length === 0) return null;
 
+          // With the whole sidebar collapsed to icons there are no headings to fold,
+          // so every group stays open — otherwise links would vanish with nothing to
+          // click to bring them back.
+          const isOpen = collapsed || !closedGroups.has(group.titleKey);
+
           return (
             <div key={groupIndex} className="sidebar__group">
               {!collapsed && (
-                <div className="sidebar__group-title">
-                  {t(group.titleKey)}
-                </div>
+                <button
+                  type="button"
+                  className={`sidebar__group-title sidebar__group-title--toggle ${isOpen ? '' : 'is-closed'}`}
+                  data-testid={`sidebar-group-${group.titleKey}`}
+                  aria-expanded={isOpen}
+                  onClick={() => toggleGroup(group.titleKey)}
+                >
+                  <span>{t(group.titleKey)}</span>
+                  <HiOutlineChevronDown size={14} className="sidebar__group-chevron" />
+                </button>
               )}
-              {visibleGroupItems.map((item) => (
+              {isOpen && visibleGroupItems.map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.path}

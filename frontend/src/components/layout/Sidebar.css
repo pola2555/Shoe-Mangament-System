@@ -261,3 +261,40 @@
     transform: translateX(0);
   }
 }
+
+/* Collapsible group headings. The heading was a plain div; as a button it needs the
+   button defaults stripped back to what the div looked like. */
+.sidebar__group-title--toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: start;
+}
+
+.sidebar__group-title--toggle:hover {
+  color: var(--color-text-primary);
+}
+
+.sidebar__group-chevron {
+  flex-shrink: 0;
+  transition: transform 0.18s ease;
+  opacity: 0.7;
+}
+
+/* Points right when folded — in RTL it points the other way, which is why this is a
+   logical rotation rather than a fixed -90deg. */
+.sidebar__group-title--toggle.is-closed .sidebar__group-chevron {
+  transform: rotate(-90deg);
+}
+
+[dir="rtl"] .sidebar__group-title--toggle.is-closed .sidebar__group-chevron {
+  transform: rotate(90deg);
+}

@@ -3,8 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { purchasesAPI, productsAPI, storesAPI, suppliersAPI, boxTemplatesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
-import { formatSize, compareSize } from '../../utils/variantFormat';
+import { formatSize, compareSize, formatColor } from '../../utils/variantFormat';
 import { today } from '../../utils/dates';
+import useProductCategory from '../../hooks/useProductCategory';
+import SizeValueInput from '../../components/catalog/SizeValueInput';
+import SizeRunPicker from '../../components/catalog/SizeRunPicker';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import ImageViewerModal from '../../components/common/ImageViewerModal';
 import { useTranslation } from '../../i18n/i18nContext';
@@ -17,7 +20,7 @@ export default function PurchaseDetailPage() {
   const navigate = useNavigate();
   const { hasPermission, filterStores } = useAuth();
   const canWrite = hasPermission('purchases', 'write');
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
   const [invoice, setInvoice] = useState(null);
   const [products, setProducts] = useState([]);
@@ -31,7 +34,6 @@ export default function PurchaseDetailPage() {
   const [boxForm, setBoxForm] = useState({
     product_id: '', product_color_id: '', cost_per_item: '', total_items: '', destination_store_id: '', notes: '',
   });
-  const [colorOptions, setColorOptions] = useState([]);
 
   // Box items form
   const [editingBoxId, setEditingBoxId] = useState(null);
@@ -119,7 +121,7 @@ export default function PurchaseDetailPage() {
     if (!saveTemplateName.trim()) { toast.error(t('common.error')); return; }
     try {
       const items = colorGroups.flatMap(group => {
-        const colorObj = colorOptions.find(c => c.id === group.color_id);
+        const colorObj = editingCategory.colors.find(c => c.id === group.color_id);
         const colorLabel = colorObj ? colorObj.color_name : '';
         return group.sizes.filter(s => s.size_eu && s.quantity).map(s => ({
           size: s.size_eu,
@@ -148,16 +150,10 @@ export default function PurchaseDetailPage() {
 
   // --- Load colors when product changes ---
   const handleProductChange = async (productId) => {
+    loadSuggestion(productId, { prefillForm: true });
     setBoxForm({ ...boxForm, product_id: productId });
-    // Reset colors/sizes array
-    if (productId) {
-      try {
-        const { data } = await productsAPI.listColors(productId);
-        setColorOptions(data.data);
-      } catch { setColorOptions([]); }
-    } else { 
-      setColorOptions([]); 
-    }
+    // The colours arrive from useProductCategory(boxForm.product_id) alongside the size
+    // list, so there is nothing to load here beyond clearing what was typed.
     setColorGroups([{ color_id: '', sizes: [{ size_eu: '', size_us: '', size_uk: '', size_cm: '', quantity: '' }] }]);
   };
 
@@ -225,11 +221,17 @@ export default function PurchaseDetailPage() {
   const [editBoxDetails, setEditBoxDetails] = useState({ product_id: '', destination_store_id: '' });
   const [colorGroups, setColorGroups] = useState([]);
 
-  // Smart Box Items Generator states
+  // Which colour the size-run picker is adding to.
   const [boxGenColor, setBoxGenColor] = useState('');
-  const [boxGenStart, setBoxGenStart] = useState('');
-  const [boxGenEnd, setBoxGenEnd] = useState('');
-  const [boxGenQty, setBoxGenQty] = useState('1');
+
+  // What the last box of this product looked like. Offered, never applied on its own.
+  const [suggestion, setSuggestion] = useState(null);
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
+
+  // The category of whichever product is being edited, so the size column knows what a
+  // size looks like here instead of assuming EU shoe sizes.
+  const editingCategory = useProductCategory(editBoxDetails.product_id || null);
+  const formCategory = useProductCategory(boxForm.product_id || null);
   
   const startEditItems = async (box) => {
     setEditingBoxId(box.id);
@@ -237,16 +239,9 @@ export default function PurchaseDetailPage() {
       product_id: box.product_id || '',
       destination_store_id: box.destination_store_id || '',
     });
-    
-    // Load colors right away if product is selected
-    if (box.product_id) {
-      try {
-        const { data } = await productsAPI.listColors(box.product_id);
-        setColorOptions(data.data);
-      } catch { setColorOptions([]); }
-    } else {
-      setColorOptions([]);
-    }
+
+    setSuggestionDismissed(false);
+    if (box.product_id) loadSuggestion(box.product_id);
 
     if (box.items && box.items.length > 0) {
       // Group by color
@@ -269,14 +264,78 @@ export default function PurchaseDetailPage() {
     }
   };
 
-  const handleEditProductChange = async (productId) => {
+  /**
+   * Look up what the last box of this product looked like.
+   *
+   * Prefills the cost and count only when they are still empty — overwriting a number
+   * the user has already typed would be the system arguing with them.
+   */
+  const loadSuggestion = async (productId, { prefillForm = false } = {}) => {
+    setSuggestion(null);
+    setSuggestionDismissed(false);
+    if (!productId) return;
+    try {
+      const { data } = await purchasesAPI.boxSuggestion(productId);
+      const last = data.data;
+      if (!last) return;
+      setSuggestion(last);
+      if (prefillForm) {
+        setBoxForm((f) => ({
+          ...f,
+          cost_per_item: f.cost_per_item || String(parseFloat(last.cost_per_item)),
+          total_items: f.total_items || String(last.total_items),
+        }));
+      }
+    } catch { /* a suggestion is a convenience; its absence changes nothing */ }
+  };
+
+  const handleEditProductChange = (productId) => {
     setEditBoxDetails({ ...editBoxDetails, product_id: productId });
-    if (productId) {
-      try {
-        const { data } = await productsAPI.listColors(productId);
-        setColorOptions(data.data);
-      } catch { setColorOptions([]); }
-    } else { setColorOptions([]); }
+  };
+
+  /**
+   * Turn the generated rows into colour groups.
+   *
+   * Sizes already present in the group are skipped rather than duplicated — a second
+   * run over an overlapping range should top up what is missing, not create a second
+   * row for the same size.
+   */
+  const applyGeneratedSizes = (rows) => {
+    if (!rows.length) return;
+    const updated = JSON.parse(JSON.stringify(colorGroups));
+    const withSizeFields = rows.map((r) => ({
+      size_eu: r.size_eu, size_us: '', size_uk: '', size_cm: '', quantity: r.quantity,
+    }));
+
+    let groupIdx = updated.findIndex((g) => g.color_id === boxGenColor);
+    if (groupIdx === -1) {
+      // Drop the untouched empty group rather than leaving it above the new one.
+      if (updated.length === 1 && updated[0].color_id === '' && updated[0].sizes.length === 1 && !updated[0].sizes[0].size_eu) {
+        updated.pop();
+      }
+      updated.push({ color_id: boxGenColor, sizes: withSizeFields });
+    } else {
+      const existing = new Set(updated[groupIdx].sizes.map((x) => x.size_eu));
+      updated[groupIdx].sizes.push(...withSizeFields.filter((x) => !existing.has(x.size_eu)));
+      updated[groupIdx].sizes.sort(compareSize);
+    }
+    setColorGroups(updated);
+  };
+
+  /** Fill the editor from the last box of this product. Everything stays editable. */
+  const applySuggestedItems = () => {
+    if (!suggestion?.items?.length) return;
+    const groups = new Map();
+    for (const i of suggestion.items) {
+      const key = i.product_color_id || '';
+      if (!groups.has(key)) groups.set(key, { color_id: key, sizes: [] });
+      groups.get(key).sizes.push({
+        size_eu: i.size_eu, size_us: i.size_us || '', size_uk: i.size_uk || '',
+        size_cm: i.size_cm != null ? i.size_cm : '', quantity: String(i.quantity),
+      });
+    }
+    setColorGroups([...groups.values()]);
+    toast.success(t('purchases.suggestion_applied'));
   };
 
   const addColorGroup = () => {
@@ -311,50 +370,35 @@ export default function PurchaseDetailPage() {
     setColorGroups(updated);
   };
 
-  const handleSmartGenerateBoxItems = () => {
-    if (!boxGenStart || !boxGenEnd) {
-      toast.error(t('common.error'));
-      return;
-    }
-    const start = parseInt(boxGenStart, 10);
-    const end = parseInt(boxGenEnd, 10);
-    if (isNaN(start) || isNaN(end) || start > end) {
-      toast.error(t('common.error'));
-      return;
-    }
-    
-    // Create new items
-    const newItems = [];
-    const qty = parseInt(boxGenQty) || 1;
-    for (let s = start; s <= end; s++) {
-      newItems.push({ size_eu: String(s), size_us: '', size_uk: '', size_cm: '', quantity: String(qty) });
-    }
+  /**
+   * Copy a box and its items. A shipment is usually several identical boxes, and each
+   * one was being typed out from nothing.
+   */
+  /**
+   * The size scale of a box's product, for displaying box items.
+   *
+   * box_items carry only a size string, so without this the formatter falls back to
+   * its legacy assumption and a sock box reads "EU KIDS". products.list already
+   * returns the prefix, suffix and has_sizes, so no extra request is needed.
+   */
+  const scaleOfProduct = (productId) => {
+    const p = products.find((x) => x.id === productId);
+    if (!p) return {};
+    return {
+      size_prefix: p.display_prefix ?? '',
+      size_suffix: p.display_suffix ?? '',
+      has_sizes: p.has_sizes,
+    };
+  };
 
-    const updated = JSON.parse(JSON.stringify(colorGroups));
-    
-    // Find if a color group already exists for this color
-    let groupIdx = updated.findIndex((g) => g.color_id === boxGenColor);
-    if (groupIdx === -1) {
-      // Remove the completely empty group if it's there
-      if (updated.length === 1 && updated[0].color_id === '' && updated[0].sizes.length === 1 && !updated[0].sizes[0].size_eu) {
-        updated.pop();
-      }
-      updated.push({ color_id: boxGenColor, sizes: newItems });
-    } else {
-      // Append strictly non-overlapping sizes to the existing group
-      const existingSizes = new Set(updated[groupIdx].sizes.map(s => s.size_eu));
-      const filteredNewItems = newItems.filter(i => !existingSizes.has(i.size_eu));
-      if (filteredNewItems.length < newItems.length) {
-         toast.success(t('common.success'));
-      }
-      updated[groupIdx].sizes.push(...filteredNewItems);
-      // Sort existing group sizes nicely
-      // compareSize falls back to a numeric parse, so numeric sizes behave exactly as
-      // before while 'Kids' and 'M' stop landing in arbitrary order.
-      updated[groupIdx].sizes.sort(compareSize);
+  const handleDuplicateBox = async (boxId) => {
+    try {
+      await purchasesAPI.duplicateBox(boxId);
+      toast.success(t('purchases.box_duplicated'));
+      fetchInvoice();
+    } catch (err) {
+      toast.error(err.response?.data?.message || t('common.error'));
     }
-    
-    setColorGroups(updated);
   };
 
   const handleSaveBoxAll = async () => {
@@ -657,7 +701,7 @@ export default function PurchaseDetailPage() {
                         ...templates.filter(tmpl => !tmpl.product_id || tmpl.product_id !== boxForm.product_id).map(tmpl => ({ value: tmpl.id, label: `${tmpl.name} (${tmpl.items.reduce((s,i) => s+i.quantity,0)} ${t('common.items')})${tmpl.product_name ? ' — ' + tmpl.product_name : ''}` }))
                       ]}
                       value=""
-                      onChange={(e) => { if (e.target.value) applyTemplate(e.target.value, colorOptions); }}
+                      onChange={(e) => { if (e.target.value) applyTemplate(e.target.value, formCategory.colors); }}
                     />
                   </div>
                 </div>
@@ -706,12 +750,12 @@ export default function PurchaseDetailPage() {
                   {/* Box Items */}
                   {box.items && box.items.length > 0 && (
                     <div style={{ marginTop: 'var(--spacing-md)' }}>
-                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 6 }}>{t('products.size')} & {t('products.colors')}:</div>
+                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', marginBottom: 6 }}>{t('products.size_generic')} & {t('products.colors')}:</div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {box.items.map((item, i) => (
                           <span key={i} className="badge badge-neutral" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            {item.color_name && <strong style={{color: 'var(--color-primary)'}}>{item.color_name}</strong>}
-                            {formatSize(item)} ×{item.quantity}
+                            {formatColor(item) && <strong style={{color: 'var(--color-primary)'}}>{formatColor(item)}</strong>}
+                            {formatSize({ ...item, ...scaleOfProduct(box.product_id) }, locale)} ×{item.quantity}
                           </span>
                         ))}
                       </div>
@@ -721,6 +765,11 @@ export default function PurchaseDetailPage() {
                   {/* Actions */}
                   {canWrite && box.detail_status !== 'complete' && (
                     <div style={{ marginTop: 'var(--spacing-md)', display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
+                      {/* A shipment is usually several identical boxes. */}
+                      <button className="btn btn-sm btn-secondary" data-testid={`duplicate-box-${box.id}`}
+                        title={t('purchases.duplicate_box')} onClick={() => handleDuplicateBox(box.id)}>
+                        ⧉ {t('purchases.duplicate_box')}
+                      </button>
                       <button className="btn btn-sm btn-secondary" onClick={() => startEditItems(box)}>
                         {box.items?.length ? t('common.edit') : `+ ${t('purchases.box_items')}`}
                       </button>
@@ -737,6 +786,15 @@ export default function PurchaseDetailPage() {
                       <span style={{ color: 'var(--color-success)', fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>
                         ✓ {t('purchases.complete_box')}
                       </span>
+                      {/* A completed box is the one most worth duplicating: it arrived,
+                          and the next identical one is on the same lorry. The copy is
+                          created incomplete, so it creates no inventory by itself. */}
+                      {canWrite && (
+                        <button className="btn btn-sm btn-secondary" data-testid={`duplicate-box-${box.id}`}
+                          onClick={() => handleDuplicateBox(box.id)}>
+                          ⧉ {t('purchases.duplicate_box')}
+                        </button>
+                      )}
                       <button
                         className="btn btn-sm btn-secondary"
                         onClick={() => setLabelBoxId(box.id)}
@@ -763,7 +821,7 @@ export default function PurchaseDetailPage() {
                               ...templates.filter(tmpl => !tmpl.product_id || tmpl.product_id !== editBoxDetails.product_id).map(tmpl => ({ value: tmpl.id, label: `${tmpl.name} (${tmpl.items.reduce((s,i) => s+i.quantity,0)} ${t('common.items')})${tmpl.product_name ? ' — ' + tmpl.product_name : ''}` }))
                             ]}
                             value=""
-                            onChange={(e) => { if (e.target.value) applyTemplate(e.target.value, colorOptions); }}
+                            onChange={(e) => { if (e.target.value) applyTemplate(e.target.value, editingCategory.colors); }}
                           />
                         </div>
                       </div>
@@ -793,58 +851,71 @@ export default function PurchaseDetailPage() {
                         </div>
                       </div>
 
-                      <div style={{ marginBottom: 'var(--spacing-md)', padding: 'var(--spacing-md)', backgroundColor: 'var(--color-bg-base)', borderRadius: 8, border: '1px solid var(--color-primary)' }}>
-                        <h4 style={{ marginBottom: 'var(--spacing-md)', color: 'var(--color-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          ⚡ {t('products.smart_generator')}
-                        </h4>
-                        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginBottom: 8 }}>{t('products.select_colors_generate')}</p>
-                        <div className="form-row" style={{ alignItems: 'flex-end', marginBottom: 0 }}>
-                          <div className="form-group" style={{ flex: 1.5, margin: 0 }}>
-                            <label className="form-label">{t('products.color_name')}</label>
-                            <SearchableSelect
-                              options={[
-                                { value: '', label: t('common.select') },
-                                ...colorOptions.map((c) => ({ value: c.id, label: c.color_name }))
-                              ]}
-                              value={boxGenColor}
-                              onChange={(e) => setBoxGenColor(e.target.value)}
-                            />
+                      {/* Offered from the last box of this product. Nothing is applied
+                          until the button is pressed, and everything stays editable. */}
+                      {suggestion?.items?.length > 0 && !suggestionDismissed && (
+                        <div className="card" data-testid="box-suggestion" style={{
+                          marginBottom: 'var(--spacing-md)', padding: 'var(--spacing-md)',
+                          background: 'var(--color-bg-secondary)', border: '1px dashed var(--color-primary)',
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: '.9em' }}>
+                              {t('purchases.suggestion_from', {
+                                invoice: suggestion.invoice_number || '—',
+                                items: suggestion.items.reduce((n, i) => n + i.quantity, 0),
+                              })}
+                            </span>
+                            <span style={{ display: 'flex', gap: 6 }}>
+                              <button type="button" className="btn btn-sm btn-primary" data-testid="apply-suggestion"
+                                onClick={applySuggestedItems}>{t('purchases.use_last_box')}</button>
+                              <button type="button" className="btn btn-sm btn-secondary"
+                                onClick={() => setSuggestionDismissed(true)}>{t('common.dismiss')}</button>
+                            </span>
                           </div>
-                          <div className="form-group" style={{ flex: 1, margin: 0 }}>
-                            <label className="form-label">{t('products.start_size')}</label>
-                            <input className="form-input" type="number" value={boxGenStart} onChange={e => setBoxGenStart(e.target.value)} placeholder="38" />
-                          </div>
-                          <div className="form-group" style={{ flex: 1, margin: 0 }}>
-                            <label className="form-label">{t('products.end_size')}</label>
-                            <input className="form-input" type="number" value={boxGenEnd} onChange={e => setBoxGenEnd(e.target.value)} placeholder="45" />
-                          </div>
-                          <div className="form-group" style={{ flex: 1, margin: 0 }}>
-                            <label className="form-label">{t('common.quantity')}</label>
-                            <input className="form-input" type="number" min="1" value={boxGenQty} onChange={e => setBoxGenQty(e.target.value)} placeholder="1" />
-                          </div>
-                          <button type="button" className="btn btn-primary" onClick={handleSmartGenerateBoxItems}>
-                            {t('products.generate_preview')}
-                          </button>
                         </div>
-                      </div>
+                      )}
+
+                      {/* Only where there is a size to pick. A bag has one row and no
+                          size column, so a generator would have nothing to generate. */}
+                      {editingCategory.hasSizes && (
+                        <SizeRunPicker
+                          colors={editingCategory.colors}
+                          colorId={boxGenColor}
+                          onColorChange={setBoxGenColor}
+                          hasColors={editingCategory.hasColors}
+                          sizeValues={editingCategory.sizeValues}
+                          isNumeric={editingCategory.isNumeric}
+                          locale={locale}
+                          onGenerate={applyGeneratedSizes}
+                        />
+                      )}
 
                       <h4 style={{ marginBottom: 'var(--spacing-sm)', fontSize: '1em' }}>{t('purchases.box_items')} ({t('common.total')}: {box.total_items})</h4>
                       
                       {colorGroups.map((group, gIdx) => (
                         <div key={gIdx} style={{ marginBottom: 'var(--spacing-md)', padding: 'var(--spacing-md)', backgroundColor: 'var(--color-bg-base)', borderRadius: 8, border: '1px solid var(--color-border)', overflowX: 'auto' }}>
                           <div style={{ display: 'flex', gap: 'var(--spacing-md)', alignItems: 'center', marginBottom: 'var(--spacing-sm)', minWidth: 600 }}>
-                            <div className="form-group" style={{ margin: 0, width: 250 }}>
-                              <SearchableSelect
-                                required
-                                options={[
-                                  { value: '', label: `${t('products.color_name')}...` },
-                                  ...colorOptions.map((c) => ({ value: c.id, label: c.color_name }))
-                                ]}
-                                value={group.color_id}
-                                onChange={(e) => updateColorGroupColor(gIdx, e.target.value)}
-                                style={{ borderColor: 'var(--color-primary)' }}
-                              />
-                            </div>
+                            {/* A category with no colours resolves to its placeholder
+                                server-side, so asking for one here would be a question
+                                with no answer. */}
+                            {editingCategory.hasColors ? (
+                              <div className="form-group" style={{ margin: 0, width: 250 }}>
+                                <SearchableSelect
+                                  required
+                                  options={[
+                                    { value: '', label: `${t('products.color_name')}...` },
+                                    ...editingCategory.colors.map((c) => ({ value: c.id, label: c.color_name }))
+                                  ]}
+                                  value={group.color_id}
+                                  onChange={(e) => updateColorGroupColor(gIdx, e.target.value)}
+                                  style={{ borderColor: 'var(--color-primary)' }}
+                                />
+                              </div>
+                            ) : (
+                              <span style={{ color: 'var(--color-text-secondary)' }}>
+                                {t('products.no_colors_product')}
+                              </span>
+                            )}
                             {colorGroups.length > 1 && (
                               <button className="btn btn-sm btn-danger" onClick={() => removeColorGroup(gIdx)}>{t('common.delete')}</button>
                             )}
@@ -854,37 +925,64 @@ export default function PurchaseDetailPage() {
                             <table className="table" style={{ width: '100%', minWidth: 600 }}>
                               <thead>
                                 <tr>
-                                  <th style={{width: 60, padding: '0.5rem'}}>EU *</th>
+                                  {/* The size list's own unit, not a hardcoded "EU".
+                                      A sock box asks for Kids / Teens / Adults. */}
+                                  {editingCategory.hasSizes && (
+                                    <th style={{ width: 90, padding: '0.5rem' }}>
+                                      {t('products.size_generic')}
+                                      {editingCategory.prefix || editingCategory.suffix
+                                        ? ` (${editingCategory.prefix || editingCategory.suffix})` : ''} *
+                                    </th>
+                                  )}
                                   <th style={{width: 60, padding: '0.5rem'}}>{t('common.quantity')} *</th>
-                                  <th style={{width: 55, padding: '0.5rem'}}>US</th>
-                                  <th style={{width: 55, padding: '0.5rem'}}>UK</th>
-                                  <th style={{width: 60, padding: '0.5rem'}}>CM</th>
+                                  {/* Shoe conversions only mean something on a shoe. */}
+                                  {editingCategory.hasSizes && editingCategory.isNumeric && (
+                                    <>
+                                      <th style={{width: 55, padding: '0.5rem'}}>US</th>
+                                      <th style={{width: 55, padding: '0.5rem'}}>UK</th>
+                                      <th style={{width: 60, padding: '0.5rem'}}>CM</th>
+                                    </>
+                                  )}
                                   <th style={{width: 40, padding: '0.5rem'}}></th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {group.sizes.map((item, rowIdx) => (
                                   <tr key={rowIdx}>
-                                    <td style={{padding: '0.2rem 0.5rem'}}>
-                                      <input className="form-input" required value={item.size_eu} style={{ padding: '0.4rem', minWidth: 40 }}
-                                        onChange={(e) => updateSizeRow(gIdx, rowIdx, 'size_eu', e.target.value)} />
-                                    </td>
+                                    {editingCategory.hasSizes && (
+                                      <td style={{padding: '0.2rem 0.5rem'}}>
+                                        <SizeValueInput
+                                          required
+                                          value={item.size_eu}
+                                          sizeValues={editingCategory.sizeValues}
+                                          locale={locale}
+                                          style={{ padding: '0.4rem', minWidth: 70 }}
+                                          onChange={(v) => updateSizeRow(gIdx, rowIdx, 'size_eu', v)}
+                                        />
+                                      </td>
+                                    )}
                                     <td style={{padding: '0.2rem 0.5rem'}}>
                                       <input className="form-input" required type="number" min="1" value={item.quantity} style={{ padding: '0.4rem', minWidth: 40 }}
                                         onChange={(e) => updateSizeRow(gIdx, rowIdx, 'quantity', e.target.value)} />
                                     </td>
-                                    <td style={{padding: '0.2rem 0.5rem'}}>
-                                        <input className="form-input" value={item.size_us} style={{ padding: '0.4rem', minWidth: 40 }} 
-                                        onChange={(e) => updateSizeRow(gIdx, rowIdx, 'size_us', e.target.value)} />
-                                    </td>
-                                    <td style={{padding: '0.2rem 0.5rem'}}>
-                                        <input className="form-input" value={item.size_uk} style={{ padding: '0.4rem', minWidth: 40 }} 
-                                        onChange={(e) => updateSizeRow(gIdx, rowIdx, 'size_uk', e.target.value)} />
-                                    </td>
-                                    <td style={{padding: '0.2rem 0.5rem'}}>
-                                        <input className="form-input" type="number" step="0.1" value={item.size_cm} style={{ padding: '0.4rem', minWidth: 45 }} 
-                                        onChange={(e) => updateSizeRow(gIdx, rowIdx, 'size_cm', e.target.value)} />
-                                    </td>
+                                    {/* A US/UK/CM conversion only means something
+                                        on a shoe. A sock has no US size. */}
+                                    {editingCategory.hasSizes && editingCategory.isNumeric && (
+                                      <>
+                                      <td style={{padding: '0.2rem 0.5rem'}}>
+                                          <input className="form-input" value={item.size_us} style={{ padding: '0.4rem', minWidth: 40 }} 
+                                          onChange={(e) => updateSizeRow(gIdx, rowIdx, 'size_us', e.target.value)} />
+                                      </td>
+                                      <td style={{padding: '0.2rem 0.5rem'}}>
+                                          <input className="form-input" value={item.size_uk} style={{ padding: '0.4rem', minWidth: 40 }} 
+                                          onChange={(e) => updateSizeRow(gIdx, rowIdx, 'size_uk', e.target.value)} />
+                                      </td>
+                                      <td style={{padding: '0.2rem 0.5rem'}}>
+                                          <input className="form-input" type="number" step="0.1" value={item.size_cm} style={{ padding: '0.4rem', minWidth: 45 }} 
+                                          onChange={(e) => updateSizeRow(gIdx, rowIdx, 'size_cm', e.target.value)} />
+                                      </td>
+                                      </>
+                                    )}
                                     <td style={{padding: '0.2rem 0.5rem', textAlign: 'right'}}>
                                       {group.sizes.length > 1 && (
                                         <button className="btn btn-sm btn-danger" style={{ padding: '0.2rem 0.4rem' }} onClick={() => removeSizeRow(gIdx, rowIdx)}>✕</button>

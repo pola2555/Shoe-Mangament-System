@@ -4,6 +4,7 @@ import { suppliersAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import { useTranslation } from '../../i18n/i18nContext';
+import { useConfirm } from '../../components/common/ConfirmDialog';
 import '../products/Products.css';
 
 export default function SuppliersListPage() {
@@ -15,6 +16,7 @@ export default function SuppliersListPage() {
   const { hasPermission } = useAuth();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const confirm = useConfirm();
 
   useEffect(() => { fetchSuppliers(); }, []);
 
@@ -54,7 +56,12 @@ export default function SuppliersListPage() {
 
   const handleDelete = async (e, id) => {
     e.stopPropagation();
-    if (!window.confirm(t('common.are_you_sure'))) return;
+    if (!await confirm({
+      title: t('suppliers.deactivate_title'),
+      message: t('suppliers.deactivate_confirm'),
+      danger: true,
+      confirmText: t('common.confirm'),
+    })) return;
     try {
       await suppliersAPI.delete(id);
       toast.success('Supplier deleted');

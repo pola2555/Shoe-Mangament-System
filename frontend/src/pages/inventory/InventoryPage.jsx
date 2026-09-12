@@ -539,8 +539,11 @@ export default function InventoryPage() {
           >
             🏷 {t('barcode.print_labels')}
           </button>
-          <button className="btn btn-secondary" onClick={handleExportWord} disabled={exportingWord}>
-            {exportingWord ? 'جاري التحميل...' : 'تصدير وورد'}
+          {/* Was hard-coded Arabic, so an English UI carried one Arabic button in the
+              middle of its toolbar. */}
+          <button className="btn btn-secondary" onClick={handleExportWord} disabled={exportingWord}
+            data-testid="inventory-export-word">
+            {exportingWord ? t('inventory.exporting') : t('inventory.export_word')}
           </button>
           <button className={`btn ${viewMode === 'summary' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setViewMode('summary')}>{t('inventory.summary')}</button>
@@ -694,8 +697,8 @@ export default function InventoryPage() {
                   <tr key={item.id} className="product-row">
                     <td><strong>{item.sku}</strong></td>
                     <td>{item.product_code} — {item.product_name}</td>
-                    <td>{item.color_name}</td>
-                    <td>{formatSize(item, locale)}</td>
+                    <td>{formatColor(item) || '—'}</td>
+                    <td>{formatSize(item, locale) || '—'}</td>
                     <td>{item.store_name}</td>
                     <td>{parseFloat(item.cost).toFixed(2)} {t('common.currency')}</td>
                     <td><span className={`badge ${item.source === 'purchase' ? 'badge-info' : 'badge-neutral'}`}>{item.source}</span></td>

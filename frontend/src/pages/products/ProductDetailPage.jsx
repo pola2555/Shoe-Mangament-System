@@ -16,6 +16,10 @@ export default function ProductDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
+  // The floor and ceiling. The server strips them for anyone without one of these
+  // (middleware/priceVisibility.js), so this only stops the page rendering "— – —".
+  const canSeeBand = hasPermission('price_override') || hasPermission('product_prices')
+    || hasPermission('discount_approval');
   const { t, locale } = useTranslation();
   const canWrite = hasPermission('products', 'write');
 
@@ -336,7 +340,9 @@ export default function ProductDetailPage() {
           </button>
           <p style={{ color: 'var(--color-text-secondary)' }}>{t('products.code')}: {product.product_code} &nbsp;•&nbsp;
             {t('products.sell')}: {product.default_selling_price ?? '—'} {t('common.currency')} &nbsp;•&nbsp;
-            {t('products.range')}: {product.min_selling_price ?? '—'} – {product.max_selling_price ?? '—'} {t('common.currency')}
+            {canSeeBand
+              ? `${t('products.range')}: ${product.min_selling_price ?? '—'} – ${product.max_selling_price ?? '—'} ${t('common.currency')}`
+              : ''}
           </p>
           {product.net_price != null && (
             <p
@@ -798,8 +804,12 @@ export default function ProductDetailPage() {
             <p style={{ color: 'var(--color-text-secondary)' }}>
               {t('products.cost')}: <strong>{product.net_price ?? '—'} {t('common.currency')}</strong> &nbsp;|&nbsp;
               {t('products.sell')}: <strong>{product.default_selling_price ?? '—'} {t('common.currency')}</strong> &nbsp;|&nbsp;
-              {t('products.min')}: <strong>{product.min_selling_price ?? '—'}</strong> &nbsp;|&nbsp;
-              {t('products.max')}: <strong>{product.max_selling_price ?? '—'}</strong>
+              {canSeeBand && (
+                <>
+                  {t('products.min')}: <strong>{product.min_selling_price ?? '—'}</strong> &nbsp;|&nbsp;
+                  {t('products.max')}: <strong>{product.max_selling_price ?? '—'}</strong>
+                </>
+              )}
             </p>
           </div>
 

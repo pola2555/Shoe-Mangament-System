@@ -15,10 +15,13 @@ import { catPath, monthInput, money } from './expenseHelpers';
  * A budget belongs to one store. Editing is inline: typing a number and leaving the
  * field saves it, and clearing it to 0 removes the budget entirely.
  */
-export default function BudgetsTab({ stores, canSetup }) {
+export default function BudgetsTab({ stores, storeId: pageStoreId, canSetup }) {
   const { t, locale } = useTranslation();
   const [month, setMonth] = useState(() => monthInput(new Date().toISOString()));
-  const [storeId, setStoreId] = useState(stores[0]?.id || '');
+  // A budget is always for exactly one store, so this tab needs a store even when the
+  // page header says "all". It follows the header when the header names one, and picks
+  // the first store otherwise.
+  const [storeId, setStoreId] = useState(pageStoreId || stores[0]?.id || '');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState({});
@@ -36,6 +39,7 @@ export default function BudgetsTab({ stores, canSetup }) {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (!storeId && stores.length) setStoreId(stores[0].id); }, [stores]);
+  useEffect(() => { if (pageStoreId) setStoreId(pageStoreId); }, [pageStoreId]);
 
   const save = async (categoryId, value) => {
     const amount = value === '' ? 0 : parseFloat(value);

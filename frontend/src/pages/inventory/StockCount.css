@@ -1,0 +1,33 @@
+/* Counting the shelf. See StockCountPage.jsx. */
+
+.count-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-md);
+}
+
+.count-sub {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+/* A full-shop count is hundreds of rows, so the table scrolls inside its own box and
+   the actions underneath stay reachable without scrolling past all of it. */
+.count-table {
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.count-input {
+  width: 90px;
+  padding: 0.3rem 0.45rem;
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .count-head { flex-direction: column; }
+  .count-table { max-height: none; }
+}

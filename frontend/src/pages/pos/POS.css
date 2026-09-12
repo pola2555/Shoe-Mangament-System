@@ -646,3 +646,194 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Undo, shown only for the sale just completed. Deliberately loud: it returns stock
+   and removes money from the day's takings, so it should not be mistaken for a hint. */
+.pos-undo-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.45rem 0.7rem;
+  margin-bottom: 0.5rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+  border: 1px solid var(--color-danger);
+  font-size: 0.85rem;
+}
+
+/* ============================================================
+   THE FULL-CART PROBLEM
+   ============================================================
+
+   With a real cart — a dozen lines or more — only two were visible on a phone. The
+   list did scroll, so nothing was unreachable, but reading the cart meant scrolling a
+   200px letterbox while the store and customer pickers sat above it taking a third of
+   the panel.
+
+   Those two are set once at the start of a sale, so they fold into a single line as
+   soon as there is something in the cart. The flex layout already pinned the totals
+   and the checkout button; giving the list back that space is all it needed. */
+
+.pos-cart-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  margin-bottom: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-base);
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-align: start;
+}
+
+.pos-cart-context:hover {
+  border-color: var(--color-accent);
+}
+
+.pos-cart-context > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pos-cart-context-edit {
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+
+/* A cart line is three rows at 360px — name, variant, then price and bin. Tightening
+   the type and padding fits noticeably more of the cart on screen without shrinking
+   the touch targets that matter. */
+@media (max-width: 480px) {
+  .pos-cart-item {
+    padding: 0.35rem 0.4rem;
+  }
+
+  .pos-cart-item-name {
+    font-size: 0.85rem;
+  }
+
+  .pos-cart-item-variant {
+    font-size: 0.75rem;
+  }
+}
+
+/* ── Filter chips ──────────────────────────────────────────────────────────
+   Three rows — category, size, colour — each independent of the others, each
+   chip carrying the number of pairs behind it so nothing on offer finds nothing. */
+
+.pos-chip-label {
+  align-self: center;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  padding-inline-end: 2px;
+  flex: 0 0 auto;
+}
+
+.pos-chip-count {
+  display: inline-block;
+  margin-inline-start: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 0.72em;
+  font-weight: 700;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.pos-category-chip--on .pos-chip-count {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.pos-color-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-inline-end: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  vertical-align: middle;
+}
+
+.pos-category-chip--clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-style: dashed;
+}
+
+/* A price that is hidden. Sized like the input it replaces so the cart line does not
+   jump when the toggle is used. */
+.pos-price-masked {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 2px;
+  color: var(--color-text-muted);
+  cursor: default;
+  user-select: none;
+}
+
+/* The drawer state, at the top of the till. Quiet when a shift is open, loud when not:
+   selling with no shift is allowed but that money belongs to no cash-up. */
+.pos-shift-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  padding: 0.4rem 0.75rem;
+  margin-bottom: var(--spacing-sm);
+  border-radius: var(--radius-md);
+  font-size: 0.85rem;
+}
+
+.pos-shift-strip--open {
+  background: rgba(34, 197, 94, 0.10);
+  border: 1px solid rgba(34, 197, 94, 0.45);
+}
+
+.pos-shift-strip--closed {
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.5);
+}
+
+.pos-shift-open-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs, 0.35rem);
+  flex-wrap: wrap;
+}
+
+.pos-shift-open-inline .form-input {
+  width: 120px;
+  padding: 0.25rem 0.4rem;
+}
+
+.pos-approved-discount { color: var(--color-success, #2e9e5b); }
+
+.pos-approval-clear {
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  margin-inline-start: 6px;
+  padding: 0;
+}
+
+.pos-ask-discount { width: 100%; margin-bottom: var(--spacing-sm); }
+
+.pos-seller-code { margin-bottom: var(--spacing-sm); }
+
+.discount-waiting { text-align: center; padding: var(--spacing-md) 0; }
+.discount-waiting .spinner { margin: var(--spacing-md) auto; }

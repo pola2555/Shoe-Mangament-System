@@ -3,20 +3,33 @@ import toast from 'react-hot-toast';
 import { auditLogAPI, usersAPI, storesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../i18n/i18nContext';
+import { useConfirm } from '../../components/common/ConfirmDialog';
 import '../products/Products.css';
 
+/**
+ * Both lists must match what middleware/activityLogger.js can actually emit. They had
+ * drifted: the till, the cash drawer, exchanges, stock counts, stock intakes,
+ * discounts, loans and barcodes were all missing, so those rows could be shown but
+ * never filtered for.
+ */
 const ACTION_OPTIONS = [
   'create', 'update', 'delete', 'login', 'logout',
-  'ship', 'receive', 'cancel', 'complete',
-  'set_permissions', 'set_stores', 'change_password',
+  'ship', 'receive', 'cancel', 'complete', 'duplicate',
+  'set_permissions', 'set_stores', 'change_password', 'set_preferences',
   'deactivate', 'toggle_active', 'manual_entry', 'mark_damaged',
   'bulk_create', 'set_items', 'upload',
+  'void', 'add_payment', 'set_staff', 'set_price', 'clear_price',
+  'open_shift', 'close_shift', 'reopen_shift', 'cash_movement',
+  'post_count', 'enter_counts', 'post_intake', 'revert_correction', 'recost',
+  'set_seller_code', 'clear_seller_code', 'decide_discount',
+  'assign', 'link', 'clear_barcode', 'post_recurring',
 ];
 
 const MODULE_OPTIONS = [
-  'auth', 'users', 'stores', 'products', 'purchases',
-  'inventory', 'transfers', 'customers', 'sales',
-  'dealers', 'expenses', 'returns', 'notifications',
+  'auth', 'users', 'stores', 'products', 'catalog', 'purchases',
+  'inventory', 'transfers', 'customers', 'sales', 'returns', 'exchanges',
+  'dealers', 'expenses', 'loans', 'shifts', 'stock_counts', 'stock_intakes',
+  'discounts', 'barcodes', 'notifications',
 ];
 
 const FIELD_LABELS = {
@@ -42,27 +55,70 @@ const FIELD_LABELS = {
   path: 'Page Path', page: 'Page',
 };
 
-function formatFieldValue(key, value) {
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * `names` is the id → name map the server resolves for the whole page
+ * (backend/src/utils/auditNames.js). Anything it could not resolve — a record since
+ * deleted, an id of a kind nothing looks up — falls back to a short id rather than a
+ * 36-character one, so a row stays readable either way.
+ */
+function nameOf(id, names) {
+  if (!UUID.test(String(id))) return String(id);
+  return names?.[id] || `#${String(id).slice(0, 8)}`;
+}
+
+function formatFieldValue(key, value, names) {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   if (key === 'is_active') return value ? 'Active' : 'Inactive';
   if ((key.includes('amount') || key.includes('price') || key === 'amount') && typeof value === 'number')
-    return `$${value.toFixed(2)}`;
-  if (Array.isArray(value)) return `${value.length} item${value.length !== 1 ? 's' : ''}`;
+    return `${value.toFixed(2)} EGP`;
+  if (Array.isArray(value)) {
+    // A list of ids is far more useful named than counted: "2 items" told nobody
+    // which two pairs went into a transfer.
+    const ids = value.filter((v) => UUID.test(String(v)));
+    if (ids.length && ids.length === value.length) {
+      const named = ids.slice(0, 3).map((v) => nameOf(v, names));
+      return named.join(', ') + (ids.length > 3 ? ` +${ids.length - 3} more` : '');
+    }
+    return `${value.length} item${value.length !== 1 ? 's' : ''}`;
+  }
   if (typeof value === 'object') return null; // skip nested objects in summary
-  return String(value);
+  return nameOf(value, names);
 }
 
 function formatLabel(key) {
   return FIELD_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function formatDetailsSummary(details) {
+/** Keys that are rendered in their own block rather than inline. */
+const BLOCK_KEYS = ['items', 'payments', 'fields', 'password', 'password_hash',
+  'deleted', 'deleted_type'];
+
+function formatDetailsSummary(details, names) {
   if (!details || typeof details !== 'object') return '—';
+
+  // A delete is summarised by WHAT WAS DELETED. The request body of a delete is empty,
+  // so without this the row reads "—" — which is what the log used to show for every
+  // delete in the system, 345 of them in this database alone.
+  if (details.deleted && typeof details.deleted === 'object') {
+    const d = details.deleted;
+    const headline = d.name || d.description || d.invoice_number || d.intake_number
+      || d.full_name || d.username || d.color_name || d.sku || d.borrower_name
+      || d.original_name || nameOf(d.id, names);
+    const extra = [
+      d.amount !== undefined ? `${Number(d.amount).toFixed(2)} EGP` : null,
+      d.phone || null,
+      d.expense_date || d.loan_date || d.invoice_date || null,
+    ].filter(Boolean);
+    return `${headline}${extra.length ? ' · ' + extra.join(' · ') : ''}`;
+  }
+
   const entries = Object.entries(details)
-    .filter(([k]) => !['items', 'payments', 'fields', 'password', 'password_hash'].includes(k))
+    .filter(([k]) => !BLOCK_KEYS.includes(k))
     .map(([k, v]) => {
-      const formatted = formatFieldValue(k, v);
+      const formatted = formatFieldValue(k, v, names);
       if (formatted === null) return null;
       return `${formatLabel(k)}: ${formatted}`;
     })
@@ -71,14 +127,14 @@ function formatDetailsSummary(details) {
   return entries.slice(0, 3).join(' · ') + (entries.length > 3 ? ' …' : '');
 }
 
-function DetailsTooltip({ details, action, module: mod, entityType }) {
+function DetailsTooltip({ details, action, module: mod, entityType, names }) {
   const [open, setOpen] = useState(false);
   if (!details || typeof details !== 'object') return <span style={{ color: 'var(--color-text-muted)' }}>—</span>;
 
-  const mainEntries = Object.entries(details)
-    .filter(([k]) => !['items', 'payments', 'fields', 'password', 'password_hash'].includes(k));
+  const mainEntries = Object.entries(details).filter(([k]) => !BLOCK_KEYS.includes(k));
   const itemsArr = details.items || details.payments;
   const fieldsArr = details.fields;
+  const deleted = details.deleted && typeof details.deleted === 'object' ? details.deleted : null;
 
   return (
     <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -87,7 +143,7 @@ function DetailsTooltip({ details, action, module: mod, entityType }) {
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
       >
-        {formatDetailsSummary(details)}
+        {formatDetailsSummary(details, names)}
       </span>
 
       {open && (
@@ -115,7 +171,7 @@ function DetailsTooltip({ details, action, module: mod, entityType }) {
           {/* Main fields */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {mainEntries.map(([k, v]) => {
-              const formatted = formatFieldValue(k, v);
+              const formatted = formatFieldValue(k, v, names);
               if (formatted === null) return null;
               return (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--spacing-sm)' }}>
@@ -129,6 +185,33 @@ function DetailsTooltip({ details, action, module: mod, entityType }) {
               );
             })}
           </div>
+
+          {/* What was destroyed. The whole point of auditing a delete: this record no
+              longer exists anywhere else, so the snapshot taken before the handler ran
+              (backend/src/middleware/auditTargets.js) is the only copy left. */}
+          {deleted && (
+            <div style={{ marginTop: 'var(--spacing-sm)', paddingTop: 'var(--spacing-sm)', borderTop: '1px solid var(--color-border)' }}>
+              <div style={{ fontSize: 'var(--font-size-xs)', fontWeight: 600, color: 'var(--color-danger, #c0392b)', marginBottom: 4 }}>
+                Deleted {details.deleted_type ? formatLabel(details.deleted_type) : 'record'}
+              </div>
+              {Object.entries(deleted)
+                .filter(([k]) => k !== 'id')
+                .map(([k, v]) => {
+                  const formatted = formatFieldValue(k, v, names);
+                  if (formatted === null) return null;
+                  return (
+                    <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--spacing-sm)' }}>
+                      <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+                        {formatLabel(k)}
+                      </span>
+                      <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-primary)', fontWeight: 500, textAlign: 'right' }}>
+                        {formatted}
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
 
           {/* Items sub-list */}
           {Array.isArray(itemsArr) && itemsArr.length > 0 && (
@@ -147,7 +230,7 @@ function DetailsTooltip({ details, action, module: mod, entityType }) {
                     .map(([ik, iv]) => (
                       <span key={ik}>
                         <span style={{ color: 'var(--color-text-muted)' }}>{formatLabel(ik)}: </span>
-                        {formatFieldValue(ik, iv) || String(iv)}
+                        {formatFieldValue(ik, iv, names) || String(iv)}
                       </span>
                     ))}
                 </div>
@@ -179,14 +262,35 @@ function DetailsTooltip({ details, action, module: mod, entityType }) {
   );
 }
 
+/**
+ * The name of the record a row is about.
+ *
+ * Prefers the server-resolved name; falls back to the delete snapshot, which is the
+ * only thing left when the record itself has been destroyed — and a delete is exactly
+ * the row somebody will be reading this page to understand.
+ */
+function entityName(log, names) {
+  if (!log.entity_id) return null;
+  if (names?.[log.entity_id]) return names[log.entity_id];
+  const d = log.details?.deleted;
+  if (d && typeof d === 'object') {
+    return d.name || d.description || d.full_name || d.username || d.invoice_number
+      || d.intake_number || d.color_name || d.sku || d.borrower_name || d.original_name
+      || null;
+  }
+  return null;
+}
+
 export default function ActivityLogPage() {
   const [logs, setLogs] = useState([]);
+  const [names, setNames] = useState({});
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
   const [stores, setStores] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 });
   const { filterStores, hasPermission } = useAuth();
   const { t } = useTranslation();
+  const confirm = useConfirm();
 
   // Filters
   const [filterUser, setFilterUser] = useState('');
@@ -220,6 +324,7 @@ export default function ActivityLogPage() {
 
       const res = await auditLogAPI.list(params);
       setLogs(res.data.data);
+      setNames(res.data.names || {});
       setPagination(res.data.pagination || { page: 1, totalPages: 1, total: 0 });
     } catch { toast.error('Failed to load activity log'); }
     finally { setLoading(false); }
@@ -240,7 +345,13 @@ export default function ActivityLogPage() {
   const activeFilters = [filterUser, filterModule, filterAction, filterStore, filterDateFrom, filterDateTo, filterSearch].filter(Boolean).length;
 
   const handleClearHistory = async () => {
-    if (!window.confirm(t('activity_log.clear_confirm'))) return;
+    if (!await confirm({
+      title: t('activity_log.clear_title'),
+      message: t('activity_log.clear_confirm'),
+      danger: true,
+      confirmText: t('activity_log.clear_history'),
+      facts: [{ label: t('activity_log.activities'), value: pagination.total, danger: true }],
+    })) return;
     try {
       const res = await auditLogAPI.clear();
       toast.success(res.data.message || 'History cleared');
@@ -366,12 +477,26 @@ export default function ActivityLogPage() {
                     </td>
                     <td style={{ fontSize: 'var(--font-size-sm)' }}>{log.module}</td>
                     <td style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-secondary)' }}>
+                      {/* This column used to read `store #10748133` — the entity's
+                          TYPE plus the first eight characters of its uuid, which
+                          identifies nothing to a person. It now shows the record's
+                          own name, resolved server-side for the whole page, and falls
+                          back to the deleted snapshot when the record is gone. */}
                       {log.entity_type && (
-                        <span>{log.entity_type}{log.entity_id ? ` #${String(log.entity_id).slice(0, 8)}` : ''}</span>
+                        <span>
+                          <span style={{ color: 'var(--color-text-muted)' }}>{formatLabel(log.entity_type)}</span>
+                          {entityName(log, names) && (
+                            <>
+                              {' · '}
+                              <strong style={{ color: 'var(--color-text-primary)' }}>{entityName(log, names)}</strong>
+                            </>
+                          )}
+                        </span>
                       )}
                     </td>
                     <td style={{ maxWidth: '280px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)' }}>
-                      <DetailsTooltip details={log.details} action={log.action} module={log.module} entityType={log.entity_type} />
+                      <DetailsTooltip details={log.details} action={log.action} module={log.module}
+                        entityType={log.entity_type} names={names} />
                     </td>
                     <td style={{ fontSize: 'var(--font-size-sm)' }}>{log.store_name || '—'}</td>
                   </tr>

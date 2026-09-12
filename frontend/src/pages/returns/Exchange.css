@@ -1,0 +1,285 @@
+/* Swapping something already bought. See ExchangePage.jsx. */
+
+/* Two mirrored columns: what comes back, what goes out. They collapse to one on a
+   phone, which is the right reading order — you pick the return first. */
+.exchange-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+}
+
+.exchange-grid > .card { min-width: 0; }
+
+.exchange-search {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.exchange-search .form-input { flex: 1; min-width: 0; }
+
+.exchange-stock {
+  max-height: 320px;
+  overflow: auto;
+}
+
+.exchange-taking {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs, 0.35rem);
+  margin-bottom: var(--spacing-sm);
+}
+
+.exchange-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: rgba(var(--color-primary-rgb), 0.12);
+  border: 1px solid var(--color-primary);
+  font-size: 0.85rem;
+}
+
+.exchange-chip button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.exchange-settle { margin-bottom: var(--spacing-lg); }
+
+.exchange-list {
+  margin: 0 0 var(--spacing-md);
+  padding-inline-start: 1.2rem;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 768px) {
+  .exchange-stock { max-height: 240px; }
+}
+
+/* ---------------------------------------------------------------- rebuilt flow
+   Three steps in the order the counter actually happens: find the sale, pick what
+   comes back, pick what goes out. See ExchangePage.jsx. */
+
+.exchange-steps {
+  display: flex;
+  gap: var(--spacing-md);
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.exchange-step {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.exchange-step__n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  font-size: var(--font-size-xs);
+}
+
+.exchange-step.is-current {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+.exchange-step.is-current .exchange-step__n {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.exchange-step.is-done .exchange-step__n {
+  background: var(--color-success, #2e7d32);
+  border-color: var(--color-success, #2e7d32);
+  color: #fff;
+}
+
+.exchange-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.exchange-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+}
+
+.exchange-line {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.exchange-line.is-picked {
+  border-color: var(--color-primary);
+  background: var(--color-bg-hover);
+}
+
+.exchange-line.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.exchange-line__img {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.exchange-line__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.exchange-line__name {
+  font-size: var(--font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exchange-line__price {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.exchange-scan-note {
+  margin: var(--spacing-sm) 0;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+}
+
+.exchange-scan-note.is-ok {
+  background: rgba(46, 125, 50, 0.12);
+}
+
+.exchange-scan-note.is-bad {
+  background: rgba(192, 57, 43, 0.12);
+}
+
+/* auto-fill, not auto-fit: a single result stays card-sized instead of stretching
+   across the whole panel. */
+.exchange-stock-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.exchange-stock-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+
+.exchange-stock-card:hover {
+  border-color: var(--color-primary);
+}
+
+.exchange-stock-card__img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+}
+
+.exchange-stock-card__name {
+  font-size: var(--font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.exchange-summary {
+  margin-top: var(--spacing-md);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.exchange-summary__figures {
+  display: flex;
+  gap: var(--spacing-xl);
+  flex-wrap: wrap;
+}
+
+.exchange-summary__figures > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.exchange-summary__controls {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+@media (max-width: 640px) {
+  .exchange-summary,
+  .exchange-summary__controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .exchange-summary__figures {
+    gap: var(--spacing-md);
+  }
+}
+
+/* The products inside a search result. Quiet, because the receipt number and the
+   customer are what identify the sale — this says why it matched. */
+.exchange-sale-products {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  max-width: 220px;
+}

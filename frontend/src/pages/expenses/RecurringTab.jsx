@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { expensesAPI } from '../../api';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
@@ -18,7 +18,7 @@ const FREQUENCIES = ['weekly', 'monthly', 'quarterly', 'yearly'];
  * The schedule advances from the date that WAS due, not from today, so a template
  * posted three weeks late still lands on the right day next month.
  */
-export default function RecurringTab({ categories, stores, canWrite, canSetup, onPosted }) {
+export default function RecurringTab({ categories, stores, storeId, canWrite, canSetup, onPosted }) {
   const { t, locale } = useTranslation();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,19 +26,21 @@ export default function RecurringTab({ categories, stores, canWrite, canSetup, o
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState(null);
 
-  const load = async () => {
+  // Follows the store chosen in the page header, so the three tabs never disagree
+  // about which branch is being looked at.
+  const load = useCallback(async () => {
     try {
       setLoading(true);
-      const { data } = await expensesAPI.listRecurring();
+      const { data } = await expensesAPI.listRecurring(storeId ? { store_id: storeId } : {});
       setRows(data.data || []);
     } catch { toast.error(t('common.error')); }
     finally { setLoading(false); }
-  };
+  }, [storeId]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const blank = () => ({
-    store_id: stores.length === 1 ? stores[0].id : '',
+    store_id: storeId || (stores.length === 1 ? stores[0].id : ''),
     category_id: '',
     amount: '',
     description: '',

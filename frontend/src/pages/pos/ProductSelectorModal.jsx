@@ -24,7 +24,17 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
         product_id: product.product_id,
         status: 'in_stock'
       });
-      setItems(res.data.data);
+      // Oldest pair first, so tapping a size sells the pair that has been sitting
+      // longest — the same rule the barcode scanner already follows.
+      //
+      // The list comes back newest-first (that is the right order for the inventory
+      // PAGE, which is why it is reversed here rather than there). Taking it as it
+      // came meant scanning and tapping handed out different pairs: the new stock
+      // went out first and the old stock aged at the back of the shelf, which also
+      // pushed reported margin around, since every pair carries its own cost.
+      setItems([...res.data.data].sort(
+        (a, b) => new Date(a.created_at) - new Date(b.created_at)
+      ));
     } catch (err) {
       toast.error(t('pos.failed_to_load_variants'));
       onClose();

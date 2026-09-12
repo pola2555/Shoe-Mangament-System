@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { transfersAPI, storesAPI, inventoryAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
-import { formatSize } from '../../utils/variantFormat';
+import { formatSize, formatColor } from '../../utils/variantFormat';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
@@ -252,8 +252,8 @@ export default function TransfersPage() {
                             <td>{item.product_code} — {item.model_name}</td>
                             <td>
                               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                {item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
-                                {item.color_name}
+                                {!item.color_is_placeholder && item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
+                                {formatColor(item) || '—'}
                               </span>
                             </td>
                             <td>{formatSize(item, locale)}</td>
@@ -311,11 +311,11 @@ export default function TransfersPage() {
                       <td>{item.product_code} — {item.product_name}</td>
                       <td>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
-                          {item.color_name}
+                          {!item.color_is_placeholder && item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
+                          {formatColor(item) || '—'}
                         </span>
                       </td>
-                      <td>{formatSize(item, locale)}</td>
+                      <td>{formatSize(item, locale) || '—'}</td>
                     </tr>
                   ))}
                 </tbody>

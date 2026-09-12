@@ -1,0 +1,62 @@
+/* Counting the drawer note by note. See DenominationCounter.jsx. */
+
+.denoms {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm);
+}
+
+.denoms__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.denoms__row {
+  display: grid;
+  /* Fixed first and last columns so the × and the line totals stay in a straight
+     line down the dialog — a ragged column is hard to scan when checking a count. */
+  grid-template-columns: 52px 14px 1fr 88px;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.denoms__face {
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  text-align: end;
+}
+
+.denoms__times {
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.denoms__input {
+  padding: 4px 8px;
+  text-align: center;
+}
+
+.denoms__line {
+  text-align: end;
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.denoms__line.is-zero {
+  color: transparent;
+}
+
+.denoms__total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--font-size-lg);
+}
+
+.denoms__total strong {
+  font-variant-numeric: tabular-nums;
+}

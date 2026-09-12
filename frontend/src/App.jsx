@@ -5,6 +5,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { auditLogAPI } from './api';
 import MainLayout from './components/layout/MainLayout';
 import RouteErrorBoundary from './components/common/RouteErrorBoundary';
+import useNumberScrollGuard from './hooks/useNumberScrollGuard';
+import { ConfirmProvider } from './components/common/ConfirmDialog';
 
 // Eager: the two entry points every session hits immediately.
 import LoginPage from './pages/auth/LoginPage';
@@ -19,6 +21,12 @@ const SuppliersListPage = lazy(() => import('./pages/suppliers/SuppliersListPage
 const PurchasesPage = lazy(() => import('./pages/purchases/PurchasesPage'));
 const PurchaseDetailPage = lazy(() => import('./pages/purchases/PurchaseDetailPage'));
 const InventoryPage = lazy(() => import('./pages/inventory/InventoryPage'));
+const StockIntakesPage = lazy(() => import('./pages/inventory/StockIntakesPage'));
+const StockIntakeDetailPage = lazy(() => import('./pages/inventory/StockIntakeDetailPage'));
+const StockCountPage = lazy(() => import('./pages/inventory/StockCountPage'));
+const ShiftsPage = lazy(() => import('./pages/shifts/ShiftsPage'));
+const ExchangePage = lazy(() => import('./pages/returns/ExchangePage'));
+const ApprovalsPage = lazy(() => import('./pages/pos/ApprovalsPage'));
 const POSPage = lazy(() => import('./pages/pos/POSPage'));
 const TransfersPage = lazy(() => import('./pages/transfers/TransfersPage'));
 const SalesPage = lazy(() => import('./pages/sales/SalesPage'));
@@ -27,6 +35,7 @@ const ExpensesPage = lazy(() => import('./pages/expenses/ExpensesPage'));
 const CustomersPage = lazy(() => import('./pages/customers/CustomersPage'));
 const ReturnsPage = lazy(() => import('./pages/returns/ReturnsPage'));
 const StoresPage = lazy(() => import('./pages/stores/StoresPage'));
+const StoreDetailPage = lazy(() => import('./pages/stores/StoreDetailPage'));
 const UsersPage = lazy(() => import('./pages/users/UsersPage'));
 const SupplierDetailPage = lazy(() => import('./pages/suppliers/SupplierDetailPage'));
 const BoxTemplatesPage = lazy(() => import('./pages/box-templates/BoxTemplatesPage'));
@@ -41,7 +50,8 @@ const LoansPage = lazy(() => import('./pages/loans/LoansPage'));
  * Redirects to /login if not authenticated.
  */
 function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, isPageHidden } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -54,6 +64,14 @@ function ProtectedRoute({ children }) {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // A page hidden from this person is also not reachable by typing its URL — hiding a
+  // link and leaving the address working is the sort of half-measure that reads as a
+  // control and is not one. The real protection is still the permission on the API;
+  // this only makes the menu and the address bar agree.
+  if (isPageHidden(location.pathname)) {
+    return <Navigate to="/" replace />;
   }
 
   return children;
@@ -143,6 +161,15 @@ function AppRoutes() {
         <Route path="box-templates" element={<PermissionRoute perm="box_templates"><BoxTemplatesPage /></PermissionRoute>} />
         <Route path="catalog-setup" element={<PermissionRoute perm="products"><CatalogSetupPage /></PermissionRoute>} />
         <Route path="inventory" element={<PermissionRoute perm="inventory"><InventoryPage /></PermissionRoute>} />
+        {/* Reading uses inventory:read so nobody is locked out of seeing what was
+            entered after the write permission is switched off. */}
+        <Route path="stock-counts" element={<PermissionRoute perm="inventory"><StockCountPage /></PermissionRoute>} />
+        {/* Reading the till is part of selling, so it rides with `shifts`. */}
+        <Route path="shifts" element={<PermissionRoute perm="shifts"><ShiftsPage /></PermissionRoute>} />
+        <Route path="exchanges" element={<PermissionRoute perm="exchanges"><ExchangePage /></PermissionRoute>} />
+        <Route path="approvals" element={<PermissionRoute perm="pos"><ApprovalsPage /></PermissionRoute>} />
+        <Route path="stock-intakes" element={<PermissionRoute perm="inventory"><StockIntakesPage /></PermissionRoute>} />
+        <Route path="stock-intakes/:id" element={<PermissionRoute perm="inventory"><StockIntakeDetailPage /></PermissionRoute>} />
         <Route path="purchases" element={<PermissionRoute perm="purchases"><PurchasesPage /></PermissionRoute>} />
         <Route path="purchases/:id" element={<PermissionRoute perm="purchases"><PurchaseDetailPage /></PermissionRoute>} />
         <Route path="transfers" element={<PermissionRoute perm="transfers"><TransfersPage /></PermissionRoute>} />
@@ -155,6 +182,7 @@ function AppRoutes() {
         <Route path="loans" element={<PermissionRoute perm="loans"><LoansPage /></PermissionRoute>} />
         <Route path="reports" element={<PermissionRoute perm="reports"><ReportsPage /></PermissionRoute>} />
         <Route path="stores" element={<PermissionRoute perm="stores"><StoresPage /></PermissionRoute>} />
+        <Route path="stores/:id" element={<PermissionRoute perm="stores"><StoreDetailPage /></PermissionRoute>} />
         <Route path="users" element={<PermissionRoute perm="users"><UsersPage /></PermissionRoute>} />
         <Route path="sales" element={<PermissionRoute perm="sales"><SalesPage /></PermissionRoute>} />
         <Route path="activity-log" element={<PermissionRoute perm="audit_log"><ActivityLogPage /></PermissionRoute>} />
@@ -170,10 +198,18 @@ function AppRoutes() {
 }
 
 export default function App() {
+  // Mounted once, for every number input in the app: a wheel over a focused one would
+  // otherwise rewrite the value, which on an invoice means silently editing money.
+  useNumberScrollGuard();
+
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        {/* Wraps the routes so any screen can ask a question in the app's own language
+            and styling instead of the browser's. See ConfirmDialog.jsx. */}
+        <ConfirmProvider>
+          <AppRoutes />
+        </ConfirmProvider>
         <Toaster
           position="top-right"
           toastOptions={{

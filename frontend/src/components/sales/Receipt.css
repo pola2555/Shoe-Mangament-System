@@ -1,0 +1,112 @@
+/* Customer receipt. See ReceiptModal.jsx — printing is deliberately optional. */
+
+.receipt-modal {
+  max-width: 720px;
+  width: 95%;
+}
+
+.receipt-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+}
+
+.receipt-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.receipt-widths {
+  display: flex;
+  gap: 4px;
+}
+
+/* The on-screen preview mimics the paper so a person can see what will come out —
+   the same width, the same wrapping — without opening the print dialog to find out. */
+.receipt-preview {
+  margin-top: var(--spacing-md);
+  max-height: 60vh;
+  overflow: auto;
+  background: #f4f4f4;
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  display: flex;
+  justify-content: center;
+}
+
+.receipt-preview .receipt {
+  background: #fff;
+  color: #000;
+  padding: 10px 12px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+  font-family: 'Segoe UI', Roboto, system-ui, sans-serif;
+}
+
+.receipt-preview--80mm .receipt {
+  width: 80mm;
+  font-size: 12px;
+}
+
+.receipt-preview--a4 .receipt {
+  width: 100%;
+  max-width: 210mm;
+  font-size: 14px;
+}
+
+.receipt .r-head { text-align: center; margin-bottom: 6px; }
+.receipt .r-shop { font-size: 1.25em; font-weight: 700; }
+.receipt .r-line { font-size: 0.85em; }
+
+.receipt .r-meta {
+  border-top: 1px dashed #000;
+  border-bottom: 1px dashed #000;
+  padding: 4px 0;
+  margin: 6px 0;
+  font-size: 0.85em;
+}
+.receipt .r-meta > div { display: flex; justify-content: space-between; gap: 8px; }
+
+.receipt .r-items { width: 100%; border-collapse: collapse; }
+.receipt .r-items th {
+  text-align: start;
+  font-size: 0.8em;
+  border-bottom: 1px solid #000;
+  padding-bottom: 2px;
+}
+.receipt .r-items td { padding: 3px 0; vertical-align: top; }
+.receipt .r-num { text-align: end; white-space: nowrap; }
+.receipt .r-name { font-weight: 600; }
+.receipt .r-sub { font-size: 0.8em; color: #333; }
+
+.receipt .r-totals { border-top: 1px dashed #000; margin-top: 6px; padding-top: 4px; }
+.receipt .r-totals > div { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; }
+.receipt .r-grand {
+  font-weight: 700;
+  font-size: 1.15em;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  margin: 3px 0;
+  padding: 3px 0;
+}
+.receipt .r-due { font-weight: 700; }
+.receipt .r-note { margin-top: 8px; font-size: 0.8em; text-align: center; }
+.receipt .r-thanks { margin-top: 8px; text-align: center; font-size: 0.9em; }
+
+/* Never part of the layout — it exists only to be written to at print time. */
+.receipt-print-frame {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 0;
+  visibility: hidden;
+}
+
+@media (max-width: 600px) {
+  .receipt-toolbar { align-items: flex-start; }
+  .receipt-preview { padding: var(--spacing-sm); }
+  .receipt-preview--80mm .receipt { width: 100%; max-width: 80mm; }
+}

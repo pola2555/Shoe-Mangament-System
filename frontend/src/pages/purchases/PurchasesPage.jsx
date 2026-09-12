@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { purchasesAPI, suppliersAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../i18n/i18nContext';
+import { useConfirm } from '../../components/common/ConfirmDialog';
 import toast from 'react-hot-toast';
 import { today } from '../../utils/dates';
 import SearchableSelect from '../../components/common/SearchableSelect';
@@ -20,6 +21,7 @@ export default function PurchasesPage() {
   });
   const { hasPermission } = useAuth();
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const navigate = useNavigate();
 
   useEffect(() => { fetchData(); }, []);
@@ -65,7 +67,12 @@ export default function PurchasesPage() {
 
   const handleDeleteInvoice = async (e, id) => {
     e.stopPropagation();
-    if (!window.confirm(t('purchases.delete_confirm'))) return;
+    if (!await confirm({
+      title: t('purchases.delete_title'),
+      message: t('purchases.delete_confirm'),
+      danger: true,
+      confirmText: t('common.delete'),
+    })) return;
     try {
       await purchasesAPI.deleteInvoice(id);
       toast.success(t('purchases.invoice_deleted'));

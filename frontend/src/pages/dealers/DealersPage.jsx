@@ -3,6 +3,7 @@ import { dealersAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import { useTranslation } from '../../i18n/i18nContext';
+import { useConfirm } from '../../components/common/ConfirmDialog';
 import '../products/Products.css';
 
 export default function DealersPage() {
@@ -15,6 +16,7 @@ export default function DealersPage() {
   const { hasPermission } = useAuth();
   const canWrite = hasPermission('dealers', 'write');
   const { t } = useTranslation();
+  const confirm = useConfirm();
 
   useEffect(() => { fetchDealers(); }, []);
 
@@ -40,7 +42,12 @@ export default function DealersPage() {
 
   const handleDelete = async (e, id) => {
     e.stopPropagation();
-    if (!window.confirm(t('common.are_you_sure'))) return;
+    if (!await confirm({
+      title: t('dealers.deactivate_title'),
+      message: t('dealers.deactivate_confirm'),
+      danger: true,
+      confirmText: t('common.confirm'),
+    })) return;
     try {
       await dealersAPI.delete(id);
       toast.success('Dealer deleted');

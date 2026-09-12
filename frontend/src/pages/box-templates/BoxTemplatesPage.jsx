@@ -3,6 +3,8 @@ import { boxTemplatesAPI, productsAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../components/common/SearchableSelect';
+import useProductCategory from '../../hooks/useProductCategory';
+import SizeValueInput from '../../components/catalog/SizeValueInput';
 import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
 
@@ -14,10 +16,13 @@ export default function BoxTemplatesPage() {
   const [editingId, setEditingId] = useState(null);
   const { hasPermission } = useAuth();
   const canWrite = hasPermission('products', 'write');
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
   const emptyForm = { name: '', product_id: '', notes: '', items: [{ color_label: '', size: '', quantity: '' }] };
   const [form, setForm] = useState(emptyForm);
+  // A template attached to a product inherits that product's size list; one with no
+  // product keeps free text, because there is nothing to ask.
+  const templateCategory = useProductCategory(form.product_id || null);
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -144,7 +149,11 @@ export default function BoxTemplatesPage() {
                   <thead>
                     <tr>
                       <th style={{ width: 150 }}>{t('products.color_name')}</th>
-                      <th style={{ width: 80 }}>{t('products.size')} *</th>
+                      <th style={{ width: 90 }}>
+                        {t('products.size_generic')}
+                        {templateCategory.prefix || templateCategory.suffix
+                          ? ` (${templateCategory.prefix || templateCategory.suffix})` : ''} *
+                      </th>
                       <th style={{ width: 80 }}>{t('common.quantity')} *</th>
                       <th style={{ width: 40 }}></th>
                     </tr>
@@ -157,8 +166,14 @@ export default function BoxTemplatesPage() {
                             onChange={(e) => updateItem(idx, 'color_label', e.target.value)} />
                         </td>
                         <td>
-                          <input className="form-input" required value={item.size} style={{ padding: '0.4rem' }}
-                            onChange={(e) => updateItem(idx, 'size', e.target.value)} />
+                          <SizeValueInput
+                            required
+                            value={item.size}
+                            sizeValues={templateCategory.sizeValues}
+                            locale={locale}
+                            style={{ padding: '0.4rem' }}
+                            onChange={(v) => updateItem(idx, 'size', v)}
+                          />
                         </td>
                         <td>
                           <input className="form-input" required type="number" min="1" value={item.quantity} style={{ padding: '0.4rem' }}

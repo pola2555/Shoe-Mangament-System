@@ -347,7 +347,8 @@ export default function LoansPage() {
               <div className="form-row">
                 <div className="form-group" style={{ flex: 1 }}>
                   <label className="form-label">{t('loans.loan_date')} *</label>
-                  <input className="form-input" type="date" required value={form.loan_date}
+                  <input className="form-input" type="date" required data-testid="loan-date"
+                    value={form.loan_date}
                     onChange={(e) => setForm({ ...form, loan_date: e.target.value })} />
                 </div>
                 <div className="form-group" style={{ flex: 1 }}>

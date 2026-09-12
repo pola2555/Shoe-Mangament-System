@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { formatSize } from '../../utils/variantFormat';
+import { formatSize, formatColor } from '../../utils/variantFormat';
 import { suppliersAPI, inventoryAPI, returnsAPI } from '../../api';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import { useTranslation } from '../../i18n/i18nContext';
@@ -205,8 +205,8 @@ export default function SupplierReturns() {
                       </td>
                       <td>{item.product_name} <br/> <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>{item.sku}</span></td>
                       <td><span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
-                        {item.color_name}</span></td>
+                        {!item.color_is_placeholder && item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
+                        {formatColor(item) || '—'}</span></td>
                       <td>{formatSize(item, locale)}</td>
                       <td>{parseFloat(item.cost).toLocaleString()} {t('common.currency')}</td>
                       <td>{new Date(item.created_at).toLocaleDateString()}</td>

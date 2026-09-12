@@ -44,6 +44,9 @@ export default function ExpensesPage() {
   const [filters, setFilters] = useState({
     store_id: '', category_id: '', from_date: '', to_date: '', search: '', payment_method: '',
   });
+  // What the by-store strip found for the current filter, minus the store filter
+  // itself. Null until it loads, [] when there is genuinely nothing.
+  const [byStore, setByStore] = useState(null);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(50);
 
@@ -89,8 +92,27 @@ export default function ExpensesPage() {
     } finally { setLoading(false); }
   }, [filters, page, limit]);
 
+  /**
+   * The same filtered spend, split by branch.
+   *
+   * This is the answer to "which shop is spending it", which the total alone cannot
+   * give. It goes through the same _baseQuery as the list, so the strip and the table
+   * always describe one set of rows — a breakdown computed over a different filter is
+   * a lie that looks like a feature.
+   */
+  const fetchByStore = useCallback(async () => {
+    if (stores.length < 2) { setByStore(null); return; }
+    try {
+      const params = {};
+      for (const [k, v] of Object.entries(filters)) if (v && k !== 'store_id') params[k] = v;
+      const { data } = await expensesAPI.byStore(params);
+      setByStore(data.data);
+    } catch { setByStore(null); }
+  }, [filters, stores.length]);
+
   useEffect(() => { fetchMeta(); }, [fetchMeta]);
   useEffect(() => { if (tab === 'list') fetchExpenses(); }, [fetchExpenses, tab]);
+  useEffect(() => { if (tab === 'list') fetchByStore(); }, [fetchByStore, tab]);
 
   const setFilter = (patch) => { setFilters((f) => ({ ...f, ...patch })); setPage(1); };
 
@@ -119,6 +141,18 @@ export default function ExpensesPage() {
       <div className="page-header">
         <h1 className="page-title">{t('expenses.title')}</h1>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* The store lives in the header, not in the filter drawer.
+              Spending is per branch — it is the first thing anybody narrows by, and it
+              applies to the recurring templates and the budgets as well, neither of
+              which can see the drawer this control used to be hidden inside. */}
+          {stores.length > 1 && (
+            <div className="form-group" style={{ marginBottom: 0, minWidth: 180 }}>
+              <SearchableSelect
+                options={[{ value: '', label: t('stores.all_stores') }, ...stores.map((s) => ({ value: s.id, label: s.name }))]}
+                value={filters.store_id}
+                onChange={(e) => setFilter({ store_id: e.target.value })} />
+            </div>
+          )}
           {canSetup && (
             <button className="btn btn-secondary" data-testid="open-expense-categories"
               onClick={() => setShowCategories(true)}>{t('expenses.manage_categories')}</button>
@@ -143,11 +177,12 @@ export default function ExpensesPage() {
       </div>
 
       {tab === 'recurring' && (
-        <RecurringTab categories={categories} stores={stores} canWrite={canWrite} canSetup={canSetup}
+        <RecurringTab categories={categories} stores={stores} storeId={filters.store_id}
+          canWrite={canWrite} canSetup={canSetup}
           onPosted={() => { fetchMeta(); if (tab === 'list') fetchExpenses(); }} />
       )}
 
-      {tab === 'budgets' && <BudgetsTab stores={stores} canSetup={canSetup} />}
+      {tab === 'budgets' && <BudgetsTab stores={stores} storeId={filters.store_id} canSetup={canSetup} />}
 
       {tab === 'list' && (
         <>
@@ -170,12 +205,8 @@ export default function ExpensesPage() {
 
             {showFilters && (
               <div className="filters-grid" style={{ marginTop: 'var(--spacing-md)' }}>
-                <div className="form-group">
-                  <label className="form-label">{t('common.store')}</label>
-                  <SearchableSelect
-                    options={[{ value: '', label: t('stores.all_stores') }, ...stores.map((s) => ({ value: s.id, label: s.name }))]}
-                    value={filters.store_id} onChange={(e) => setFilter({ store_id: e.target.value })} />
-                </div>
+                {/* The store is chosen in the header — see the note there. Having it
+                    in both places meant two controls for one filter. */}
                 <div className="form-group">
                   <label className="form-label">{t('expenses.category')}</label>
                   <SearchableSelect
@@ -217,6 +248,28 @@ export default function ExpensesPage() {
               </span>
             </span>
           </div>
+
+          {/* Spend per branch for exactly the filter above. Clicking one narrows to it,
+              which is the natural next question after seeing the split. */}
+          {byStore && byStore.stores.length > 1 && (
+            <div className="card" data-testid="expense-by-store"
+              style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
+              <strong style={{ marginInlineEnd: 4 }}>{t('expenses.by_store')}:</strong>
+              {byStore.stores.map((row) => {
+                const pct = byStore.total ? Math.round((row.total / byStore.total) * 100) : 0;
+                const on = filters.store_id === row.store_id;
+                return (
+                  <button key={row.store_id} type="button"
+                    className={`btn btn-sm ${on ? 'btn-accent' : 'btn-secondary'}`}
+                    data-testid={`by-store-${row.store_id}`}
+                    onClick={() => setFilter({ store_id: on ? '' : row.store_id })}>
+                    {row.store_name}: <strong>{money(row.total, currency)}</strong>
+                    <span style={{ opacity: 0.7, marginInlineStart: 6 }}>{pct}%</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {loading ? <div className="loading-screen"><div className="spinner" /></div> : (
             <>
