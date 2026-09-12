@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { HiOutlineEye, HiOutlineEyeSlash } from 'react-icons/hi2';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../i18n/i18nContext';
 import toast from 'react-hot-toast';
@@ -8,6 +9,7 @@ import './Login.css';
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const { t } = useTranslation();
@@ -60,15 +62,26 @@ export default function LoginPage() {
 
             <div className="form-group">
               <label className="form-label" htmlFor="password">{t('auth.password')}</label>
-              <input
-                id="password"
-                className="form-input"
-                type="password"
-                placeholder={t('auth.password')}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-              />
+              <div className="password-field">
+                <input
+                  id="password"
+                  className="form-input"
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder={t('auth.password')}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? t('auth.hide_password') : t('auth.show_password')}
+                  title={showPassword ? t('auth.hide_password') : t('auth.show_password')}
+                >
+                  {showPassword ? <HiOutlineEyeSlash size={18} /> : <HiOutlineEye size={18} />}
+                </button>
+              </div>
             </div>
 
             <button type="submit" className="btn btn-primary btn-lg login-btn" disabled={loading}>

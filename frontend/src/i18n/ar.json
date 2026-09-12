@@ -137,7 +137,9 @@
     "welcome_back": "مرحباً بعودتك",
     "sign_in_subtitle": "سجّل الدخول إلى حسابك",
     "invalid_credentials": "اسم المستخدم أو كلمة المرور غير صحيحة",
-    "login_failed": "فشل تسجيل الدخول"
+    "login_failed": "فشل تسجيل الدخول",
+    "show_password": "إظهار كلمة المرور",
+    "hide_password": "إخفاء كلمة المرور"
   },
   "dashboard": {
     "welcome_back": "مرحباً بعودتك",

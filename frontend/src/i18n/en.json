@@ -137,7 +137,9 @@
     "welcome_back": "Welcome Back",
     "sign_in_subtitle": "Sign in to your account",
     "invalid_credentials": "Invalid username or password",
-    "login_failed": "Login failed"
+    "login_failed": "Login failed",
+    "show_password": "Show password",
+    "hide_password": "Hide password"
   },
   "dashboard": {
     "welcome_back": "Welcome back",
