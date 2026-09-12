@@ -8,3 +8,13 @@ backend/src/db/server.txt
 e2e/.auth/
 e2e/.artifacts/
 e2e/report/
+# Built by stories.setup.js each run: the ids of the cast, catalogue and branches.
+e2e/.stories/
+
+# Server backups (DB dumps + code + .env with secrets) — NEVER commit these.
+_server_backup/
+
+# Playwright screenshots/output — kept only in a temp, throwaway folder.
+e2e/screenshots/
+e2e/.screenshots/
+e2e/.tmp/

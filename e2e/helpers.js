@@ -5,7 +5,10 @@ import path from 'path';
 export const ADMIN = { username: 'admin', password: 'admin123' };
 export const API = 'http://localhost:5000/api';
 
-const SHOTS = path.join(process.cwd(), 'e2e', 'screenshots');
+// Screenshots go to a throwaway, gitignored folder (e2e/.screenshots/) — they are a
+// debugging aid, not an artifact to commit. The old e2e/screenshots/ dir was tracked
+// and had grown to 52 MB of PNGs in the repo; it is gone and gitignored now.
+const SHOTS = path.join(process.cwd(), 'e2e', '.screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
 
 let shotSeq = 0;
@@ -121,4 +124,21 @@ export async function scanResult(page, timeout = 12_000) {
   const okEl = page.getByTestId('scan-ok');
   if (await okEl.count()) return { ok: true, text: (await okEl.textContent()) || '' };
   return { ok: false, text: (await page.getByTestId('scan-err').textContent()) || '' };
+}
+
+/**
+ * Today, as the SHOP reckons it — not as UTC does.
+ *
+ * `new Date().toISOString().slice(0, 10)` returns the UTC date. This machine and the
+ * shop both run at UTC+3, so between midnight and 03:00 local it hands back YESTERDAY,
+ * while the reports being queried use business-day boundaries and correctly say today.
+ * The symptom is a test that fails only overnight and passes by morning, which is the
+ * worst possible shape for one.
+ *
+ * The application fixed this class of bug long ago (backend/src/config/pgTypes.js,
+ * frontend/src/utils/dates.js). The test code had not caught up.
+ */
+export function businessToday() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
