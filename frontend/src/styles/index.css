@@ -5,35 +5,38 @@
 
 :root {
   /* --- Color Palette (Dark — default) --- */
-  --color-bg-primary: #0f1117;
-  --color-bg-secondary: #1a1d27;
-  --color-bg-card: #22253180;
-  --color-bg-hover: #2a2d3a;
-  --color-bg-input: #1e2130;
-  
-  --color-accent: #6c5ce7;
-  --color-accent-hover: #7f70f0;
-  --color-accent-soft: #6c5ce720;
+  --color-bg-primary: #0e0f12;
+  --color-bg-secondary: #17191f;
+  --color-bg-card: #1b1e2699;
+  --color-bg-hover: #21242c;
+  --color-bg-input: #191c22;
+
+  /* Onyx & Gold — the logo's gold on a neutral charcoal ground. */
+  --color-accent: #d4af37;
+  --color-accent-hover: #e0c04e;
+  --color-accent-soft: #d4af3720;
+  /* Text that sits ON the accent (buttons, chips). Gold is light, so it needs dark text. */
+  --color-on-accent: #1c1608;
   
   --color-success: #00b894;
   --color-warning: #fdcb6e;
   --color-danger: #e17055;
   --color-info: #74b9ff;
   
-  --color-text-primary: #e8e8ef;
-  --color-text-secondary: #9da2b9;
-  --color-text-muted: #5f6380;
-  
-  --color-border: #2d3045;
-  --color-border-hover: #4a4f6e;
+  --color-text-primary: #f0eee7;
+  --color-text-secondary: #a3a49c;
+  --color-text-muted: #6c6e68;
+
+  --color-border: #282b33;
+  --color-border-hover: #3c404b;
 
   /* --- Aliases (used across components) --- */
-  --color-primary: #6c5ce7;
-  --color-surface: #1a1d27;
-  --color-surface-hover: #2a2d3a;
-  --color-text: #e8e8ef;
-  --color-primary-light: #a29bfe;
-  --color-bg-base: #0f1117;
+  --color-primary: #d4af37;
+  --color-surface: #17191f;
+  --color-surface-hover: #21242c;
+  --color-text: #f0eee7;
+  --color-primary-light: #f2d98f;
+  --color-bg-base: #0e0f12;
   --color-overlay: rgba(0, 0, 0, 0.6);
   --color-overlay-heavy: rgba(0, 0, 0, 0.8);
   --color-row-alt: rgba(255, 255, 255, 0.02);
@@ -68,7 +71,7 @@
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 20px rgba(108, 92, 231, 0.15);
+  --shadow-glow: 0 0 20px rgba(212, 175, 55, 0.18);
   
   /* --- Transitions --- */
   --transition-fast: 150ms ease;
@@ -86,35 +89,39 @@
    ============================================================ */
 
 [data-theme="light"] {
-  --color-bg-primary: #f5f6fa;
+  --color-bg-primary: #f6f2ea;
   --color-bg-secondary: #ffffff;
-  --color-bg-card: #ffffffcc;
-  --color-bg-hover: #f0f1f5;
-  --color-bg-input: #f8f9fc;
+  --color-bg-card: #fffdf9cc;
+  --color-bg-hover: #efe8db;
+  --color-bg-input: #faf6ee;
 
-  --color-accent: #6c5ce7;
-  --color-accent-hover: #5a4bd1;
-  --color-accent-soft: #6c5ce715;
+  /* Ivory & Bronze. The bronze is deliberately DARK so it stays legible as text/links
+     on the light ivory ground (a lighter bronze washed out and was hard to read). */
+  --color-accent: #8a6420;
+  --color-accent-hover: #6f4f17;
+  --color-accent-soft: #8a642018;
+  /* Bronze is dark here, so text on top of it (buttons, chips) is white. */
+  --color-on-accent: #ffffff;
 
   --color-success: #00a884;
   --color-warning: #e6a817;
   --color-danger: #d63031;
   --color-info: #0984e3;
 
-  --color-text-primary: #1a1a2e;
-  --color-text-secondary: #636e8a;
-  --color-text-muted: #a0a8c0;
+  --color-text-primary: #2a241b;
+  --color-text-secondary: #6c6455;
+  --color-text-muted: #9b917f;
 
-  --color-border: #e2e5f0;
-  --color-border-hover: #c8cde0;
+  --color-border: #e5ddcc;
+  --color-border-hover: #d3c7ae;
 
   /* --- Aliases --- */
-  --color-primary: #6c5ce7;
+  --color-primary: #8a6420;
   --color-surface: #ffffff;
-  --color-surface-hover: #f0f1f5;
-  --color-text: #1a1a2e;
-  --color-primary-light: #5a4bd1;
-  --color-bg-base: #f5f6fa;
+  --color-surface-hover: #efe8db;
+  --color-text: #2a241b;
+  --color-primary-light: #6f4f17;
+  --color-bg-base: #f6f2ea;
   --color-overlay: rgba(0, 0, 0, 0.4);
   --color-overlay-heavy: rgba(0, 0, 0, 0.6);
   --color-row-alt: rgba(0, 0, 0, 0.02);
@@ -124,7 +131,7 @@
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.10);
-  --shadow-glow: 0 0 20px rgba(108, 92, 231, 0.10);
+  --shadow-glow: 0 0 20px rgba(138, 100, 32, 0.12);
 }
 
 [data-theme="light"] .badge-success { background: #00b89422; color: #008060; }
@@ -134,13 +141,13 @@
 [data-theme="light"] .badge-neutral { background: #636e8a1a; color: #4a5568; }
 
 [data-theme="light"] .page-title {
-  background: linear-gradient(135deg, #1a1a2e, var(--color-accent));
+  background: linear-gradient(135deg, var(--color-text-primary), var(--color-accent));
   -webkit-background-clip: text;
   background-clip: text;
 }
 
 [data-theme="light"] .sidebar__logo-text {
-  background: linear-gradient(135deg, var(--color-accent), #5a4bd1);
+  background: linear-gradient(135deg, var(--color-accent), var(--color-primary-light));
   -webkit-background-clip: text;
   background-clip: text;
 }
@@ -257,7 +264,7 @@ a:hover { color: var(--color-accent-hover); }
 
 .btn-primary {
   background: var(--color-accent);
-  color: white;
+  color: var(--color-on-accent);
 }
 .btn-primary:hover:not(:disabled) {
   background: var(--color-accent-hover);
@@ -605,7 +612,7 @@ a:hover { color: var(--color-accent-hover); }
   .mobile-header__logo-text {
     font-size: var(--font-size-lg);
     font-weight: 700;
-    background: linear-gradient(135deg, var(--color-accent), #a29bfe);
+    background: linear-gradient(135deg, var(--color-accent), var(--color-primary-light));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;

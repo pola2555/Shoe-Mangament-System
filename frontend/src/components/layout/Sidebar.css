@@ -50,7 +50,7 @@
 .sidebar__logo-text {
   font-size: var(--font-size-lg);
   font-weight: 700;
-  background: linear-gradient(135deg, var(--color-accent), #a29bfe);
+  background: linear-gradient(135deg, var(--color-accent), var(--color-primary-light));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

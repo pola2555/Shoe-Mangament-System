@@ -104,7 +104,7 @@
 .exchange-step.is-current .exchange-step__n {
   background: var(--color-primary);
   border-color: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-accent);
 }
 
 .exchange-step.is-done .exchange-step__n {
