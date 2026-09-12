@@ -39,9 +39,33 @@ export default defineConfig({
     // Logs in once and saves storage state. /api/auth/login allows only 10 attempts
     // per 15 minutes, so logging in per-test locks the suite out partway through.
     { name: 'setup', testMatch: /auth\.setup\.js/ },
+
+    // Builds the cast, the catalogue and the branches the user stories act on. Its own
+    // project so it runs once, before the stories, with the admin's session.
+    {
+      name: 'stories-setup',
+      testMatch: /stories\.setup\.js/,
+      dependencies: ['setup'],
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 },
+        storageState: 'e2e/.auth/admin.json' },
+    },
+
+    // The stories themselves. Each opens its own context as whichever person the story
+    // is about, so they do not inherit the desktop project's admin session.
+    {
+      name: 'stories',
+      testMatch: /stories[\/].*\.spec\.js/,
+      dependencies: ['stories-setup'],
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 },
+        storageState: 'e2e/.auth/admin.json' },
+    },
+
     {
       name: 'desktop',
       dependencies: ['setup'],
+      // The stories have their own project and their own fixtures; running them here
+      // too would act them out twice against one database.
+      testIgnore: [/stories[\/]/, /stories\.setup\.js/],
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 1440, height: 900 },

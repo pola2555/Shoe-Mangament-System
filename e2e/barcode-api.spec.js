@@ -199,14 +199,20 @@ test('manufacturer barcode can be linked and then scanned', async () => {
 });
 
 test('label payloads carry a coded price and never the plain one', async () => {
-  const products = await api(ctx.page, 'GET', '/products', { params: { limit: '5' } });
-  const product = products.body.data[0];
+  // The product this test needs is one that HAS labels to print. It used to take
+  // whichever product came back first, which is the newest — and other specs in this
+  // suite create products that never get variants (a box raised but never completed).
+  // So the moment one of those was newest, this test asked for the labels of a product
+  // with no variants and read the empty answer as a failure. Pick by what the test
+  // actually requires instead.
+  const productId = ctx.item.product_id;
+  expect(productId, 'an in-stock row must name its product').toBeTruthy();
 
   const res = await api(ctx.page, 'GET', '/barcodes/labels', {
-    params: { product_id: product.id, store_id: ctx.storeId },
+    params: { product_id: productId, store_id: ctx.storeId },
   });
   expect(res.status).toBe(200);
-  expect(res.body.data.length).toBeGreaterThan(0);
+  expect(res.body.data.length, 'a product with stock must have labels').toBeGreaterThan(0);
 
   for (const row of res.body.data) {
     for (const f of ['barcode', 'sku', 'size_eu', 'color_name', 'product_code', 'price_code', 'stock_count']) {

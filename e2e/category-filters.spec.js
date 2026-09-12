@@ -44,18 +44,31 @@ async function stockedProduct(page, code, categoryId, name, sizes) {
   }
 
   const existing = await api(page, 'GET', `/products/${product.id}/variants`);
-  const have = new Set((existing.body.data || []).map((v) => v.size_eu));
+  const bySize = new Map((existing.body.data || []).map((v) => [v.size_eu, v]));
 
   for (const size of sizes) {
-    if (have.has(size)) continue;
-    const v = await api(page, 'POST', `/products/${product.id}/variants`, {
-      body: { product_color_id: color.id, size_eu: size },
+    let variant = bySize.get(size);
+    if (!variant) {
+      const v = await api(page, 'POST', `/products/${product.id}/variants`, {
+        body: { product_color_id: color.id, size_eu: size },
+      });
+      expect(v.status, JSON.stringify(v.body)).toBe(201);
+      variant = v.body.data;
+    }
+
+    // Top the stock up rather than only creating it with the variant. Nothing here can
+    // be deleted, so a re-run finds the variants already present — but another spec may
+    // have SOLD their stock in the meantime, and then this one silently tests against
+    // an empty shelf. Checking the shelf, not the variant, is what makes it repeatable.
+    const inStock = await api(page, 'GET', '/inventory', {
+      params: { variant_id: variant.id, status: 'in_stock', store_id: ctx.storeId },
     });
-    expect(v.status, JSON.stringify(v.body)).toBe(201);
-    const stock = await api(page, 'POST', '/inventory/manual', {
-      body: { variant_id: v.body.data.id, store_id: ctx.storeId, cost: 10, quantity: 1 },
-    });
-    expect(stock.status, JSON.stringify(stock.body)).toBe(201);
+    if ((inStock.body.data || []).length === 0) {
+      const stock = await api(page, 'POST', '/inventory/manual', {
+        body: { variant_id: variant.id, store_id: ctx.storeId, cost: 10, quantity: 1 },
+      });
+      expect(stock.status, JSON.stringify(stock.body)).toBe(201);
+    }
   }
   return product;
 }
@@ -94,10 +107,15 @@ test('a numeric range compares numerically, not as text', async ({ page }) => {
     params: { store_id: ctx.storeId, category_id: ctx.belts.id, size_min: '80', size_max: '95', limit: '5000' },
   });
   expect(res.status).toBe(200);
-  const sizes = res.body.data.map((r) => r.size_eu).sort();
+  // DISTINCT sizes, not rows. A summary row is one (product, colour, size, store), so
+  // asserting the row list made this test quietly depend on there being exactly one
+  // belt product in the catalogue — it broke the moment a second one existed, while
+  // the thing it actually checks was still true.
+  const sizes = [...new Set(res.body.data.map((r) => r.size_eu))].sort();
   // Compared as text, '100' >= '80' is false and '100' <= '95' is true — so a text
   // comparison returns the wrong set in both directions.
   expect(sizes).toEqual(['80', '90']);
+  expect(res.body.data.length, 'the range must actually have matched something').toBeGreaterThan(0);
 });
 
 test('word sizes can be filtered, which a range can never do', async ({ page }) => {
@@ -262,7 +280,9 @@ test('the reports ribbon offers a category only where it can be honoured', async
   // across categories — so no filter is offered rather than a wrong number.
   await expect(ribbon).not.toContainText('Category');
 
-  await page.getByRole('button', { name: /inventory/i }).first().click();
+  // By test id, not by name: the sidebar's "Products & Inventory" group heading is a
+  // button too now, and it comes first in the DOM.
+  await page.getByTestId('reports-tab-inventory_analytics').click();
   await expect(ribbon).toContainText('Category', { timeout: 20_000 });
 
   // react-select: type and commit. Clicking the rendered value hits its own overlaid

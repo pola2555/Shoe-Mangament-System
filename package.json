@@ -20,7 +20,8 @@
     "check:filters": "node backend/scripts/check-filters.js",
     "check:colors": "node backend/scripts/check-color-skus.js",
     "check:money": "node backend/scripts/check-expenses-loans.js",
-    "check:http": "node backend/scripts/check-expenses-loans-http.js"
+    "check:http": "node backend/scripts/check-expenses-loans-http.js",
+    "check:sales": "node backend/scripts/check-sales.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

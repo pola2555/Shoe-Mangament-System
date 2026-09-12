@@ -27,6 +27,65 @@ test.beforeAll(async ({ browser }) => {
   const stores = await api(page, 'GET', '/stores');
   ctx.storeId = (stores.body.data || [])[0]?.id;
   expect(ctx.storeId, 'need a store').toBeTruthy();
+
+  // Clear everything a previous run left behind, in reference order. Categories are
+  // unique by name, so one leftover makes the create 409 and the suite can never repeat
+  // — and a category cannot be deleted while an expense or a recurring template still
+  // points at it, which is exactly the state a run that failed part-way leaves.
+  const oldExpenses = await api(page, 'GET', '/expenses', { params: { search: MARK, limit: '200' } });
+  for (const e of (oldExpenses.body.data || [])) {
+    await api(page, 'DELETE', `/expenses/${e.id}`).catch(() => {});
+  }
+
+  const oldRecurring = await api(page, 'GET', '/expenses/recurring');
+  for (const r of (oldRecurring.body.data || []).filter((x) => String(x.description || '').startsWith(MARK))) {
+    await api(page, 'DELETE', `/expenses/recurring/${r.id}`).catch(() => {});
+  }
+
+  const cats = await api(page, 'GET', '/expenses/categories');
+  const mine = (cats.body.data || []).filter((c) => String(c.name).startsWith(MARK));
+
+  // A budget also pins a category. There is no DELETE for one — setting it to zero is
+  // how a budget is removed — so zero any this suite may have left in the month it uses.
+  for (const c of mine) {
+    await api(page, 'PUT', '/expenses/budgets', {
+      body: { store_id: ctx.storeId, category_id: c.id, period_month: '2026-06-01', amount: 0 },
+    }).catch(() => {});
+  }
+
+  // Children first: a parent cannot be deleted while it holds one.
+  for (const c of mine.filter((x) => x.parent_id)) {
+    await api(page, 'DELETE', `/expenses/categories/${c.id}`).catch(() => {});
+  }
+  for (const c of mine.filter((x) => !x.parent_id)) {
+    await api(page, 'DELETE', `/expenses/categories/${c.id}`).catch(() => {});
+  }
+
+  // Leftover fixture loans from a RUN THAT DIED PARTWAY.
+  //
+  // The instalment test clears its own payments so afterAll can delete the loan, but a
+  // run interrupted between those two steps leaves a loan that is part-paid and cannot
+  // be deleted (a loan with payments against it is deliberately undeletable). The next
+  // run then sees an 800-outstanding loan where it expects 1200 and fails on the
+  // overdue total — a failure with nothing whatsoever to do with what it tests.
+  //
+  // Resetting at the START, not only at the end, is the convention the rest of the
+  // suite already follows: a crashed run must not poison the next one.
+  const oldLoans = await api(page, 'GET', '/loans', { params: { search: MARK } });
+  for (const l of (oldLoans.body?.data || [])) {
+    // The list already reports paid_amount, so only a loan that actually has payments
+    // needs its detail fetched. The API is rate-limited per IP and this hook runs
+    // before every test in the file — a request saved here is not a micro-optimisation,
+    // it is the difference between the suite running and dying on a 429.
+    if (Number(l.paid_amount) > 0) {
+      const full = await api(page, 'GET', `/loans/${l.id}`).catch(() => null);
+      for (const pay of (full?.body?.data?.payments || [])) {
+        await api(page, 'DELETE', `/loans/${l.id}/payments/${pay.id}`).catch(() => {});
+      }
+    }
+    await api(page, 'DELETE', `/loans/${l.id}`).catch(() => {});
+  }
+
   await page.close();
 });
 
@@ -62,7 +121,9 @@ test('a shop can add its own expense category, two levels deep', async ({ page }
   await modal.getByTestId('add-expense-category').click();
   await modal.getByTestId('expcat-name').fill(`${MARK} Electricity`);
   await modal.locator('.react-select__control').first().click();
-  await page.getByText(`${MARK} Utilities`, { exact: true }).click();
+  // By role: the same text is now also in the table below, and a bare text match hits
+  // both.
+  await page.getByRole('option', { name: `${MARK} Utilities`, exact: true }).click();
   await modal.getByTestId('expcat-save').click();
   await expect(modal).toContainText(`${MARK} Electricity`, { timeout: 15_000 });
 
@@ -154,7 +215,10 @@ test('a recurring cost is listed as due and posts on a click', async ({ page }) 
   page.once('dialog', (d) => d.accept());
   await page.getByTestId(`post-recurring-${tplId}`).click();
 
-  await expect(row).not.toContainText(/due now/i, { timeout: 20_000 });
+  // It advances by exactly one month, to 2026-07-01 — which is itself in the past, so
+  // the template stays due. That is deliberate: a month that was missed has to remain
+  // visible rather than being skipped, and posting again books the next one.
+  await expect(row).toContainText('2026-07-01', { timeout: 20_000 });
 
   const posted = await api(page, 'GET', '/expenses', { params: { search: `${MARK} rent` } });
   expect(posted.body.pagination.total).toBe(1);
@@ -192,9 +256,17 @@ test('a budget shows what is left, and what is over', async ({ page }) => {
   });
   const budgetRow = res.body.data.rows.find((r) => r.category_id === ctx.categoryId);
   expect(budgetRow.budget).toBe(1000);
-  // 175.50 + 100 + 100 from the tests above.
-  expect(budgetRow.actual).toBeCloseTo(375.5, 2);
-  expect(budgetRow.variance).toBeCloseTo(624.5, 2);
+
+  // Derived, not hardcoded: the recurring test posts a rent into this same month and
+  // category, and it is right that the budget counts it. Asserting a fixed number here
+  // would only record what the other tests happened to leave behind.
+  const june = await api(page, 'GET', '/expenses', {
+    params: {
+      category_id: String(ctx.categoryId), from_date: '2026-06-01', to_date: '2026-06-30', limit: '200',
+    },
+  });
+  expect(budgetRow.actual).toBeCloseTo(june.body.summary.total, 2);
+  expect(budgetRow.variance).toBeCloseTo(1000 - june.body.summary.total, 2);
 
   await api(page, 'PUT', '/expenses/budgets', {
     body: { store_id: ctx.storeId, category_id: ctx.categoryId, period_month: '2026-06-01', amount: 0 },
@@ -214,6 +286,10 @@ test('THE BUG: a loan can actually be created from the form', async ({ page }) =
   await form.getByTestId('borrower-mode-other').click();
   await form.getByTestId('borrower-name').fill(`${MARK} Customer`);
   await form.getByTestId('loan-amount').fill('1200');
+  // Both dates, and in that order: the loan date defaults to today, and a due date
+  // before it is refused — correctly, since a loan cannot fall due before it is made.
+  // This one is deliberately overdue, which the next test checks for.
+  await form.getByTestId('loan-date').fill('2026-05-01');
   await form.getByTestId('loan-due-date').fill('2026-06-01');
   await form.getByTestId('loan-save').click();
 

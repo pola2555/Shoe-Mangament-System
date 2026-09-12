@@ -69,7 +69,10 @@ async function warmDevServer(page) {
     }
   };
 
-  for (const route of ['/inventory', '/products', '/purchases/invoices']) await visit(route);
+  // '/purchases', not '/purchases/invoices': the latter is not a route, it matches
+  // /purchases/:id with the id 'invoices' and asks the API for a purchase whose id is
+  // the word 'invoices'. Harmless — it is a 400 now — but it warmed the wrong page.
+  for (const route of ['/inventory', '/products', '/purchases', '/stock-intakes']) await visit(route);
 
   // Product detail is its own chunk, and it owns the label-printing dialog.
   try {
