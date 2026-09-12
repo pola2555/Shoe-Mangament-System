@@ -16,7 +16,8 @@ import {
   HiOutlineEye,
   HiOutlineEyeSlash,
   HiOutlineXMark,
-  HiOutlineFunnel
+  HiOutlineFunnel,
+  HiOutlineChevronRight
 } from 'react-icons/hi2';
 import CheckoutModal from './CheckoutModal';
 import ReceiptModal from '../../components/sales/ReceiptModal';
@@ -565,8 +566,9 @@ export default function POSPage() {
           <div className="pos-search-input-wrap">
             <HiOutlineMagnifyingGlass size={20} color="var(--color-text-muted)" />
             <form onSubmit={handleSearch} style={{ width: '100%' }}>
-              <input 
-                type="text" 
+              <input
+                type="search"
+                enterKeyHint="search"
                 placeholder={t('pos.search_products')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -574,7 +576,7 @@ export default function POSPage() {
               />
             </form>
           </div>
-          <button className="btn btn-primary" onClick={handleSearch} disabled={searching || !selectedStore}>
+          <button className="btn btn-primary pos-search-submit" onClick={handleSearch} disabled={searching || !selectedStore}>
             {searching ? '...' : t('common.search')}
           </button>
           <button
@@ -1003,12 +1005,19 @@ export default function POSPage() {
         </button>
       </div>
 
-      {/* Mobile floating cart button (shown on products tab) */}
+      {/* Mobile bottom action bar (shown on products tab) — a full-width, thumb-height
+          jump to the cart that shows what is in it and the running total. */}
       {cart.length > 0 && mobileTab === 'products' && (
         <button className="pos-mobile-fab" onClick={() => setMobileTab('cart')}>
-          <HiOutlineShoppingBag size={24} />
-          <span className="pos-mobile-fab-badge">{cart.length}</span>
-          <span className="pos-mobile-fab-total">{priceText(total)}{!hidePrices && ` ${t('common.currency')}`}</span>
+          <span className="pos-mobile-fab-left">
+            <HiOutlineShoppingBag size={20} />
+            <span className="pos-mobile-fab-badge">{cart.length}</span>
+            <span className="pos-mobile-fab-label">{t('pos.view_cart')}</span>
+          </span>
+          <span className="pos-mobile-fab-total">
+            {priceText(total)}{!hidePrices && ` ${t('common.currency')}`}
+            <HiOutlineChevronRight size={18} />
+          </span>
         </button>
       )}
 

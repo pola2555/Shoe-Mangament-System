@@ -837,3 +837,139 @@
 
 .discount-waiting { text-align: center; padding: var(--spacing-md) 0; }
 .discount-waiting .spinner { margin: var(--spacing-md) auto; }
+
+/* ============================================================
+   MOBILE POS — REDESIGN
+   ------------------------------------------------------------
+   The old phone layout stacked five controls into a tall search
+   column, buried the product grid under a stack of strips, and
+   offered a tiny floating pill for the cart. These rules are
+   appended on purpose: same selectors, later in the cascade, so
+   they win on a phone while the desktop layout above is untouched.
+   Goal: give the grid and the cart the screen, and make every
+   control a real thumb target.
+   ============================================================ */
+
+@media (max-width: 768px) {
+  .pos-layout { gap: var(--spacing-sm); }
+
+  /* Top tabs: bigger, easier to hit. */
+  .pos-mobile-tabs { gap: 4px; padding: 4px; margin-bottom: var(--spacing-sm); }
+  .pos-mobile-tab { padding: 0.7rem 0.5rem; font-size: var(--font-size-base); gap: 0.5rem; }
+
+  /* Search + actions on ONE row: a wide field, then square icon buttons.
+     The text "Search" button is redundant on a phone — the keyboard's search key and
+     the filter chips both run the query — so it is hidden to reclaim the width. */
+  .pos-search-bar {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+  }
+  .pos-search-input-wrap { flex: 1 1 auto; min-width: 0; padding: 0.5rem 0.7rem; }
+  .pos-search-submit { display: none !important; }
+  .pos-search-bar > .btn:not(.pos-search-submit) {
+    flex: 0 0 auto;
+    width: 46px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  /* Trim the chrome between the search row and the grid. */
+  .pos-category-chips { margin-bottom: 0.4rem; padding-bottom: 0.3rem; }
+  .pos-scan-strip,
+  .pos-undo-strip,
+  .pos-shift-strip { margin-bottom: 0.4rem; }
+
+  /* The grid is the point of this screen — two roomy columns. */
+  .pos-products-grid { grid-template-columns: repeat(2, 1fr); gap: 0.6rem; }
+  .pos-product-card { padding: 0.5rem; }
+  .pos-product-img { height: 120px; margin-bottom: 0.4rem; }
+  .pos-product-name { font-size: 0.9rem; }
+  .pos-product-price { font-size: 1rem; }
+
+  /* Bottom action bar — an in-flow flex child at the foot of the layout (the product
+     panel above it flexes to fill the rest). In-flow, not position:fixed, because a
+     fixed bar gets trapped by a transformed ancestor's containing block and lands off
+     screen. Full width, thumb height, shows the cart count and the running total, and
+     clears the phone's home indicator. */
+  .pos-mobile-fab {
+    position: static;
+    transform: none;
+    flex: 0 0 auto;
+    width: 100%;
+    border-radius: 0;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: var(--spacing-sm);
+    padding: 0.85rem 1.15rem;
+    padding-bottom: calc(0.85rem + env(safe-area-inset-bottom, 0px));
+    font-size: 1.05rem;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.22);
+    animation: pos-bar-in 0.2s ease;
+  }
+  .pos-mobile-fab:active { transform: none; opacity: 0.92; }
+  @keyframes pos-bar-in { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .pos-mobile-fab-left { display: inline-flex; align-items: center; gap: 0.5rem; }
+  .pos-mobile-fab-badge { margin-left: 0; }
+  .pos-mobile-fab-label { font-weight: 600; }
+  .pos-mobile-fab-total {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-variant-numeric: tabular-nums;
+  }
+  [dir="rtl"] .pos-mobile-fab-total svg { transform: scaleX(-1); }
+
+  /* Cart lines read top-to-bottom on a phone: name first, then variant, then price and
+     bin on their own row so nothing is squeezed and both are easy to hit. */
+  .pos-cart-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.4rem;
+    padding: 0.6rem;
+  }
+  .pos-cart-item-actions {
+    width: 100%;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0;
+  }
+  .pos-cart-item-actions .price-input {
+    flex: 1 1 auto;
+    width: auto;
+    max-width: none;
+    min-width: 0;
+    padding: 0.55rem 0.65rem;
+    font-size: 1rem;
+    text-align: end;
+  }
+  .pos-cart-item-actions .btn-danger {
+    flex: 0 0 auto;
+    width: 46px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  /* Checkout: a full-width commit pinned to the bottom of the cart, clearing the
+     home indicator. */
+  .pos-cart-panel.pos-panel--active .pos-checkout-btn {
+    position: sticky;
+    bottom: 0;
+    padding: 1rem;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    font-size: 1.1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .pos-search-bar { flex-direction: row; }   /* override the old column stack */
+  .pos-product-img { height: 110px; }
+}

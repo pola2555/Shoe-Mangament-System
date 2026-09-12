@@ -250,6 +250,7 @@
     "image_upload_failed": "Sale created but payment image upload failed",
     "products_tab": "Products",
     "cart_tab": "Cart",
+    "view_cart": "View cart",
     "paying_now": "Paying now",
     "on_account": "On account",
     "walkin_must_pay": "A walk-in customer must pay in full. Pick a customer to sell on account.",
