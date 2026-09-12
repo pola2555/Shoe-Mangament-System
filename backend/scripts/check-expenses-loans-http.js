@@ -256,6 +256,75 @@ async function check(name, fn) {
     return 'ratio ' + r.body.data.summary.expense_ratio_pct + '%, ' + r.body.data.expense_trend.length + ' month(s)';
   });
 
+  console.log('');
+  console.log('new routes, and the ordering traps in them:');
+
+  await check("'/notifications/history' is not read as a notification id", async () => {
+    const r = await call('GET', '/notifications/history', null, { limit: '5' });
+    if (r.status !== 200) throw new Error('status ' + r.status);
+    if (!r.body.pagination) throw new Error('no pagination');
+    return r.body.pagination.total + ' in history';
+  });
+
+  await check("'/purchases/boxes/suggestion' is not read as a box id", async () => {
+    const r = await call('GET', '/purchases/boxes/suggestion', null, { product_id: '00000000-0000-0000-0000-000000000000' });
+    if (r.status !== 200) throw new Error('status ' + r.status + ' ' + JSON.stringify(r.body));
+    if (r.body.data !== null) throw new Error('invented a suggestion');
+    return 'null for an unknown product, not 404';
+  });
+
+  await check("'/sales/customer-balance/:id' is not read as a sale id", async () => {
+    const customers = await call('GET', '/customers');
+    const c = (customers.body.data || [])[0];
+    if (!c) return 'no customers — skipped';
+    const r = await call('GET', '/sales/customer-balance/' + c.id);
+    if (r.status !== 200) throw new Error('status ' + r.status);
+    if (typeof r.body.data.outstanding !== 'number') throw new Error('no outstanding figure');
+    return r.body.data.outstanding + ' outstanding';
+  });
+
+  await check('voiding needs its own permission, and a real sale', async () => {
+    const r = await call('POST', '/sales/00000000-0000-0000-0000-000000000000/void', { reason: 'x' });
+    // 404 (admin, sale missing) is the pass; 403 would mean the permission row is
+    // missing, which is exactly what once locked everyone out of the dashboard.
+    if (r.status === 403) throw new Error('the sale_void permission is not granted — check the migration');
+    if (r.status !== 404) throw new Error('status ' + r.status);
+    return 'reachable, and 404 for a sale that is not there';
+  });
+
+  await check('a sale can be created with no payment at all, for a customer', async () => {
+    const customers = await call('GET', '/customers');
+    const c = (customers.body.data || [])[0];
+    const inv = await call('GET', '/inventory', null, { store_id: storeId, status: 'in_stock', limit: '1' });
+    const item = (inv.body.data || [])[0];
+    if (!c || !item) return 'no customer or stock — skipped';
+
+    // Omit sale_price entirely so the server uses the product's own default: a made-up
+    // price trips the min/max guard, which is a different rule than the one under test.
+    const sale = await call('POST', '/sales', {
+      store_id: storeId, customer_id: c.id,
+      items: [{ id: item.id }],
+      payments: [],
+    });
+    if (sale.status !== 201) throw new Error('status ' + sale.status + ' ' + JSON.stringify(sale.body));
+    const voided = await call('POST', '/sales/' + sale.body.data.id + '/void', { reason: 'http check' });
+    if (voided.status !== 200) throw new Error('could not void it back: ' + voided.status);
+    return 'created wholly on account, then voided';
+  });
+
+  await check('PATCH /sales/:id edits notes but not items', async () => {
+    const list = await call('GET', '/sales', null, { limit: '1' });
+    const sale = (list.body.data || [])[0];
+    if (!sale) return 'no sales — skipped';
+    const r = await call('PATCH', '/sales/' + sale.id, { notes: 'http check note' });
+    if (r.status !== 200) throw new Error('status ' + r.status + ' ' + JSON.stringify(r.body));
+    // Items are not in the schema at all, so an attempt to send them is rejected.
+    const bad = await call('PATCH', '/sales/' + sale.id, { items: [] });
+    if (bad.status !== 400) throw new Error('items were accepted: ' + bad.status);
+    await call('PATCH', '/sales/' + sale.id, { notes: sale.notes || '' });
+    return 'notes yes, items no';
+  });
+
   // ---------------------------------------------------------------- cleanup
   console.log('');
   const full = await call('GET', '/loans/' + loanId);

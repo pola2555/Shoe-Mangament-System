@@ -7,6 +7,7 @@ const env = require('./config/env');
 const db = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
 const activityLogger = require('./middleware/activityLogger');
+const priceVisibility = require('./middleware/priceVisibility');
 const { startRetentionJob } = require('./utils/retention');
 
 // Module routes
@@ -33,6 +34,11 @@ const barcodeRoutes = require('./modules/barcodes/barcodes.routes');
 const productCategoryRoutes = require('./modules/product-categories/product-categories.routes');
 const sizeScaleRoutes = require('./modules/product-categories/size-scales.routes');
 const colorPresetRoutes = require('./modules/product-categories/color-presets.routes');
+const stockIntakeRoutes = require('./modules/stock-intakes/stock-intakes.routes');
+const shiftRoutes = require('./modules/shifts/shifts.routes');
+const exchangeRoutes = require('./modules/exchanges/exchanges.routes');
+const stockCountRoutes = require('./modules/stock-counts/stock-counts.routes');
+const discountRoutes = require('./modules/discounts/discounts.routes');
 
 const app = express();
 
@@ -98,6 +104,11 @@ if (env.storage.type === 'local') {
 // --- Activity Logging (intercepts all write operations) ---
 app.use(activityLogger);
 
+// --- Price band visibility ---
+// Strips min/max selling price from every response for anyone who may not see it.
+// One seam rather than eight endpoints; see middleware/priceVisibility.js.
+app.use(priceVisibility);
+
 // --- API Routes ---
 app.use('/api/auth', authRoutes);
 app.use('/api/stores', storeRoutes);
@@ -124,6 +135,11 @@ app.use('/api/audit-log', auditLogRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/api/loans', loanRoutes);
 app.use('/api/barcodes', barcodeRoutes);
+app.use('/api/stock-intakes', stockIntakeRoutes);
+app.use('/api/shifts', shiftRoutes);
+app.use('/api/exchanges', exchangeRoutes);
+app.use('/api/stock-counts', stockCountRoutes);
+app.use('/api/discounts', discountRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

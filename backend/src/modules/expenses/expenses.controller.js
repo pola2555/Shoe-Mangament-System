@@ -43,7 +43,9 @@ class ExpensesController {
       if (!userHasStoreAccess(req.user, req.body.store_id)) {
         throw new AppError('Access denied: cannot create expense for another store', 403);
       }
-      res.status(201).json({ success: true, data: await expensesService.create(req.body, req.user.id) });
+      // The whole user, not just the id: create() needs the role to decide whether to
+      // raise a "staff spent money" notification for the admins.
+      res.status(201).json({ success: true, data: await expensesService.create(req.body, req.user) });
     } catch (error) { next(error); }
   }
 
@@ -72,6 +74,12 @@ class ExpensesController {
       const { store_id: _s, store_ids: _si, ...rest } = req.query;
       const filters = { ...rest, ...resolveStoreScope(req.user, req.query) };
       res.json({ success: true, data: await expensesService.summary(filters) });
+    } catch (error) { next(error); }
+  }
+
+  async byStore(req, res, next) {
+    try {
+      res.json({ success: true, data: await expensesService.byStore(req.query, req.user) });
     } catch (error) { next(error); }
   }
 

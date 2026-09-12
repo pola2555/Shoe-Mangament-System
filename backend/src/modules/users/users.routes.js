@@ -33,6 +33,11 @@ router.delete('/:id', permission('users', 'write'), controller.deactivate);
 // Permission management
 router.put('/:id/permissions', permission('user_permissions', 'write'), validate(setPermissionsSchema), controller.setPermissions);
 
+// Which screens this person is shown. Gated on users:write, not user_permissions:
+// tidying somebody's menu is staff configuration, not a change to what they may do.
+router.get('/:id/hidden-pages', permission('users', 'read'), controller.getHiddenPages);
+router.put('/:id/hidden-pages', permission('users', 'write'), controller.setHiddenPages);
+
 // Store assignment
 router.get('/:id/stores', permission('users', 'read'), controller.getStores);
 router.put('/:id/stores', permission('users', 'write'), validate(setStoresSchema), controller.setStores);

@@ -2,6 +2,7 @@ const purchasesService = require('./purchases.service');
 const { getUploadedUrl, deleteFile } = require('../../middleware/upload');
 const db = require('../../config/database');
 const { generateUUID } = require('../../utils/generateCodes');
+const { resolveStoreScope } = require('../../utils/storeScope');
 
 class PurchasesController {
   // --- Invoices ---
@@ -70,6 +71,28 @@ class PurchasesController {
     try {
       await purchasesService.deleteBox(req.params.boxId);
       res.json({ success: true, message: 'Box deleted' });
+    } catch (error) { next(error); }
+  }
+
+  async duplicateBox(req, res, next) {
+    try {
+      const box = await purchasesService.duplicateBox(req.params.boxId);
+      res.status(201).json({ success: true, data: box });
+    } catch (error) { next(error); }
+  }
+
+  /**
+   * What the last box of this product looked like — cost, count and size run.
+   * Returns null rather than 404 when there is no history: "nothing to suggest" is a
+   * normal answer the form has to handle anyway.
+   */
+  async boxSuggestion(req, res, next) {
+    try {
+      const { product_id } = req.query;
+      if (!product_id) return res.json({ success: true, data: null });
+      const scope = resolveStoreScope(req.user, req.query);
+      const data = await purchasesService.lastBoxForProduct(product_id, scope);
+      res.json({ success: true, data });
     } catch (error) { next(error); }
   }
 

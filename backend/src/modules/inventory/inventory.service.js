@@ -69,6 +69,29 @@ function applySizeFilter(qb, { size_min, size_max, size_values } = {}) {
 }
 
 /**
+ * Colour filtering, by name rather than by product_colors.id.
+ *
+ * A colour row belongs to one product: "Black" on a Nike and "Black" on an Adidas are
+ * two different rows with two different ids. Filtering by id would therefore mean
+ * "black, but only this one product's black", which is not what anybody picking a
+ * colour chip means. Names are what the shop actually uses — they are typed once into
+ * the colour presets and reused — so the filter matches on the name, case-insensitively.
+ *
+ * The placeholder colour is never offered as a choice (see variantIdentity.js): it is
+ * the stand-in for "this category has no colours", not a colour.
+ */
+function applyColorFilter(qb, { colors } = {}) {
+  const values = asList(colors);
+  if (!values.length) return qb;
+  qb.whereRaw(
+    `LOWER(product_colors.color_name) = ANY(?::text[])`,
+    [values.map((v) => v.toLowerCase())]
+  );
+  qb.where('product_colors.is_placeholder', false);
+  return qb;
+}
+
+/**
  * LATERAL lookup of one representative image per product colour.
  * Selects thumb_url only when the column exists, so the query still runs on a
  * database where migration 20260814_002 has not been applied yet.
@@ -85,7 +108,7 @@ function colorImageLateral(hasThumbs) {
 }
 
 class InventoryService {
-  async list({ store_id, store_ids, product_id, variant_id, category_id, status, source, search, size_min, size_max, size_values, supplier_id, limit } = {}) {
+  async list({ store_id, store_ids, product_id, variant_id, category_id, status, source, search, size_min, size_max, size_values, colors, supplier_id, limit } = {}) {
     const { productImageThumbs: hasThumbs } = await capabilities();
     let query = db('inventory_items')
       .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
@@ -112,6 +135,9 @@ class InventoryService {
         'product_variants.size_uk',
         'product_variants.size_cm',
         'product_variants.product_color_id',
+        // summary() has always returned product_id; list() did not, so a caller with a
+        // row in hand could not ask anything else about its product without a lookup.
+        'products.id as product_id',
         'products.product_code',
         'products.model_name as product_name',
         'products.brand',
@@ -158,6 +184,7 @@ class InventoryService {
       });
     }
     applySizeFilter(query, { size_min, size_max, size_values });
+    applyColorFilter(query, { colors });
     if (supplier_id) {
       query = query
         .join('purchase_invoice_boxes', 'inventory_items.invoice_box_id', 'purchase_invoice_boxes.id')
@@ -171,7 +198,7 @@ class InventoryService {
   /**
    * Get a summary of inventory: grouped by product variant + store with counts.
    */
-  async summary({ store_id, store_ids, category_id, search, size_min, size_max, size_values, limit } = {}) {
+  async summary({ store_id, store_ids, category_id, search, size_min, size_max, size_values, colors, limit } = {}) {
     const { productImageThumbs: hasThumbs } = await capabilities();
     let query = db('inventory_items')
       .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
@@ -263,6 +290,7 @@ class InventoryService {
     }
 
     applySizeFilter(query, { size_min, size_max, size_values });
+    applyColorFilter(query, { colors });
 
     // Previously unbounded: the POS calls this on every search and could pull the
     // entire in-stock table, each row carrying a correlated image subquery.
@@ -272,6 +300,208 @@ class InventoryService {
     // inventory tree and Word export both need the full set. Callers that only
     // need a page of results (the POS search) pass their own smaller limit.
     return query.limit(clampLimit(limit, SUMMARY_MAX_ROWS));
+  }
+
+
+
+  /**
+   * One row per product, for the till's product grid.
+   *
+   * The grid draws a card per product, but it was being fed `summary()`, which returns
+   * one row per (product, colour, size, store) and carries an image, a price band, a
+   * SKU and a barcode on every one of them. Measured on this catalogue: **58 rows and
+   * 49 KB to draw 13 cards**. The row count grows as products x colours x sizes while
+   * the card count grows as products, so a real catalogue — 500 products, 4 colours,
+   * 8 sizes — is 16,000 rows. The till asked for 5000 of them on every search, which
+   * both moved megabytes and, worse, *silently truncated the catalogue*: stock past the
+   * cap simply did not appear, with nothing on screen to say so.
+   *
+   * This aggregates in SQL instead. The cap now bounds products, which is what the grid
+   * actually shows, so hitting it means "too many products to display", not "some of
+   * your stock is invisible".
+   *
+   * Colours and sizes are deliberately NOT returned. The cashier picks those in the
+   * product modal, which fetches them for the one product it needs.
+   */
+  async productGrid({ store_id, store_ids, category_id, search, size_min, size_max,
+    size_values, colors, limit } = {}) {
+    const { productImageThumbs: hasThumbs } = await capabilities();
+
+    // The filters decide which VARIANTS count, then the aggregate rolls them up to
+    // products. A product is listed when at least one of its variants survives the
+    // filter — which is what "show me shoes in size 42" means.
+    const base = db('inventory_items')
+      .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
+      .join('products', 'product_variants.product_id', 'products.id')
+      .join('product_colors', 'product_variants.product_color_id', 'product_colors.id')
+      .leftJoin('store_product_prices', function () {
+        this.on('store_product_prices.product_id', '=', 'products.id')
+          .andOn('store_product_prices.store_id', '=', 'inventory_items.store_id');
+      })
+      .where('inventory_items.status', 'in_stock');
+
+    applyStoreScope(base, 'inventory_items.store_id', { store_id, store_ids });
+    if (category_id) base.where('products.category_id', category_id);
+    if (search) {
+      const safeSearch = String(search).replace(/[%_\\]/g, '\\$&');
+      base.where(function () {
+        this.where('products.model_name', 'ilike', `%${safeSearch}%`)
+          .orWhere('products.product_code', 'ilike', `%${safeSearch}%`)
+          .orWhere('products.brand', 'ilike', `%${safeSearch}%`)
+          .orWhere('product_colors.color_name', 'ilike', `%${safeSearch}%`)
+          .orWhere('product_variants.sku', 'ilike', `%${safeSearch}%`)
+          .orWhere('product_variants.barcode', 'ilike', `%${safeSearch}%`)
+          .orWhere(db.raw('CAST(product_variants.size_eu AS TEXT)'), 'ilike', `%${safeSearch}%`);
+      });
+    }
+    applySizeFilter(base, { size_min, size_max, size_values });
+    applyColorFilter(base, { colors });
+
+    // MIN over the per-store price: a product is one card, and store_product_prices is
+    // unique per (store, product), so within one store this is that single value.
+    // Across several stores it is the lowest, which is the honest thing to show on a
+    // card that is not store-specific.
+    const rows = await base
+      .select(
+        'products.id as product_id',
+        'products.product_code',
+        'products.model_name as product_name',
+        'products.brand',
+        'products.category_id',
+        db.raw('COUNT(inventory_items.id)::int as quantity'),
+        db.raw('COUNT(DISTINCT product_variants.id)::int as variant_count'),
+        db.raw('MIN(COALESCE(store_product_prices.selling_price, products.default_selling_price)) as price_from'),
+        db.raw('MAX(COALESCE(store_product_prices.selling_price, products.default_selling_price)) as price_to'),
+        db.raw('MIN(products.default_selling_price) as default_selling_price'),
+        db.raw('MIN(store_product_prices.selling_price) as store_selling_price')
+      )
+      .groupBy('products.id', 'products.product_code', 'products.model_name',
+        'products.brand', 'products.category_id')
+      .orderBy('products.model_name')
+      .limit(clampLimit(limit, 200));
+
+    if (!rows.length) return rows;
+
+    // One image per product, fetched for the page of products actually being shown
+    // rather than carried on every variant row. A LATERAL keeps it to one lookup per
+    // product and lets it use the index on product_color_id.
+    const thumbCol = hasThumbs ? 'pci.thumb_url' : 'NULL::text';
+    const images = await db('products')
+      .whereIn('products.id', rows.map((r) => r.product_id))
+      .joinRaw(`LEFT JOIN LATERAL (
+        SELECT pci.image_url, ${thumbCol} as thumb_url
+        FROM product_colors pc
+        JOIN product_color_images pci ON pci.product_color_id = pc.id
+        WHERE pc.product_id = products.id
+        ORDER BY pci.is_primary DESC, pci.created_at ASC
+        LIMIT 1
+      ) img ON TRUE`)
+      .select('products.id', 'img.image_url', 'img.thumb_url');
+
+    const imageById = new Map(images.map((i) => [i.id, i]));
+    return rows.map((r) => {
+      const img = imageById.get(r.product_id);
+      return {
+        ...r,
+        product_image: img?.image_url || null,
+        product_image_thumb: img?.thumb_url || img?.image_url || null,
+      };
+    });
+  }
+
+  /**
+   * What is actually on the shelves, as a set of filter chips.
+   *
+   * The till used to build its size chips from the chosen category's whole size list,
+   * which offers EU 30 to EU 50 for a shop that stocks 40 to 45 — most of the buttons
+   * find nothing, and a cashier learns to distrust them. These come from stock: every
+   * chip returned has at least one pair behind it, and the count is on the chip.
+   *
+   * It also replaces a much worse habit. The POS asked for 5000 summary rows on every
+   * search partly so it could see what colours and sizes existed; three grouped counts
+   * are a fraction of that, and they do not grow with the catalogue.
+   *
+   * **Each facet is computed with every filter EXCEPT its own.** Otherwise picking
+   * "Black" removes every other colour from the colour row, and there is no way back
+   * to a different colour without clearing the filter — a dead end that reads as a
+   * broken screen rather than as a filter doing its job.
+   */
+  async facets({ store_id, store_ids, category_id, search, size_values, colors } = {}) {
+    const base = (opts) => {
+      const q = db('inventory_items')
+        .join('product_variants', 'inventory_items.variant_id', 'product_variants.id')
+        .join('products', 'product_variants.product_id', 'products.id')
+        .join('product_colors', 'product_variants.product_color_id', 'product_colors.id')
+        .where('inventory_items.status', 'in_stock');
+      applyStoreScope(q, 'inventory_items.store_id', { store_id, store_ids });
+      if (opts.category !== false && category_id) q.where('products.category_id', category_id);
+      if (search) {
+        const safe = String(search).replace(/[%_\\]/g, '\\$&');
+        q.where(function () {
+          this.where('products.model_name', 'ilike', `%${safe}%`)
+            .orWhere('products.product_code', 'ilike', `%${safe}%`)
+            .orWhere('products.brand', 'ilike', `%${safe}%`)
+            .orWhere('product_colors.color_name', 'ilike', `%${safe}%`)
+            .orWhere('product_variants.sku', 'ilike', `%${safe}%`);
+        });
+      }
+      if (opts.size !== false) applySizeFilter(q, { size_values });
+      if (opts.color !== false) applyColorFilter(q, { colors });
+      return q;
+    };
+
+    // Colours: every colour but its own filter. Placeholder rows are excluded — a
+    // knife's stand-in colour is not a colour anybody wants to filter by.
+    const colorsQ = base({ color: false })
+      .where('product_colors.is_placeholder', false)
+      .select(
+        db.raw('MIN(product_colors.color_name) as name'),
+        db.raw('MIN(product_colors.hex_code) as hex_code'),
+        db.raw('COUNT(inventory_items.id)::int as count')
+      )
+      .groupByRaw('LOWER(product_colors.color_name)')
+      .orderByRaw('COUNT(inventory_items.id) DESC, MIN(product_colors.color_name)')
+      .limit(60);
+
+    // Sizes carry their scale's wording, so the chips read "80 cm" and "Kids" rather
+    // than the raw stored value — the same formatSize the rest of the app uses.
+    const sizesQ = base({ size: false })
+      .leftJoin('size_scale_values as ssv', 'ssv.id', 'product_variants.size_scale_value_id')
+      .leftJoin('product_categories as pcat', 'pcat.id', 'products.category_id')
+      .leftJoin('size_scales as sscale', 'sscale.id', 'pcat.size_scale_id')
+      .select(
+        'product_variants.size_eu as value',
+        db.raw('MIN(product_variants.size_sort) as size_sort'),
+        db.raw('MIN(ssv.label_en) as size_label_en'),
+        db.raw('MIN(ssv.label_ar) as size_label_ar'),
+        db.raw('MIN(sscale.display_prefix) as size_prefix'),
+        db.raw('MIN(sscale.display_suffix) as size_suffix'),
+        db.raw('bool_or(COALESCE(pcat.has_sizes, true)) as has_sizes'),
+        db.raw('COUNT(inventory_items.id)::int as count')
+      )
+      .groupBy('product_variants.size_eu')
+      .orderByRaw('MIN(product_variants.size_sort), product_variants.size_eu')
+      .limit(120);
+
+    const categoriesQ = base({ category: false })
+      .leftJoin('product_categories as pcat', 'pcat.id', 'products.category_id')
+      .select(
+        db.raw('pcat.id as category_id'),
+        db.raw("COALESCE(pcat.name_en, 'Uncategorised') as name_en"),
+        'pcat.name_ar',
+        db.raw('COUNT(inventory_items.id)::int as count')
+      )
+      .groupBy('pcat.id', 'pcat.name_en', 'pcat.name_ar')
+      .orderByRaw('COUNT(inventory_items.id) DESC');
+
+    const [colorRows, sizeRows, categoryRows] = await Promise.all([colorsQ, sizesQ, categoriesQ]);
+
+    return {
+      colors: colorRows,
+      // A one-size product has nothing worth putting on a chip.
+      sizes: sizeRows.filter((r) => r.has_sizes !== false),
+      categories: categoryRows,
+    };
   }
 
   /**
@@ -319,3 +549,6 @@ class InventoryService {
 }
 
 module.exports = new InventoryService();
+// Shared so the sale detail can show the same picture the inventory list does,
+// without a second copy of the query drifting from this one.
+module.exports.colorImageLateral = colorImageLateral;

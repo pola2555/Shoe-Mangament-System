@@ -7,12 +7,38 @@ const { resolveStoreScope } = require('../../utils/storeScope');
 const ExcelJS = require('exceljs');
 
 class SalesController {
+  async voidSale(req, res, next) {
+    try {
+      const sale = await salesService.voidSale(req.params.id, req.body, req.user);
+      res.json({ success: true, data: sale, message: 'Sale voided and stock returned' });
+    } catch (error) { next(error); }
+  }
+
+  async updateSale(req, res, next) {
+    try {
+      const sale = await salesService.updateSale(req.params.id, req.body, req.user);
+      res.json({ success: true, data: sale });
+    } catch (error) { next(error); }
+  }
+
+  async customerBalance(req, res, next) {
+    try {
+      const { store_id: _s, store_ids: _si } = req.query;
+      const scope = resolveStoreScope(req.user, req.query);
+      const data = await salesService.customerBalance(req.params.customerId, scope);
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
+  }
+
   async list(req, res, next) {
     try {
       const { store_id: _s, store_ids: _si, ...rest } = req.query;
       const filters = { ...rest, ...resolveStoreScope(req.user, req.query) };
-      const sales = await salesService.list(filters);
-      res.json({ success: true, data: sales });
+      const result = await salesService.list(filters);
+      // list() returns a bare array for the short lookup callers and { data, pagination }
+      // for the paged history page. Normalise so both reach the client the same way.
+      const payload = Array.isArray(result) ? { data: result } : result;
+      res.json({ success: true, ...payload });
     } catch (error) { next(error); }
   }
 

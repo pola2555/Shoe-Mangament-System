@@ -21,6 +21,10 @@ function errorHandler(err, req, res, next) {
     return res.status(err.statusCode).json({
       success: false,
       message: err.message,
+      // Structured facts a screen can render, when the thrower supplied them. The
+      // discount floor is the first user: the dialog shows "under by 120" rather than
+      // parsing that number back out of an English sentence.
+      ...(err.details ? { details: err.details } : {}),
     });
   }
 
@@ -46,6 +50,31 @@ function errorHandler(err, req, res, next) {
     return res.status(400).json({
       success: false,
       message: 'Referenced record does not exist',
+    });
+  }
+
+  /**
+   * PostgreSQL "invalid input syntax" — a malformed id, date or number reached the
+   * database as a cast error.
+   *
+   * `GET /api/sales/not-a-uuid` answered 500 before this: the id went straight into a
+   * WHERE clause, Postgres refused to cast it, and an ordinary bad request came back
+   * looking like a server fault. That is worth more than a tidier status code — a 500
+   * is what you page someone about, so a stream of them from mistyped links buries the
+   * real ones.
+   *
+   * A backstop, not a substitute for validation. Routes that can say something more
+   * useful ("category_id must be a uuid") still should; this catches the ones nobody
+   * has got to yet, and every route added later.
+   *
+   *   22P02  invalid_text_representation   ('abc' as a uuid)
+   *   22007  invalid_datetime_format
+   *   22003  numeric_value_out_of_range
+   */
+  if (['22P02', '22007', '22003'].includes(err.code)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid value in the request — check the identifier, date or number.',
     });
   }
 

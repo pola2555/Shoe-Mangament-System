@@ -3,9 +3,11 @@ const AppError = require('../../utils/AppError');
 const barcodesService = require('../barcodes/barcodes.service');
 const { generateUUID, generateDocumentNumber } = require('../../utils/generateCodes');
 const { getSupplierBalance } = require('../../utils/supplierBalance');
+const { applyStoreScope } = require('../../utils/storeScope');
 const {
   categoryOfProduct, ensurePlaceholderColor, resolveVariantTarget, generateSku,
 } = require('../../utils/variantIdentity');
+const { healEstimatedCosts } = require('../../utils/costCorrection');
 
 /**
  * Purchases service — Purchase invoices, boxes, box items, supplier payments.
@@ -391,6 +393,123 @@ class PurchasesService {
     await db('purchase_invoice_boxes').where('id', boxId).del();
   }
 
+  /**
+   * Copy a box and everything in it into the same invoice.
+   *
+   * A shipment is usually several identical boxes of one product, and each one was
+   * being typed out again from nothing.
+   *
+   * The copy is never `complete`, whatever the original was: completing is what creates
+   * physical inventory, and a duplicate that arrived already complete would invent
+   * stock that nobody received. It starts where a freshly-entered box starts.
+   *
+   * One transaction, and the invoice-total check runs inside it — otherwise two people
+   * duplicating at once could take the invoice past its own total.
+   */
+  async duplicateBox(boxId) {
+    return db.transaction(async (trx) => {
+      const box = await trx('purchase_invoice_boxes').where('id', boxId).first();
+      if (!box) throw new AppError('Box not found', 404);
+
+      const invoice = await trx('purchase_invoices').where('id', box.invoice_id).forUpdate().first();
+      const boxes = await trx('purchase_invoice_boxes')
+        .where('invoice_id', box.invoice_id)
+        .select('total_items', 'cost_per_item');
+      const existingTotal = boxes.reduce(
+        (sum, b) => sum + ((Number(b.total_items) || 0) * (Number(b.cost_per_item) || 0)), 0
+      );
+      const copyCost = (Number(box.total_items) || 0) * (Number(box.cost_per_item) || 0);
+      if (existingTotal + copyCost > Number(invoice.total_amount)) {
+        throw new AppError(
+          `Duplicating this box would take the invoice to ${existingTotal + copyCost}, over its total of ${invoice.total_amount}.`,
+          400
+        );
+      }
+
+      const [copy] = await trx('purchase_invoice_boxes')
+        .insert({
+          id: generateUUID(),
+          invoice_id: box.invoice_id,
+          product_id: box.product_id,
+          box_template_id: box.box_template_id,
+          cost_per_item: box.cost_per_item,
+          total_items: box.total_items,
+          destination_store_id: box.destination_store_id,
+          notes: box.notes,
+          detail_status: box.product_id ? 'partial' : 'pending',
+        })
+        .returning('*');
+
+      const items = await trx('box_items').where('invoice_box_id', boxId);
+      if (items.length) {
+        await trx('box_items').insert(items.map((i) => ({
+          invoice_box_id: copy.id,
+          product_color_id: i.product_color_id,
+          size_eu: i.size_eu,
+          size_us: i.size_us,
+          size_uk: i.size_uk,
+          size_cm: i.size_cm,
+          quantity: i.quantity,
+        })));
+      }
+
+      copy.items = await trx('box_items').where('invoice_box_id', copy.id);
+      return copy;
+    });
+  }
+
+  /**
+   * What the last box of this product looked like.
+   *
+   * Receiving the same product month after month meant re-typing the same cost, the
+   * same count and the same size run every time. This is offered as a starting point,
+   * never applied on its own — the caller prefills a form the user can still change.
+   *
+   * Deliberately the LAST box rather than an average across all of them: a shop can
+   * name the box it came from, and check it. An average is a number with no history
+   * behind it that nobody can verify at a glance.
+   *
+   * Store-scoped through the invoice's boxes, so a suggestion cannot quietly reveal
+   * what another branch pays for the same goods.
+   */
+  async lastBoxForProduct(productId, { store_id, store_ids } = {}) {
+    const query = db('purchase_invoice_boxes as b')
+      .join('purchase_invoices as inv', 'inv.id', 'b.invoice_id')
+      .leftJoin('stores', 'stores.id', 'b.destination_store_id')
+      .where('b.product_id', productId)
+      .select(
+        'b.id', 'b.cost_per_item', 'b.total_items', 'b.destination_store_id',
+        'b.notes', 'b.created_at',
+        'inv.invoice_number', 'inv.invoice_date',
+        'stores.name as destination_store_name'
+      )
+      .orderBy('b.created_at', 'desc')
+      .first();
+
+    // A box with no destination store belongs to the invoice rather than a branch, so
+    // it stays visible — the same rule the loans list uses.
+    if (store_id || Array.isArray(store_ids)) {
+      query.where(function () {
+        applyStoreScope(this, 'b.destination_store_id', { store_id, store_ids });
+        this.orWhereNull('b.destination_store_id');
+      });
+    }
+
+    const box = await query;
+    if (!box) return null;
+
+    box.items = await db('box_items as bi')
+      .leftJoin('product_colors as pc', 'pc.id', 'bi.product_color_id')
+      .where('bi.invoice_box_id', box.id)
+      .select(
+        'bi.product_color_id', 'bi.size_eu', 'bi.size_us', 'bi.size_uk', 'bi.size_cm',
+        'bi.quantity', 'pc.color_name', 'pc.is_placeholder as color_is_placeholder'
+      )
+      .orderBy(['pc.color_name', 'bi.size_eu']);
+
+    return box;
+  }
+
   // ================================================================
   //  BOX ITEMS (size distribution) + MARK COMPLETE
   // ================================================================
@@ -540,6 +659,11 @@ class PurchasesService {
 
       // Phase 18: Dynamic Cost Updates & Notifications
       const productRecord = await trx('products').where('id', box.product_id).first();
+      // Named on the correction log and in its notification, so "which invoice changed
+      // my August profit" is answerable without another lookup.
+      const invoice = await trx('purchase_invoices')
+        .where('id', box.invoice_id)
+        .first('invoice_number');
       const unitCost = Number(box.cost_per_item) || 0;
       const currentNetPrice = Number(productRecord.net_price) || 0;
 
@@ -560,6 +684,52 @@ class PurchasesService {
           params: JSON.stringify({ product_code: productRecord.product_code, old_price: currentNetPrice, new_price: unitCost }),
           reference_id: productRecord.id,
           created_at: new Date()
+        });
+      }
+
+      // A real invoiced cost has just arrived for this product, so any GUESSED cost for
+      // it can stop being a guess. Deliberately separate from the net_price block
+      // above: that one is display-only and no report reads it, whereas this one moves
+      // reported profit and therefore logs and notifies on its own terms.
+      //
+      // Nothing here can touch a pair that already had a real cost — see the rule at
+      // the top of utils/costCorrection.js. Existing behaviour is unchanged for every
+      // shop that never enters stock without an invoice.
+      const healed = await healEstimatedCosts(trx, {
+        productId: box.product_id,
+        newCost: unitCost,
+        boxId,
+        invoiceNumber: invoice?.invoice_number || null,
+        userId: null,   // automatic
+      });
+
+      if (healed) {
+        const oldRange = healed.old_costs.length === 1
+          ? `${healed.old_costs[0]}`
+          : `${healed.old_costs[0]}–${healed.old_costs[healed.old_costs.length - 1]}`;
+        await trx('notifications').insert({
+          id: generateUUID(),
+          type: 'cost_corrected',
+          title: `Estimated cost replaced: ${productRecord.product_code}`,
+          message: `${healed.pairs} pair(s) of ${productRecord.product_code} were entered with an estimated cost of ${oldRange} EGP. `
+            + `That has been replaced with ${healed.new_cost} EGP from ${invoice?.invoice_number || 'this invoice'}. `
+            + (healed.sold_pairs
+              ? `${healed.sold_pairs} of them were already sold, so the profit reported for those days has changed. `
+              : '')
+            + 'This is today\'s cost, which may not be what you paid for the older stock — undo it if it looks wrong.',
+          title_key: 'notifications.cost_corrected_title',
+          message_key: 'notifications.cost_corrected_message',
+          params: JSON.stringify({
+            product_code: productRecord.product_code,
+            pairs: healed.pairs,
+            sold_pairs: healed.sold_pairs,
+            old_cost: oldRange,
+            new_cost: healed.new_cost,
+            invoice_number: invoice?.invoice_number || '',
+          }),
+          // The batch, not the product: this is what the undo button acts on.
+          reference_id: healed.batch_id,
+          created_at: new Date(),
         });
       }
 

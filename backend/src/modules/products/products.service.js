@@ -2,6 +2,7 @@ const db = require('../../config/database');
 const AppError = require('../../utils/AppError');
 const barcodesService = require('../barcodes/barcodes.service');
 const { generateUUID } = require('../../utils/generateCodes');
+const { paginate, wantsPage } = require('../../utils/paginate');
 const { deleteFile } = require('../../middleware/upload');
 const { thumbUrlFor, deleteThumbnail } = require('../../utils/thumbnails');
 const { capabilities } = require('../../utils/schemaCapabilities');
@@ -73,7 +74,7 @@ class ProductsService {
   //  PRODUCTS
   // ================================================================
 
-  async list({ search, brand, is_active, category_id } = {}) {
+  async list({ search, brand, is_active, category_id, page, limit, paginate: wantPage } = {}) {
     // leftJoin, never join: a product whose category_id is still null (this feature
     // shipped before the backfill on any given environment) must not vanish from the
     // list. Same reason expenses left-joins its categories.
@@ -91,8 +92,7 @@ class ProductsService {
         'ss.display_suffix',
         'ss.is_numeric as scale_is_numeric'
       )
-      .orderBy('products.created_at', 'desc')
-      .limit(500);
+      .orderBy('products.created_at', 'desc');
 
     if (category_id) query = query.where('products.category_id', category_id);
 
@@ -110,8 +110,17 @@ class ProductsService {
     }
     if (is_active !== undefined) query = query.where('products.is_active', is_active);
 
-    const products = await query;
-    if (products.length === 0) return products;
+    // The catalogue grows without bound, so the products page pages through it. Callers
+    // that just need the list (a picker, an export) get the capped array they always
+    // did. Either way the enrichment below runs only over the rows actually returned.
+    let pagination = null;
+    let products;
+    if (wantsPage({ page, paginate: wantPage })) {
+      ({ data: products, pagination } = await paginate(query, { page, limit, defaultLimit: 50, maxLimit: 200 }));
+    } else {
+      products = await query.limit(500);
+    }
+    if (products.length === 0) return pagination ? { data: products, pagination } : products;
 
     const { productImageThumbs: hasThumbs } = await capabilities();
 
@@ -182,7 +191,7 @@ class ProductsService {
       product.in_stock_count = stockCountByProduct.get(product.id) || 0;
     }
 
-    return products;
+    return pagination ? { data: products, pagination } : products;
   }
 
   async getById(id) {

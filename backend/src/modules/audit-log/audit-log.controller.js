@@ -1,10 +1,17 @@
 const auditLogService = require('./audit-log.service');
 const logActivity = require('../../utils/logActivity');
+const { resolveStoreScope, hasGlobalStoreAccess } = require('../../utils/storeScope');
 
 class AuditLogController {
   async list(req, res, next) {
     try {
-      const result = await auditLogService.list(req.query);
+      // The log was the one list in the app with no store scoping: a branch manager
+      // granted `audit_log:read` could page through head office and every other
+      // branch. Unrestricted users (admin, `all_stores`) are unaffected.
+      const scope = hasGlobalStoreAccess(req.user)
+        ? null
+        : resolveStoreScope(req.user, req.query);
+      const result = await auditLogService.list(req.query, scope);
       res.json({ success: true, ...result });
     } catch (error) {
       next(error);

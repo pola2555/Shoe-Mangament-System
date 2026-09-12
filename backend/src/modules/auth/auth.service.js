@@ -1,9 +1,27 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const db = require('../../config/database');
 const env = require('../../config/env');
 const AppError = require('../../utils/AppError');
 const { generateUUID } = require('../../utils/generateCodes');
+
+/**
+ * Refresh tokens are stored HASHED, never in the clear.
+ *
+ * A refresh token is a 7-day bearer credential: whoever holds one can mint access
+ * tokens until it is revoked. Storing the raw JWT meant a database read — a backup file,
+ * an accidental dump, any future SQL-injection — handed the reader working, replayable
+ * sessions. Hashing at rest means the stored value is useless if the table leaks.
+ *
+ * SHA-256, not bcrypt: the token is already high-entropy (a signed JWT), so there is
+ * nothing to brute-force, and we need to LOOK IT UP by value on every refresh — a fast
+ * deterministic hash keeps the indexed `where token = ?` lookup, which bcrypt could not.
+ * The client still receives the raw token; only our copy is hashed.
+ */
+function hashRefreshToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
 
 /**
  * Auth service — handles authentication logic.
@@ -88,9 +106,11 @@ class AuthService {
       throw new AppError('Invalid or expired refresh token', 401);
     }
 
-    // Check if token exists and is not revoked
+    // Check if token exists and is not revoked. Looked up by HASH — the raw token is
+    // never stored. (Sessions created before this change stored the raw JWT and will not
+    // match; those users re-login once, which also retires the old cleartext tokens.)
     const tokenRecord = await db('refresh_tokens')
-      .where('token', refreshTokenStr)
+      .where('token', hashRefreshToken(refreshTokenStr))
       .where('is_revoked', false)
       .where('expires_at', '>', new Date())
       .first();
@@ -121,7 +141,7 @@ class AuthService {
 
     // Rotate refresh token: revoke old one, issue new one
     await db('refresh_tokens')
-      .where('token', refreshTokenStr)
+      .where('token', hashRefreshToken(refreshTokenStr))
       .update({ is_revoked: true });
 
     const accessToken = this._generateAccessToken(user);
@@ -135,7 +155,7 @@ class AuthService {
    */
   async logout(refreshTokenStr) {
     await db('refresh_tokens')
-      .where('token', refreshTokenStr)
+      .where('token', hashRefreshToken(refreshTokenStr))
       .update({ is_revoked: true });
   }
 
@@ -158,6 +178,9 @@ class AuthService {
         'users.created_at',
         'users.theme',
         'users.locale',
+        // Screens this person has been told not to be shown. A convenience, not a
+        // guard — see migration 20260904_002.
+        'users.hidden_pages',
         'roles.name as role_name',
         'stores.name as store_name'
       )
@@ -209,7 +232,11 @@ class AuthService {
 
   async _generateRefreshToken(userId) {
     const token = jwt.sign(
-      { userId },
+      // A unique jti per token. Without it, jwt.sign is deterministic — two tokens minted
+      // for the same user in the same second are byte-identical, which collides on the
+      // stored hash (and on the token index), and makes rotation a no-op. The jti makes
+      // every refresh token distinct regardless of timing.
+      { userId, jti: crypto.randomUUID() },
       env.jwt.refreshSecret,
       { expiresIn: env.jwt.refreshExpiresIn, algorithm: 'HS256' }
     );
@@ -221,7 +248,8 @@ class AuthService {
     await db('refresh_tokens').insert({
       id: generateUUID(),
       user_id: userId,
-      token,
+      // Store only the hash; the raw token goes to the client and nowhere else.
+      token: hashRefreshToken(token),
       expires_at: expiresAt,
     });
 

@@ -32,6 +32,9 @@ const inventoryQuerySchema = Joi.object({
   size_max: Joi.number().allow(''),
   // Exact sizes as stored: 'Kids', 'M', '42', 'OS'. Length matches size_eu varchar(20).
   size_values: stringList(200, 20),
+  // Colour NAMES, not ids — see applyColorFilter. product_colors.color_name is
+  // varchar(50).
+  colors: stringList(60, 50),
   limit: Joi.number().integer().min(1).max(10000),
 }).unknown(true);
 

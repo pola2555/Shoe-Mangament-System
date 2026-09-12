@@ -1,9 +1,10 @@
 const db = require('../../config/database');
 const AppError = require('../../utils/AppError');
 const { generateUUID } = require('../../utils/generateCodes');
+const { paginate, wantsPage } = require('../../utils/paginate');
 
 class CustomersService {
-  async list({ search } = {}) {
+  async list({ search, page, limit, paginate: wantPage } = {}) {
     let query = db('customers').orderBy('name', 'asc');
     if (search) {
       const safeSearch = search.replace(/[%_\\]/g, '\\$&');
@@ -11,6 +12,11 @@ class CustomersService {
         this.where('phone', 'ilike', `%${safeSearch}%`)
           .orWhere('name', 'ilike', `%${safeSearch}%`);
       });
+    }
+    // The customers page pages through the book; the POS/quick-add pickers just want a
+    // capped list to search, and get the plain array they always did.
+    if (wantsPage({ page, paginate: wantPage })) {
+      return paginate(query, { page, limit, defaultLimit: 50, maxLimit: 200 });
     }
     return query.limit(500);
   }
@@ -20,7 +26,7 @@ class CustomersService {
     if (!customer) throw new AppError('Customer not found', 404);
 
     // Fetch purchase history
-    customer.sales = await db('sales')
+    customer.sales = await db('sales').whereNull('sales.voided_at')
       .join('stores', 'sales.store_id', 'stores.id')
       .where('customer_id', id)
       .select('sales.*', 'stores.name as store_name')
@@ -109,7 +115,7 @@ class CustomersService {
   }
 
   async delete(id) {
-    const salesCount = await db('sales').where('customer_id', id).count('id as count').first();
+    const salesCount = await db('sales').whereNull('sales.voided_at').where('customer_id', id).count('id as count').first();
     if (parseInt(salesCount.count) > 0) {
       throw new AppError('Cannot delete customer with existing sales. Edit their info instead.', 400);
     }

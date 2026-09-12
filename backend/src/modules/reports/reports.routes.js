@@ -19,6 +19,15 @@ router.get('/dashboard', permission('reports', 'read'), enforceStoreScope, async
   } catch (error) { next(error); }
 });
 
+// This period against the one before it. Same length, immediately before — never
+// "last calendar month", which would compare 12 days against 31.
+router.get('/comparison', permission('reports', 'read'), enforceStoreScope, async (req, res, next) => {
+  try {
+    const data = await reportsService.getPeriodComparison(req.query);
+    res.json({ success: true, data });
+  } catch (error) { next(error); }
+});
+
 router.get('/sales-analytics', permission('reports', 'read'), enforceStoreScope, async (req, res, next) => {
   try {
     const data = await reportsService.getSalesAnalytics(req.query);
@@ -68,6 +77,32 @@ router.get('/employee-analytics', permission('reports', 'read'), enforceStoreSco
 router.get('/dashboard-home', permission('reports', 'read'), enforceStoreScope, async (req, res, next) => {
   try {
     const data = await reportsService.getDashboardHome(req.query);
+    res.json({ success: true, data });
+  } catch (error) { next(error); }
+});
+
+// What to buy, and what to stop buying. Days of cover, not a bare low-stock number.
+router.get('/reorder', permission('reports', 'read'), enforceStoreScope, async (req, res, next) => {
+  try {
+    const data = await reportsService.getReorderSignals(req.query);
+    res.json({ success: true, data });
+  } catch (error) { next(error); }
+});
+
+// The findings a person would reach by reading every other tab carefully, ranked by
+// how much money is attached.
+router.get('/insights', permission('reports', 'read'), enforceStoreScope, async (req, res, next) => {
+  try {
+    const data = await reportsService.getInsights(req.query);
+    res.json({ success: true, data });
+  } catch (error) { next(error); }
+});
+
+// How much of this period's profit is still resting on guessed costs, and whether it
+// has been restated since. Read by every screen that headlines a profit figure.
+router.get('/cost-basis', permission('reports', 'read'), enforceStoreScope, async (req, res, next) => {
+  try {
+    const data = await reportsService.getCostBasis(req.query);
     res.json({ success: true, data });
   } catch (error) { next(error); }
 });

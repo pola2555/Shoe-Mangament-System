@@ -3,8 +3,9 @@ const customersService = require('./customers.service');
 class CustomersController {
   async list(req, res, next) {
     try {
-      const customers = await customersService.list(req.query);
-      res.json({ success: true, data: customers });
+      const result = await customersService.list(req.query);
+      const payload = Array.isArray(result) ? { data: result } : result;
+      res.json({ success: true, ...payload });
     } catch (error) { next(error); }
   }
 

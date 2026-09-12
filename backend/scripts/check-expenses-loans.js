@@ -108,7 +108,11 @@ const ADMIN = { role_name: 'admin', permissions: { all_stores: true } };
   console.log('THE BUG: filters and totals used to be computed in the browser over 500 rows:');
 
   const DAY = 24 * 60 * 60 * 1000;
-  const dateOf = (offset) => new Date(Date.now() - offset * DAY).toISOString().slice(0, 10);
+  // Business-day, not UTC — see businessToday() above.
+  const dateOf = (offset) => {
+    const d = new Date(Date.now() - offset * DAY);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  };
 
   await check('seed 8 expenses across two categories and two dates', async () => {
     for (let i = 0; i < 5; i++) {
@@ -225,14 +229,42 @@ const ADMIN = { role_name: 'admin', permissions: { all_stores: true } };
   });
 
   await check('it advances from the date that was DUE, not from today', async () => {
-    // Posted three days late; next month must still land on the original day.
+    // Posted three days late; next month must still land on the anchored day — except
+    // where that day does not exist. A template due on the 31st has no 31 September to
+    // land on, so the last day of the month is the correct answer, not a drift.
     const after = await knex('expense_recurring').where('id', tpl.id).first();
-    const expectedDay = dateOf(3).slice(8, 10);
-    const actualDay = toDateOnly(after.next_date).slice(8, 10);
+    const due = dateOf(3);
+    const anchor = parseInt(due.slice(8, 10), 10);
+    const next = toDateOnly(after.next_date);
+    const lastDayOfNext = new Date(Date.UTC(
+      parseInt(next.slice(0, 4), 10), parseInt(next.slice(5, 7), 10), 0
+    )).getUTCDate();
+    const expectedDay = String(Math.min(anchor, lastDayOfNext)).padStart(2, '0');
+    const actualDay = next.slice(8, 10);
     if (actualDay !== expectedDay) {
       throw new Error('drifted to day ' + actualDay + ', expected ' + expectedDay);
     }
-    return 'no drift';
+    return 'no drift: ' + due + ' -> ' + next;
+  });
+
+  await check('a month-end template comes BACK to the 31st, it does not walk down', () => {
+    // THE BUG: clamping 31 Jan to 28 Feb was right, but 28 then became the new anchor,
+    // so the template lost three days permanently and every following month kept them.
+    // The anchor is carried separately now, so the clamp is presentational.
+    const jan = '2026-01-31';
+    const feb = advance(jan, 'monthly', 31);
+    const mar = advance(feb, 'monthly', 31);
+    const apr = advance(mar, 'monthly', 31);
+    if (feb !== '2026-02-28') throw new Error('Feb is ' + feb);
+    if (mar !== '2026-03-31') throw new Error('Mar is ' + mar + ' — the anchor was lost');
+    if (apr !== '2026-04-30') throw new Error('Apr is ' + apr);
+    // A leap February, and a quarter that crosses a year boundary.
+    if (advance('2028-01-31', 'monthly', 31) !== '2028-02-29') throw new Error('leap year wrong');
+    if (advance('2026-11-30', 'quarterly', 30) !== '2027-02-28') throw new Error('quarter across a year wrong');
+    if (advance('2026-02-28', 'yearly', 28) !== '2027-02-28') throw new Error('yearly wrong');
+    // Weekly has no day-of-month anchor and must ignore one if handed it.
+    if (advance('2026-01-29', 'weekly', 31) !== '2026-02-05') throw new Error('weekly wrong');
+    return [jan, feb, mar, apr].join(' -> ');
   });
 
   await check('a paused template refuses to post', async () => {

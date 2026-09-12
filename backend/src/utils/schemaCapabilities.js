@@ -15,18 +15,31 @@ const db = require('../config/database');
 let cache = null;
 let inFlight = null;
 
+/**
+ * Every column the code can run without, as `table.column`, mapped to the capability
+ * name callers ask for. One probe covers all of them — adding a column here costs
+ * nothing at runtime.
+ */
+const OPTIONAL_COLUMNS = {
+  'product_color_images.thumb_url': 'productImageThumbs',
+  'attached_images.thumb_url': 'attachedImageThumbs',
+  'expense_recurring.anchor_day': 'recurringAnchorDay',
+  'inventory_items.cost_is_estimated': 'estimatedCostTracking',
+};
+
 async function probe() {
+  const wanted = Object.keys(OPTIONAL_COLUMNS).map((k) => k.split('.'));
+
   const rows = await db('information_schema.columns')
     .where('table_schema', db.raw('current_schema()'))
-    .whereIn('table_name', ['product_color_images', 'attached_images'])
-    .where('column_name', 'thumb_url')
-    .select('table_name');
+    .whereIn('table_name', [...new Set(wanted.map(([t]) => t))])
+    .whereIn('column_name', [...new Set(wanted.map(([, c]) => c))])
+    .select('table_name', 'column_name');
 
-  const tables = new Set(rows.map((r) => r.table_name));
-  return {
-    productImageThumbs: tables.has('product_color_images'),
-    attachedImageThumbs: tables.has('attached_images'),
-  };
+  const present = new Set(rows.map((r) => `${r.table_name}.${r.column_name}`));
+  return Object.fromEntries(
+    Object.entries(OPTIONAL_COLUMNS).map(([key, name]) => [name, present.has(key)])
+  );
 }
 
 /**
@@ -39,8 +52,8 @@ async function capabilities() {
     inFlight = probe()
       .then((result) => { cache = result; return result; })
       .catch((error) => {
-        console.error('[schema] capability probe failed, assuming no thumbnails:', error.message);
-        cache = { productImageThumbs: false, attachedImageThumbs: false };
+        console.error('[schema] capability probe failed, assuming none present:', error.message);
+        cache = Object.fromEntries(Object.values(OPTIONAL_COLUMNS).map((n) => [n, false]));
         return cache;
       })
       .finally(() => { inFlight = null; });

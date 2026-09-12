@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const db = require('../../config/database');
+const { APP_PAGES, UNHIDEABLE } = require('../../utils/appPages');
 const AppError = require('../../utils/AppError');
 const { generateUUID } = require('../../utils/generateCodes');
 const { invalidateUserCache } = require('../../middleware/auth');
@@ -70,6 +71,7 @@ class UsersService {
         'users.is_active',
         'users.last_login_at',
         'users.created_at',
+        'users.hidden_pages',
         'roles.name as role_name',
         'stores.name as store_name'
       )
@@ -249,6 +251,34 @@ class UsersService {
     invalidateUserCache(userId);
 
     return this.getStores(userId);
+  }
+
+  /**
+   * Screens to keep out of this person's way.
+   *
+   * Validated against the known page list so a typo cannot hide a page that does not
+   * exist (harmless) or, worse, store something that later matches a real route added
+   * under that name. Deliberately NOT a security boundary — the API permissions are;
+   * see migration 20260904_002.
+   */
+  async setHiddenPages(userId, pages = []) {
+    const user = await db('users').where('id', userId).first();
+    if (!user) throw new AppError('User not found', 404);
+
+    const known = new Set(APP_PAGES.map((p) => p.path));
+    // The dashboard is where a hidden page sends you, and Settings is where somebody
+    // changes their own password — hiding either strands the user.
+    const clean = [...new Set((pages || []).filter((p) => known.has(p) && !UNHIDEABLE.has(p)))];
+
+    await db('users').where('id', userId).update({ hidden_pages: JSON.stringify(clean) });
+    invalidateUserCache(userId);
+    return clean;
+  }
+
+  async getHiddenPages(userId) {
+    const row = await db('users').where('id', userId).first('hidden_pages');
+    if (!row) throw new AppError('User not found', 404);
+    return Array.isArray(row.hidden_pages) ? row.hidden_pages : [];
   }
 }
 

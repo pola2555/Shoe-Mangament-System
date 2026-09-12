@@ -55,6 +55,7 @@ router.put('/budgets', canSetup, validate(setBudgetSchema), controller.setBudget
 
 // --- reporting ---
 router.get('/summary', canRead, controller.summary);
+router.get('/by-store', canRead, validate(listExpensesSchema, 'query'), controller.byStore);
 router.get('/monthly-trend', canRead, controller.monthlyTrend);
 
 // --- expenses ---

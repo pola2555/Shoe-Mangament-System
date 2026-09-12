@@ -16,7 +16,15 @@
     "check:filters": "node scripts/check-filters.js",
     "check:colors": "node scripts/check-color-skus.js",
     "check:money": "node scripts/check-expenses-loans.js",
-    "check:http": "node scripts/check-expenses-loans-http.js"
+    "check:http": "node scripts/check-expenses-loans-http.js",
+    "check:sales": "node scripts/check-sales.js",
+    "check:stores": "node scripts/check-stores.js",
+    "check:intake": "node scripts/check-intake.js",
+    "check:operations": "node scripts/check-operations.js",
+    "check:audit": "node scripts/check-audit.js",
+    "check:security": "node scripts/check-security.js",
+    "audit:permissions": "node scripts/audit-permissions.js",
+    "check:controls": "node scripts/check-controls.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1018.0",

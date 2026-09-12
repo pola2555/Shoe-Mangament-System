@@ -47,16 +47,25 @@ function resolveStoreScope(user, query = {}) {
     ...(user?.store_id ? [user.store_id] : []),
   ])];
 
-  // No store at all — scope to a value that matches nothing rather than leaking everything.
-  if (allowed.length === 0) {
-    return { store_ids: [] };
-  }
-
+  // An explicit request for a store is answered before anything else, so that naming a
+  // store you may not see is always a 403 — including when you have no stores at all.
+  //
+  // This check used to sit AFTER the empty-list case below, so a user with no
+  // assignment who asked for a specific branch got a silent 200 with zero rows, while
+  // a user assigned to one branch asking for another got a clear refusal. Same
+  // question, two different answers, and the silent one leaves somebody staring at an
+  // empty screen with nothing to tell them why.
   if (requested) {
     if (!allowed.includes(requested)) {
       throw new AppError('Access denied: you are not assigned to this store', 403);
     }
     return { store_id: requested };
+  }
+
+  // No store at all, and none asked for — scope to a value that matches nothing rather
+  // than leaking everything.
+  if (allowed.length === 0) {
+    return { store_ids: [] };
   }
 
   return allowed.length === 1 ? { store_id: allowed[0] } : { store_ids: allowed };

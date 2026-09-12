@@ -1,10 +1,18 @@
 const db = require('../../config/database');
 const AppError = require('../../utils/AppError');
 const { generateUUID, generateDocumentNumber } = require('../../utils/generateCodes');
+const shiftsService = require('../shifts/shifts.service');
 
 class ReturnsService {
-  async createCustomerReturn(data) {
-    return await db.transaction(async (trx) => {
+  /**
+   * Take goods back and refund them.
+   *
+   * `externalTrx` lets an EXCHANGE run the return and the replacement sale in one
+   * transaction, so a customer can never end up with the refund but not the swap, or
+   * the swap but not the refund.
+   */
+  async createCustomerReturn(data, externalTrx = null) {
+    const body = async (trx) => {
       // 1. Verify Sale (lock row to prevent race conditions)
       const sale = await trx('sales').where('id', data.sale_id).forUpdate().first();
       if (!sale) throw new AppError('Original sale not found', 404);
@@ -26,6 +34,11 @@ class ReturnsService {
       const returnId = generateUUID();
       const returnNum = await generateDocumentNumber('CR', trx, 'customer_returns', 'return_number');
       
+      // A cash refund takes money OUT of the same drawer a cash sale put it into, so it
+      // has to belong to the open shift or the cash-up cannot balance. Linked at the
+      // moment it happens, not matched by timestamp afterwards.
+      const shift = await shiftsService.openShiftFor(data.store_id, trx);
+
       const returnData = {
         id: returnId,
         return_number: returnNum,
@@ -35,6 +48,7 @@ class ReturnsService {
         notes: data.notes,
         refund_method: data.refund_method,
         total_refund_amount: totalRefund,
+        shift_id: shift ? shift.id : null,
         created_by: data.created_by
       };
 
@@ -95,7 +109,10 @@ class ReturnsService {
       await trx('customer_return_items').insert(returnItemsToInsert);
 
       return { ...returnData, items: returnItemsToInsert };
-    });
+    };
+
+    if (externalTrx) return body(externalTrx);
+    return db.transaction(body);
   }
 
   async createSupplierReturn(data) {

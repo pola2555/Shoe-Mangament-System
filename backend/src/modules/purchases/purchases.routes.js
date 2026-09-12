@@ -28,6 +28,9 @@ router.delete('/invoices/:id/images/:imageId', permission('purchase_images', 'wr
 
 // --- Boxes (nested under invoice) ---
 router.post('/invoices/:id/boxes', permission('purchase_boxes', 'write'), validate(addBoxSchema), controller.addBox);
+// Before '/boxes/:boxId', or 'suggestion' is read as a box id.
+router.get('/boxes/suggestion', permission('purchases', 'read'), controller.boxSuggestion);
+router.post('/boxes/:boxId/duplicate', permission('purchase_boxes', 'write'), controller.duplicateBox);
 router.put('/boxes/:boxId', permission('purchase_boxes', 'write'), validate(updateBoxSchema), controller.updateBox);
 router.delete('/boxes/:boxId', permission('purchase_boxes', 'write'), controller.deleteBox);
 router.put('/boxes/:boxId/items', permission('purchase_boxes', 'write'), validate(setBoxItemsSchema), controller.setBoxItems);

@@ -33,6 +33,9 @@ const createExpenseSchema = Joi.object({
   expense_date: Joi.date().required(),
   payment_method: Joi.string().valid(...PAYMENT_METHODS).allow('', null),
   paid_to: Joi.string().max(120).allow('', null),
+  // Money that physically came out of the till. Only this kind is subtracted at
+  // cash-up — a bank transfer never touched the drawer.
+  paid_from_drawer: Joi.boolean().default(false),
 });
 
 const updateExpenseSchema = Joi.object({

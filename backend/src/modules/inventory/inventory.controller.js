@@ -77,6 +77,32 @@ class InventoryController {
     } catch (error) { next(error); }
   }
 
+  /**
+   * One row per product for the till's grid. See inventory.service#productGrid for why
+   * this exists rather than the till grouping summary() rows in the browser.
+   */
+  async productGrid(req, res, next) {
+    try {
+      const { store_id: _ignored, store_ids: _ignored2, ...rest } = req.query;
+      const filters = { ...rest, ...resolveStoreScope(req.user, req.query) };
+      const data = await inventoryService.productGrid(filters);
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
+  }
+
+  /**
+   * Which colours, sizes and categories the caller could usefully filter by, given
+   * what is in stock right now. Same store scoping as every other read here.
+   */
+  async facets(req, res, next) {
+    try {
+      const { store_id: _ignored, store_ids: _ignored2, ...rest } = req.query;
+      const filters = { ...rest, ...resolveStoreScope(req.user, req.query) };
+      const data = await inventoryService.facets(filters);
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
+  }
+
   async manualEntry(req, res, next) {
     try {
       if (!userHasStoreAccess(req.user, req.body.store_id)) {

@@ -3,6 +3,8 @@ const AppError = require('../../utils/AppError');
 const { generateUUID } = require('../../utils/generateCodes');
 const { applyStoreScope, resolveStoreScope } = require('../../utils/storeScope');
 const { toDateOnly, businessDayStart } = require('../../utils/dateRange');
+const { capabilities } = require('../../utils/schemaCapabilities');
+const shiftsService = require('../shifts/shifts.service');
 
 /**
  * Expenses: what the shop spends, on what, and against which budget.
@@ -44,26 +46,45 @@ function monthStart(value) {
  * Advances from the date that was due, not from today: a template posted three weeks
  * late still lands on the right day next month, and a month that was missed entirely
  * stays visible as overdue instead of being skipped.
+ *
+ * `anchorDay` is the day of the month the template belongs on, and it is the reason
+ * this takes three arguments instead of two. Clamping alone is not enough: rolling
+ * 31 January forward lands on 3 March, so it has to be pulled back to 28 February —
+ * but if 28 then becomes the anchor, the template has permanently lost three days and
+ * every following month compounds it. Carrying the anchor separately makes the clamp
+ * presentational, so a month-end template reads 31 Jan, 28 Feb, 31 Mar.
+ *
+ * Falls back to the day in `value` when no anchor is stored, which is the behaviour
+ * before migration 20260903_001 — the column can be absent while this code runs.
  */
-function advance(value, frequency) {
+function advance(value, frequency, anchorDay) {
   const dateStr = toDateOnly(value);
   if (!dateStr) throw new AppError('Invalid date', 400);
-  // Anchored at UTC midnight so every getUTC*/setUTC* below is unambiguous, whatever
+  // Anchored at UTC midnight so the date arithmetic below is unambiguous, whatever
   // the machine's timezone is.
   const d = new Date(`${dateStr}T00:00:00Z`);
-  const dayOfMonth = d.getUTCDate();
-  switch (frequency) {
-    case 'weekly': d.setUTCDate(d.getUTCDate() + 7); break;
-    case 'quarterly': d.setUTCMonth(d.getUTCMonth() + 3); break;
-    case 'yearly': d.setUTCFullYear(d.getUTCFullYear() + 1); break;
-    default: d.setUTCMonth(d.getUTCMonth() + 1); break;
+
+  // A week is a fixed number of days, so no anchor and no clamp can apply.
+  if (frequency === 'weekly') {
+    d.setUTCDate(d.getUTCDate() + 7);
+    return d.toISOString().slice(0, 10);
   }
-  // Rolling 31 Jan forward lands on 3 March, because month 1 has no 31st. Clamp back
-  // to the last day of the intended month so a rent template does not drift.
-  if (frequency !== 'weekly' && d.getUTCDate() !== dayOfMonth) {
-    d.setUTCDate(0);
-  }
-  return d.toISOString().slice(0, 10);
+
+  const months = frequency === 'quarterly' ? 3 : frequency === 'yearly' ? 12 : 1;
+  const anchor = Number(anchorDay) > 0 ? Number(anchorDay) : d.getUTCDate();
+  const year = d.getUTCFullYear();
+  const month = d.getUTCMonth() + months;      // Date.UTC rolls a month past 11 into the next year
+  // Day 0 of the month after the target is the last day OF the target.
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month, Math.min(anchor, lastDay)))
+    .toISOString().slice(0, 10);
+}
+
+/** The day a template belongs on, for `advance`. Weekly templates have none. */
+function anchorDayOf(nextDate, frequency) {
+  if (frequency === 'weekly') return null;
+  const iso = toDateOnly(nextDate);
+  return iso ? parseInt(iso.slice(8, 10), 10) : null;
 }
 
 /** Category columns every read returns, so the UI can localise without a second call. */
@@ -353,7 +374,42 @@ class ExpensesService {
     return expense;
   }
 
-  async create(data, userId) {
+  /**
+   * Record money going out.
+   *
+   * Two things happen here besides the insert, and both exist because staff spend the
+   * shop's cash without the owner in the room:
+   *
+   * 1. `paid_from_drawer` links the expense to the branch's OPEN shift, so a cashier
+   *    buying plastic bags out of the till is subtracted from the drawer at cash-up
+   *    instead of turning up as an unexplained shortfall that night.
+   *
+   * 2. An expense recorded by anyone who is not an admin raises a notification for the
+   *    admins. Not a block — a salesperson paying the electricity bill or drawing their
+   *    own salary is normal and refusing it would just mean it goes unrecorded. But the
+   *    owner has to find out without going looking.
+   *
+   * @param {object} actor - the full req.user, not just an id: the notification rule
+   *                         needs the role, and the drawer link needs nothing else.
+   */
+  async create(data, actor) {
+    const userId = typeof actor === 'string' ? actor : actor?.id;
+    const isAdmin = typeof actor === 'object' && actor?.role_name === 'admin';
+
+    const fromDrawer = data.paid_from_drawer === true || data.paid_from_drawer === 'true';
+    let shiftId = null;
+    if (fromDrawer) {
+      const shift = await shiftsService.openShiftFor(data.store_id);
+      if (!shift) {
+        throw new AppError(
+          'No shift is open at this branch, so there is no drawer to pay from. '
+          + 'Open the till first, or record this as paid another way.',
+          400
+        );
+      }
+      shiftId = shift.id;
+    }
+
     const safeData = {
       id: generateUUID(),
       store_id: data.store_id,
@@ -364,10 +420,73 @@ class ExpensesService {
       payment_method: data.payment_method || null,
       paid_to: data.paid_to || null,
       recurring_id: data.recurring_id || null,
+      shift_id: shiftId,
+      paid_from_drawer: fromDrawer,
       created_by: userId,
     };
     const [expense] = await db('expenses').insert(safeData).returning('*');
+
+    if (!isAdmin) await this._notifyAdminsOfExpense(expense, actor);
     return expense;
+  }
+
+  /**
+   * Tell the admins that somebody else spent the shop's money.
+   *
+   * Best-effort: a notification that fails must never be the reason an expense was not
+   * recorded. An unrecorded expense is a hole in the accounts; a missed notification is
+   * a row on a screen nobody read.
+   */
+  async _notifyAdminsOfExpense(expense, actor) {
+    try {
+      const [store, category, spender] = await Promise.all([
+        db('stores').where('id', expense.store_id).first('name'),
+        expense.category_id
+          ? db('expense_categories').where('id', expense.category_id).first('name')
+          : null,
+        typeof actor === 'object' && actor?.full_name
+          ? Promise.resolve({ full_name: actor.full_name })
+          : db('users').where('id', expense.created_by).first('full_name'),
+      ]);
+
+      const who = spender?.full_name || 'A member of staff';
+      const what = category?.name || 'Uncategorised';
+      const where = store?.name || '';
+
+      // One row per admin, so it reaches a person rather than a shared pile. Admins are
+      // found by role name — the same test permission checks use.
+      const admins = await db('users as u')
+        .join('roles as r', 'r.id', 'u.role_id')
+        .where('r.name', 'admin')
+        .where('u.is_active', true)
+        .pluck('u.id');
+      if (admins.length === 0) return;
+
+      const rows = admins.map((adminId) => ({
+        id: generateUUID(),
+        user_id: adminId,
+        type: 'staff_expense',
+        title: `${who} recorded an expense`,
+        message: `${who} recorded ${expense.amount} EGP for "${expense.description}" `
+          + `(${what})${where ? ` at ${where}` : ''}`
+          + `${expense.paid_from_drawer ? ', paid out of the till' : ''}.`,
+        title_key: 'notifications.staff_expense_title',
+        message_key: 'notifications.staff_expense_message',
+        params: JSON.stringify({
+          who,
+          amount: expense.amount,
+          description: expense.description,
+          category: what,
+          store: where,
+          from_drawer: !!expense.paid_from_drawer,
+        }),
+        reference_id: expense.id,
+        created_at: new Date(),
+      }));
+      await db('notifications').insert(rows);
+    } catch (error) {
+      console.error('[expenses] could not notify admins of a staff expense:', error.message);
+    }
   }
 
   async update(id, data) {
@@ -449,9 +568,13 @@ class ExpensesService {
 
   async createRecurring(data, userId) {
     if (!FREQUENCIES.includes(data.frequency)) throw new AppError('Unknown frequency', 400);
+    const { recurringAnchorDay } = await capabilities();
     const [row] = await db('expense_recurring')
       .insert({
         id: generateUUID(),
+        ...(recurringAnchorDay
+          ? { anchor_day: anchorDayOf(data.next_date, data.frequency) }
+          : {}),
         store_id: data.store_id,
         category_id: data.category_id,
         amount: data.amount,
@@ -473,6 +596,17 @@ class ExpensesService {
     const safe = { updated_at: new Date() };
     for (const f of ['store_id', 'category_id', 'amount', 'description', 'payment_method', 'paid_to', 'frequency', 'next_date', 'end_date', 'is_active']) {
       if (data[f] !== undefined) safe[f] = data[f];
+    }
+    // Moving the date by hand is how a shop re-anchors a template — rent that now falls
+    // on the 5th should stay on the 5th, not keep drifting back to whatever it was.
+    const { recurringAnchorDay } = await capabilities();
+    if (recurringAnchorDay && (data.next_date !== undefined || data.frequency !== undefined)) {
+      const current = await db('expense_recurring').where('id', id).first();
+      if (!current) throw new AppError('Recurring expense not found', 404);
+      safe.anchor_day = anchorDayOf(
+        data.next_date ?? current.next_date,
+        data.frequency ?? current.frequency
+      );
     }
     const [row] = await db('expense_recurring').where('id', id).update(safe).returning('*');
     if (!row) throw new AppError('Recurring expense not found', 404);
@@ -519,7 +653,7 @@ class ExpensesService {
 
       // Advance from the date that was DUE, not from today, so a template posted late
       // does not drift and a skipped month stays visible as overdue.
-      const nextDate = advance(tpl.next_date, tpl.frequency);
+      const nextDate = advance(tpl.next_date, tpl.frequency, tpl.anchor_day);
       const endDate = toDateOnly(tpl.end_date);
       const ended = endDate && nextDate > endDate;
       await trx('expense_recurring').where('id', id).update({
@@ -694,6 +828,41 @@ class ExpensesService {
     return [...groups.values()].sort((a, b) => b.total - a.total);
   }
 
+
+  /**
+   * The same filtered set of expenses, split by store.
+   *
+   * Built on `_baseQuery` for the same reason `list`'s total is: the strip above the
+   * table and the table itself have to describe one set of rows. A breakdown computed
+   * from a different filter than the list it sits under is a lie that looks like a
+   * feature.
+   *
+   * Note it deliberately ignores `filters.store_id`. Splitting by store while filtered
+   * to one store would return a single row, which is never the question being asked —
+   * the caller wants to know how the spend divides, and then to click one.
+   */
+  async byStore(filters = {}, requestingUser) {
+    const scope = resolveStoreScope(requestingUser, {});
+    const { store_id, ...rest } = filters;
+    const rows = await this._baseQuery(scope, rest)
+      .select('stores.id as store_id', 'stores.name as store_name')
+      .sum('expenses.amount as total')
+      .count('expenses.id as count')
+      .groupBy('stores.id', 'stores.name')
+      .orderBy('total', 'desc');
+
+    const stores = rows.map((r) => ({
+      store_id: r.store_id,
+      store_name: r.store_name,
+      total: parseFloat(r.total) || 0,
+      count: Number(r.count),
+    }));
+    return {
+      stores,
+      total: Math.round(stores.reduce((n, s) => n + s.total, 0) * 100) / 100,
+    };
+  }
+
   /** Month-by-month spend, for the trend on the reports page. */
   async monthlyTrend({ store_id, store_ids, months = 12 } = {}) {
     const n = Math.min(36, Math.max(1, parseInt(months, 10) || 12));
@@ -712,3 +881,4 @@ class ExpensesService {
 module.exports = new ExpensesService();
 module.exports.advance = advance;
 module.exports.monthStart = monthStart;
+module.exports.anchorDayOf = anchorDayOf;

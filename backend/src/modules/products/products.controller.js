@@ -6,8 +6,10 @@ class ProductsController {
   // --- Products ---
   async list(req, res, next) {
     try {
-      const products = await productsService.list(req.query);
-      res.json({ success: true, data: products });
+      const result = await productsService.list(req.query);
+      // Bare array for the pickers/exports; { data, pagination } for the paged page.
+      const payload = Array.isArray(result) ? { data: result } : result;
+      res.json({ success: true, ...payload });
     } catch (error) { next(error); }
   }
 

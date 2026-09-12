@@ -35,7 +35,19 @@ module.exports = {
       database: env.db.name,
       user: env.db.user,
       password: env.db.password,
-      ssl: { rejectUnauthorized: false },
+      // SSL only when it is asked for.
+      //
+      // This used to be unconditional, and it made NODE_ENV=production unusable on the
+      // normal deployment here: Postgres runs on the same box as the API
+      // (DB_HOST=localhost) and a stock install has SSL switched off, so node-postgres
+      // failed the handshake with "The server does not support SSL connections" and the
+      // API could not reach its database at all. Switching to production — the one
+      // change that turns on the secret guard and stops full error objects being
+      // returned to clients — would have taken the whole system down.
+      //
+      // Set DB_SSL=true for a managed or remote database that requires TLS. A local
+      // socket on the same host does not: there is no network for anyone to listen on.
+      ...(process.env.DB_SSL === 'true' ? { ssl: { rejectUnauthorized: false } } : {}),
     },
     pool: {
       min: 2,

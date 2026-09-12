@@ -1,5 +1,13 @@
 const usersService = require('./users.service');
 const db = require('../../config/database');
+const { userHasStoreAccess } = require('../../middleware/auth');
+
+/** Is this role the all-powerful admin role? Resolved by NAME, not by a magic id. */
+async function isAdminRole(roleId) {
+  if (roleId === undefined || roleId === null) return false;
+  const role = await db('roles').where('id', roleId).select('name').first();
+  return role?.name === 'admin';
+}
 
 class UsersController {
   async listRoles(req, res, next) {
@@ -55,6 +63,27 @@ class UsersController {
 
   async create(req, res, next) {
     try {
+      // PRIVILEGE-ESCALATION GUARD. The update path has always blocked a non-admin from
+      // handing out roles and store assignments; create did not, so anyone holding
+      // users:write could POST { role_id: <admin> } and mint themselves a full admin —
+      // role_name 'admin' bypasses every permission and all store scoping. Same intent
+      // as update, applied where a user is born.
+      if (req.user.role_name !== 'admin') {
+        if (await isAdminRole(req.body.role_id)) {
+          return res.status(403).json({
+            success: false,
+            message: 'Only an admin can create another admin account',
+          });
+        }
+        // And a non-admin cannot plant a user in a branch they do not control — that
+        // would be a way to seed access into someone else's shop.
+        if (req.body.store_id && !userHasStoreAccess(req.user, req.body.store_id)) {
+          return res.status(403).json({
+            success: false,
+            message: 'You can only add a user to a branch you are assigned to',
+          });
+        }
+      }
       const user = await usersService.create(req.body);
       res.status(201).json({ success: true, data: user });
     } catch (error) {
@@ -118,6 +147,20 @@ class UsersController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** Screens kept out of this person's way. Not a permission — see appPages.js. */
+  async getHiddenPages(req, res, next) {
+    try {
+      res.json({ success: true, data: await usersService.getHiddenPages(req.params.id) });
+    } catch (error) { next(error); }
+  }
+
+  async setHiddenPages(req, res, next) {
+    try {
+      const data = await usersService.setHiddenPages(req.params.id, req.body.pages || []);
+      res.json({ success: true, data });
+    } catch (error) { next(error); }
   }
 
   async setPermissions(req, res, next) {
