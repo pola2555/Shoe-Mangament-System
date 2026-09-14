@@ -25,9 +25,9 @@ const AppError = require('../utils/AppError');
  * Only image files are accepted (jpg, jpeg, png, webp, gif).
  */
 
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.heif'];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB (kept in step with nginx client_max_body_size)
+const MAX_STORED_DIMENSION = 2000;       // longest edge we keep; bigger is pointless here
 
 // --- S3 Client (lazy-initialized) ---
 let s3Client = null;
@@ -47,12 +47,15 @@ function getS3Client() {
 }
 
 function fileFilter(req, file, cb) {
+  // Permissive on purpose: sharp re-decodes and re-encodes every file below, so it is
+  // the real validator. A phone can hand us an image with an odd or empty mimetype
+  // (HEIC especially), and rejecting on a strict type list here is what turned a normal
+  // photo into "invalid file type". Accept anything that looks like an image and let
+  // the decode step be the judge.
   const ext = path.extname(file.originalname).toLowerCase();
-  if (ALLOWED_TYPES.includes(file.mimetype) && ALLOWED_EXTENSIONS.includes(ext)) {
-    cb(null, true);
-  } else {
-    cb(new Error(`Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`), false);
-  }
+  const looksLikeImage = (file.mimetype || '').startsWith('image/') || ALLOWED_EXTENSIONS.includes(ext);
+  if (looksLikeImage) cb(null, true);
+  else cb(new Error('Please choose an image file (JPEG, PNG, WebP, GIF or HEIC).'), false);
 }
 
 // One shared in-memory multer. Each upload route composes it with the store step below.
@@ -87,27 +90,62 @@ async function storeBufferedFile(subfolder, req) {
   const file = req.file;
   if (!file || !file.buffer) return;
 
-  // Confirm the bytes decode to a complete image before keeping them. `.stats()`
-  // reads every pixel, so a corrupt or unreadable file is rejected here rather than
-  // stored and shown broken later.
+  // Normalise rather than reject.
+  //
+  // The previous version ran a strict full-decode (`.stats` with failOn:'error') and
+  // threw "incomplete or corrupted" on anything sharp grumbled about — which rejected
+  // ordinary phone photos. Instead, re-decode tolerantly and re-encode to a web-safe
+  // image: this repairs the small imperfections real photos carry, bakes in EXIF
+  // orientation (so portrait shots aren't sideways), converts HEIC/HEIF from an iPhone
+  // to JPEG, and caps the longest edge so what we store is never needlessly huge. Only
+  // a genuinely unreadable file (sharp can't decode it at all) is refused.
+  const sharp = require('sharp');
+  let outBuffer;
+  let outExt;
+  let outContentType;
   try {
-    const sharp = require('sharp');
-    await sharp(file.buffer, { failOn: 'error' }).stats();
-  } catch {
-    throw new AppError('The image appears incomplete or corrupted. Please try uploading it again.', 400);
+    const meta = await sharp(file.buffer, { failOn: 'none' }).metadata();
+    const fmt = meta.format;
+    if (fmt === 'gif') {
+      // Keep GIFs byte-for-byte so animation survives.
+      outBuffer = file.buffer;
+      outExt = '.gif';
+      outContentType = 'image/gif';
+    } else {
+      const pipeline = sharp(file.buffer, { failOn: 'none' })
+        .rotate() // apply EXIF orientation, then drop the metadata
+        .resize({ width: MAX_STORED_DIMENSION, height: MAX_STORED_DIMENSION, fit: 'inside', withoutEnlargement: true });
+      if (fmt === 'png') {
+        outBuffer = await pipeline.png().toBuffer();
+        outExt = '.png';
+        outContentType = 'image/png';
+      } else if (fmt === 'webp') {
+        outBuffer = await pipeline.webp({ quality: 85 }).toBuffer();
+        outExt = '.webp';
+        outContentType = 'image/webp';
+      } else {
+        // jpeg, heif/heic, or anything else decodable → a broadly-supported JPEG.
+        outBuffer = await pipeline.jpeg({ quality: 85 }).toBuffer();
+        outExt = '.jpg';
+        outContentType = 'image/jpeg';
+      }
+    }
+  } catch (err) {
+    console.error('[upload] could not process image:', err && err.message);
+    throw new AppError('This image could not be read. Please upload a JPEG or PNG photo and try again.', 400);
   }
 
-  const ext = path.extname(file.originalname).toLowerCase();
-  file.size = file.buffer.length;
+  file.buffer = outBuffer;         // so the thumbnail is built from the same clean bytes
+  file.size = outBuffer.length;
 
   if (env.storage.type === 's3') {
     const { PutObjectCommand } = require('@aws-sdk/client-s3');
-    const key = `${subfolder}/${uuidv4()}${ext}`;
+    const key = `${subfolder}/${uuidv4()}${outExt}`;
     await getS3Client().send(new PutObjectCommand({
       Bucket: env.storage.s3.bucket,
       Key: key,
-      Body: file.buffer,            // a Buffer → the SDK sets Content-Length exactly
-      ContentType: file.mimetype,
+      Body: outBuffer,             // a Buffer → the SDK sets Content-Length exactly
+      ContentType: outContentType,
       ServerSideEncryption: 'AES256',
     }));
     file.key = key;
@@ -115,9 +153,9 @@ async function storeBufferedFile(subfolder, req) {
   } else {
     const uploadPath = path.join(process.cwd(), env.storage.uploadDir, subfolder);
     fs.mkdirSync(uploadPath, { recursive: true });
-    const name = `${uuidv4()}${ext}`;
+    const name = `${uuidv4()}${outExt}`;
     const dest = path.join(uploadPath, name);
-    fs.writeFileSync(dest, file.buffer);
+    fs.writeFileSync(dest, outBuffer);
     file.filename = name;
     file.path = dest;
   }
