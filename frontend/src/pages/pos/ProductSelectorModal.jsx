@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { inventoryAPI } from '../../api';
 import toast from 'react-hot-toast';
+import { HiOutlineXMark } from 'react-icons/hi2';
 import { useTranslation } from '../../i18n/i18nContext';
 import { formatSize, formatColor, compareSize } from '../../utils/variantFormat';
 import ClickableImage from '../../components/common/ClickableImage';
@@ -13,6 +14,11 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
 
   useEffect(() => {
     fetchItems();
+    // Close on Escape, like every other modal should.
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product.product_id, storeId]);
 
   const fetchItems = async () => {
@@ -44,11 +50,11 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
   };
 
   // Group items by color, then by size
-  // Form: { [color_name]: { [size]: [item1, item2, ...] } }
+  // Form: { [color_name]: { hex, colorImage, colorImageThumb, sizes: { [size]: [item...] } } }
   const groupedItems = items.reduce((acc, item) => {
     const color = formatColor(item) || '';
     const size = item.size_eu || 'N/A';
-    
+
     if (!acc[color]) acc[color] = {
       hex: item.hex_code,
       colorImage: item.color_image_url || null,
@@ -56,7 +62,7 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
       sizes: {},
     };
     if (!acc[color].sizes[size]) acc[color].sizes[size] = [];
-    
+
     acc[color].sizes[size].push(item);
     return acc;
   }, {});
@@ -65,102 +71,97 @@ export default function ProductSelectorModal({ product, storeId, cartItemIds, on
 
   return (
     <div className="modal-overlay pos-selector-modal" onClick={onClose}>
-      <div className="modal-content card" style={{ maxWidth: 800, width: '90%' }} onClick={e => e.stopPropagation()}>
-        <div className="pos-selector-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-lg)' }}>
-          <div className="pos-selector-product-info" style={{ display: 'flex', gap: 'var(--spacing-md)', alignItems: 'center' }}>
-            <div style={{ width: 80, height: 80, borderRadius: 'var(--radius-md)', overflow: 'hidden', background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
-              {product.product_image ? (
-                <ClickableImage src={product.product_image} thumbSrc={product.product_image_thumb} alt={product.product_name} title={product.product_name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              ) : (
-                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>{t('products.no_image')}</div>
-              )}
+      <div className="modal-content card pos-selector" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="pos-selector-head">
+          <div className="pos-selector-thumb">
+            {product.product_image ? (
+              <ClickableImage
+                src={product.product_image}
+                thumbSrc={product.product_image_thumb}
+                alt={product.product_name}
+                title={product.product_name}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            ) : (
+              <span className="pos-selector-thumb-empty">{t('products.no_image')}</span>
+            )}
+          </div>
+          <div className="pos-selector-titles">
+            <h2 className="pos-selector-name">{product.product_name}</h2>
+            <div className="pos-selector-sub">
+              {product.brand && <span>{product.brand}</span>}
+              {product.brand && product.product_code && <span className="pos-selector-dot">•</span>}
+              {product.product_code && <span>{product.product_code}</span>}
             </div>
-            <div>
-              <h2 style={{ marginBottom: '0.25rem' }}>{product.product_name}</h2>
-              <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
-                <span>{product.brand}</span>
-                <span>•</span>
-                <span>{product.product_code}</span>
-              </div>
-              <div style={{ marginTop: '0.5rem', fontWeight: 600, color: 'var(--color-success)', fontSize: '1.2rem' }}>
-                {price.toLocaleString()} {t('common.currency')}
-              </div>
+            <div className="pos-selector-price">
+              {price.toLocaleString()} <span className="currency">{t('common.currency')}</span>
             </div>
           </div>
-          <button className="btn btn-secondary btn-sm" onClick={onClose}>{t('common.close')}</button>
+          <button className="pos-selector-close" onClick={onClose} aria-label={t('common.close')}>
+            <HiOutlineXMark size={22} />
+          </button>
         </div>
 
         {loading ? (
-          <div style={{ padding: 'var(--spacing-xl)', textAlign: 'center', color: 'var(--color-text-muted)' }}>{t('common.loading')}...</div>
+          <div className="pos-selector-state">{t('common.loading')}…</div>
         ) : items.length === 0 ? (
-          <div style={{ padding: 'var(--spacing-xl)', textAlign: 'center', color: 'var(--color-text-muted)' }}>{t('pos.no_products_found')}</div>
+          <div className="pos-selector-state">{t('pos.no_products_found')}</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-lg)', maxHeight: '60vh', overflowY: 'auto', paddingRight: '0.5rem' }}>
-            {Object.entries(groupedItems).map(([color, data]) => (
-              <div key={color} style={{ background: 'var(--color-bg-base)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: color ? 'var(--spacing-md)' : 0 }}>
-                  {(data.colorImage || product.product_image) && (
-                    <ClickableImage
-                      src={data.colorImage || product.product_image}
-                      thumbSrc={data.colorImageThumb || product.product_image_thumb}
-                      alt={color}
-                      width={44}
-                      height={44}
-                      title={`${product.product_name} - ${color}`}
-                      style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', flexShrink: 0 }}
-                    />
-                  )}
-                  {color && (
-                    <>
-                      <div style={{ width: 16, height: 16, borderRadius: '50%', backgroundColor: data.hex || '#ccc', border: '1px solid var(--color-border)', flexShrink: 0 }}></div>
-                      <h3 style={{ fontSize: '1.1rem', margin: 0 }}>{color}</h3>
-                    </>
-                  )}
-                </div>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 'var(--spacing-sm)' }}>
-                  {/* Sort sizes nicely */}
-                  {Object.entries(data.sizes)
-                    .sort(([, a], [, b]) => compareSize(a[0], b[0]))
-                    .map(([size, sizeItems]) => {
-                      // How many of this size are available AND NOT in the cart yet?
-                      const availableItems = sizeItems.filter(item => !cartItemIds.has(item.id));
-                      const isSoldOut = availableItems.length === 0;
-                      
-                      return (
-                        <div 
-                          key={size}
-                          onClick={() => {
-                            if (!isSoldOut) {
-                               // Pop the first available physical item into the cart
-                               onAddToCart(availableItems[0]); 
-                            }
-                          }}
-                          style={{
-                            padding: 'var(--spacing-sm)',
-                            borderRadius: 'var(--radius-sm)',
-                            border: `1px solid ${isSoldOut ? 'var(--color-border)' : 'var(--color-primary)'}`,
-                            background: isSoldOut ? 'var(--color-bg-secondary)' : 'rgba(var(--color-primary-rgb), 0.1)',
-                            opacity: isSoldOut ? 0.5 : 1,
-                            cursor: isSoldOut ? 'not-allowed' : 'pointer',
-                            textAlign: 'center',
-                            transition: 'all 0.2s'
-                          }}
-                        >
-                          <div style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '0.1rem' }}>
-                            {formatSize(sizeItems[0], locale) || t('pos.add_to_cart')}
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: isSoldOut ? 'var(--color-danger)' : 'var(--color-text-secondary)' }}>
-                            {isSoldOut ? t('pos.out_of_stock') : `${availableItems.length} ${t('pos.available')}`}
-                          </div>
-                        </div>
-                      );
-                    })
-                  }
-                </div>
-              </div>
-            ))}
-          </div>
+          <>
+            <div className="pos-selector-hint">{t('pos.tap_size_hint')}</div>
+            <div className="pos-selector-body">
+              {Object.entries(groupedItems).map(([color, data]) => {
+                const totalInColor = Object.values(data.sizes)
+                  .reduce((n, arr) => n + arr.filter(i => !cartItemIds.has(i.id)).length, 0);
+                return (
+                  <section key={color} className="pos-color-group">
+                    {color && (
+                      <div className="pos-color-head">
+                        {(data.colorImage || product.product_image) && (
+                          <ClickableImage
+                            src={data.colorImage || product.product_image}
+                            thumbSrc={data.colorImageThumb || product.product_image_thumb}
+                            alt={color}
+                            title={`${product.product_name} — ${color}`}
+                            className="pos-color-img"
+                          />
+                        )}
+                        <span className="pos-color-swatch" style={{ backgroundColor: data.hex || '#ccc' }} aria-hidden="true" />
+                        <span className="pos-color-name">{color}</span>
+                        <span className="pos-color-count">{totalInColor} {t('pos.available')}</span>
+                      </div>
+                    )}
+
+                    <div className="pos-size-grid">
+                      {Object.entries(data.sizes)
+                        .sort(([, a], [, b]) => compareSize(a[0], b[0]))
+                        .map(([size, sizeItems]) => {
+                          const availableItems = sizeItems.filter(item => !cartItemIds.has(item.id));
+                          const isSoldOut = availableItems.length === 0;
+                          return (
+                            <button
+                              key={size}
+                              type="button"
+                              className={`pos-size-tile ${isSoldOut ? 'pos-size-tile--out' : ''}`}
+                              disabled={isSoldOut}
+                              onClick={() => { if (!isSoldOut) onAddToCart(availableItems[0]); }}
+                            >
+                              <span className="pos-size-tile-size">
+                                {formatSize(sizeItems[0], locale) || t('pos.add_to_cart')}
+                              </span>
+                              <span className="pos-size-tile-stock">
+                                {isSoldOut ? t('pos.out_of_stock') : `${availableItems.length} ${t('pos.available')}`}
+                              </span>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     </div>

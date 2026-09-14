@@ -22,7 +22,14 @@
   --color-warning: #fdcb6e;
   --color-danger: #e17055;
   --color-info: #74b9ff;
-  
+
+  /* RGB channels for rgba() tints — soft selected/hover fills that need an alpha.
+     Keep these in step with the hex tokens above. */
+  --color-primary-rgb: 212, 175, 55;
+  --color-accent-rgb: 212, 175, 55;
+  --color-danger-rgb: 225, 112, 85;
+  --color-success-rgb: 0, 184, 148;
+
   --color-text-primary: #f0eee7;
   --color-text-secondary: #a3a49c;
   --color-text-muted: #6c6e68;
@@ -107,6 +114,11 @@
   --color-warning: #e6a817;
   --color-danger: #d63031;
   --color-info: #0984e3;
+
+  --color-primary-rgb: 138, 100, 32;
+  --color-accent-rgb: 138, 100, 32;
+  --color-danger-rgb: 214, 48, 49;
+  --color-success-rgb: 0, 168, 132;
 
   --color-text-primary: #2a241b;
   --color-text-secondary: #6c6455;
@@ -643,6 +655,39 @@ a:hover { color: var(--color-accent-hover); }
     margin-right: 0 !important;
     padding: var(--spacing-md) !important;
   }
+}
+
+/* ============================================================
+   MODAL — base (global)
+   Lives here, not in a page stylesheet, so every route that renders a
+   .modal-overlay / .modal-content gets a real centred overlay. It used to sit
+   only in products/Products.css: land on a route that does not import that file
+   (the POS, for one) and a "modal" fell back into the document flow and read as a
+   cramped side panel. A shared component's styles belong in the global sheet.
+   ============================================================ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: var(--spacing-lg);
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: modalIn 200ms ease;
+}
+
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.97) translateY(10px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 /* ============================================================
