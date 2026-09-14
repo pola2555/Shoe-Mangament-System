@@ -26,7 +26,11 @@ const AppError = require('../utils/AppError');
  */
 
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic', '.heif'];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB (kept in step with nginx client_max_body_size)
+// Originals now arrive uncompressed (the browser no longer shrinks them), so allow a
+// full-size phone photo through. The server downscales to MAX_STORED_DIMENSION and
+// re-encodes, so what we actually store stays small regardless. Keep this in step with
+// nginx client_max_body_size.
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
 const MAX_STORED_DIMENSION = 2000;       // longest edge we keep; bigger is pointless here
 
 // --- S3 Client (lazy-initialized) ---

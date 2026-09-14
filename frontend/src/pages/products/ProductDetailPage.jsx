@@ -172,12 +172,12 @@ export default function ProductDetailPage() {
     const raw = e.target.files[0];
     const colorId = uploadColorId;
     if (!raw || !colorId) return;
-    const toastId = toast.loading(t('products.compressing'));
+    const toastId = toast.loading(t('products.uploading'));
     setUploading(true);
     setUploadPct(0);
     try {
-      // The api client compresses the image before it leaves the browser (see
-      // api/client.js), so big phone photos fit under the cap and upload fast.
+      // Uploaded as-is; the server downscales and compresses it (browser-side
+      // compression was dropped — mobile canvases produced blank/cut images).
       const formData = new FormData();
       formData.append('image', raw);
       await productsAPI.uploadImage(id, colorId, formData, {
