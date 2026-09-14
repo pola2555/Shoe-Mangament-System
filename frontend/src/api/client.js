@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { compressImage } from '../utils/imageCompress';
 
 // Configured at build time (see .env / .env.example). Falls back to a same-origin
 // relative path, which works behind the nginx reverse proxy without hardcoding a host.
@@ -9,11 +10,24 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Request interceptor — attach JWT token
-api.interceptors.request.use((config) => {
+// Request interceptor — attach JWT token, and shrink any image being uploaded.
+api.interceptors.request.use(async (config) => {
   const token = localStorage.getItem('accessToken');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+
+  // Compress uploaded images in ONE place instead of on every screen. A big phone
+  // photo (5–12 MB) is downscaled + re-encoded here before it leaves the browser, so
+  // it fits under the server's 10 MB cap, uploads far faster, and stores much smaller.
+  // Non-upload requests fall straight through the guard.
+  const data = config.data;
+  if (typeof FormData !== 'undefined' && data instanceof FormData && typeof data.get === 'function') {
+    const img = data.get('image');
+    if (img instanceof File && img.type && img.type.startsWith('image/')) {
+      const compressed = await compressImage(img);
+      if (compressed !== img) data.set('image', compressed, compressed.name);
+    }
   }
   return config;
 });

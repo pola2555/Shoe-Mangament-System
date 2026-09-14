@@ -380,6 +380,7 @@
     "color_updated": "Color updated",
     "failed_update_color": "Failed to update color",
     "image_uploaded": "Image uploaded",
+    "compressing": "Preparing image…",
     "uploading": "Uploading…",
     "uploading_pct": "Uploading… {pct}%",
     "processing_image": "Processing…",

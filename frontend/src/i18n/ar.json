@@ -380,6 +380,7 @@
     "color_updated": "تم تحديث اللون",
     "failed_update_color": "فشل تحديث اللون",
     "image_uploaded": "تم رفع الصورة",
+    "compressing": "جارٍ تجهيز الصورة…",
     "uploading": "جارٍ الرفع…",
     "uploading_pct": "جارٍ الرفع… {pct}%",
     "processing_image": "جارٍ المعالجة…",

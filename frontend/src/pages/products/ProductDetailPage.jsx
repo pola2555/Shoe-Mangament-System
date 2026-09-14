@@ -169,15 +169,17 @@ export default function ProductDetailPage() {
 
   // --- Images ---
   const handleImageUpload = async (e) => {
-    const file = e.target.files[0];
+    const raw = e.target.files[0];
     const colorId = uploadColorId;
-    if (!file || !colorId) return;
-    const formData = new FormData();
-    formData.append('image', file);
-    const toastId = toast.loading(t('products.uploading'));
+    if (!raw || !colorId) return;
+    const toastId = toast.loading(t('products.compressing'));
     setUploading(true);
     setUploadPct(0);
     try {
+      // The api client compresses the image before it leaves the browser (see
+      // api/client.js), so big phone photos fit under the cap and upload fast.
+      const formData = new FormData();
+      formData.append('image', raw);
       await productsAPI.uploadImage(id, colorId, formData, {
         // Live feedback: the transfer percentage, then a "processing" state while the
         // server validates the image and builds the thumbnail after 100%.
