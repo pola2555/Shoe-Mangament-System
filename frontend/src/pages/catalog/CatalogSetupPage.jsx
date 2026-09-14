@@ -29,6 +29,8 @@ export default function CatalogSetupPage() {
   const [editingScale, setEditingScale] = useState(null);
   const [editingColor, setEditingColor] = useState(null);
   const [saving, setSaving] = useState(false);
+  // Transient inputs for the "quick add a range" generator on a numeric size list.
+  const [range, setRange] = useState({ start: '', end: '', step: '1' });
 
   useEffect(() => { load(); }, []);
 
@@ -109,13 +111,17 @@ export default function CatalogSetupPage() {
 
   async function saveScale() {
     const s = editingScale;
-    const values = (s.values || [])
+    // For a numeric list, the stored order is always the numeric order — so a size
+    // typed at the bottom (a smaller one added later) lands in its right place instead
+    // of at the end. sort_order then just mirrors the on-screen order for everyone.
+    const ordered = s.is_numeric ? sortScaleValues(s.values || []) : (s.values || []);
+    const values = ordered
       .filter((v) => String(v.value).trim())
       .map((v, i) => ({
         value: String(v.value).trim(),
         label_en: v.label_en || null,
         label_ar: v.label_ar || null,
-        sort_order: Number(v.sort_order ?? (i + 1) * 10),
+        sort_order: (i + 1) * 10,
         is_active: v.is_active !== false,
       }));
     if (!values.length) return toast.error(t('categories.add_value'));
@@ -155,6 +161,53 @@ export default function CatalogSetupPage() {
       // Renumber so the saved order is the order on screen.
       return { ...s, values: values.map((v, k) => ({ ...v, sort_order: (k + 1) * 10 })) };
     });
+  }
+
+  // Numeric ascending; anything that does not parse as a number sinks to the end so a
+  // stray label never throws off the order.
+  function sortScaleValues(values) {
+    return [...(values || [])].sort((a, b) => {
+      const na = parseFloat(a.value);
+      const nb = parseFloat(b.value);
+      if (isNaN(na) && isNaN(nb)) return 0;
+      if (isNaN(na)) return 1;
+      if (isNaN(nb)) return -1;
+      return na - nb;
+    });
+  }
+
+  // "19.0" -> "19", "19.50" -> "19.5"; rounds away float-accumulation noise.
+  function fmtNum(n) {
+    return String(Math.round(n * 1000) / 1000);
+  }
+
+  function sortNow() {
+    setEditingScale((s) => ({ ...s, values: sortScaleValues(s.values) }));
+  }
+
+  function generateRange() {
+    const start = parseFloat(range.start);
+    const end = parseFloat(range.end);
+    const step = parseFloat(range.step);
+    if (!isFinite(start) || !isFinite(end) || !isFinite(step) || step <= 0 || end < start) {
+      return toast.error(t('categories.range_invalid'));
+    }
+    const count = Math.floor((end - start) / step + 1e-9) + 1;
+    if (count > 400) return toast.error(t('categories.range_too_many'));
+
+    const gen = [];
+    for (let i = 0; i < count; i++) gen.push(fmtNum(start + i * step));
+
+    const existing = editingScale.values || [];
+    const seen = new Set(existing.map((v) => String(v.value).trim()));
+    const added = gen
+      .filter((g) => !seen.has(g))
+      .map((g) => ({ value: g, label_en: '', label_ar: '', sort_order: 0, is_active: true }));
+    if (!added.length) return toast(t('categories.range_all_exist'));
+
+    setEditingScale((s) => ({ ...s, values: sortScaleValues([...(s.values || []), ...added]) }));
+    setRange((r) => ({ ...r, start: '', end: '' }));
+    toast.success(t('categories.range_added', { count: added.length }));
   }
 
   // ================================================================ colours
@@ -258,7 +311,7 @@ export default function CatalogSetupPage() {
         <div className="card">
           {canWrite && (
             <button className="btn btn-primary btn-sm" style={{ marginBottom: 'var(--spacing-md)' }}
-              data-testid="add-scale" onClick={() => setEditingScale(blankScale())}>
+              data-testid="add-scale" onClick={() => { setRange({ start: '', end: '', step: '1' }); setEditingScale(blankScale()); }}>
               + {t('categories.add_size_list')}
             </button>
           )}
@@ -299,7 +352,11 @@ export default function CatalogSetupPage() {
                     <td>
                       {canWrite && (
                         <button className="btn btn-sm btn-secondary"
-                          onClick={() => setEditingScale({ ...s, values: (s.values || []).map((v) => ({ ...v })) })}>
+                          onClick={() => {
+                            setRange({ start: '', end: '', step: '1' });
+                            const vals = (s.is_numeric ? sortScaleValues(s.values || []) : (s.values || [])).map((v) => ({ ...v }));
+                            setEditingScale({ ...s, values: vals });
+                          }}>
                           {t('common.edit')}
                         </button>
                       )}
@@ -481,6 +538,42 @@ export default function CatalogSetupPage() {
               </span>
             </div>
 
+            {/* Quick range generator — only meaningful for a numeric list. */}
+            {editingScale.is_numeric && (
+              <div style={{
+                display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: '.5rem',
+                padding: 'var(--spacing-sm) var(--spacing-md)', marginBottom: '.5rem',
+                background: 'var(--color-bg-base)', border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-md)',
+              }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">{t('categories.range_start')}</label>
+                  <input className="form-input" type="number" step="any" style={{ width: 84 }}
+                    value={range.start} data-testid="range-start" placeholder="19"
+                    onChange={(e) => setRange({ ...range, start: e.target.value })} />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">{t('categories.range_end')}</label>
+                  <input className="form-input" type="number" step="any" style={{ width: 84 }}
+                    value={range.end} data-testid="range-end" placeholder="49"
+                    onChange={(e) => setRange({ ...range, end: e.target.value })} />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">{t('categories.range_step')}</label>
+                  <input className="form-input" type="number" step="any" min="0" style={{ width: 76 }}
+                    value={range.step} data-testid="range-step" placeholder="0.5"
+                    onChange={(e) => setRange({ ...range, step: e.target.value })} />
+                </div>
+                <button type="button" className="btn btn-primary btn-sm" data-testid="range-generate"
+                  onClick={generateRange}>{t('categories.generate_range')}</button>
+                <button type="button" className="btn btn-secondary btn-sm" data-testid="scale-sort"
+                  onClick={sortNow}>{t('categories.sort_by_value')}</button>
+                <small style={{ flexBasis: '100%', color: 'var(--color-text-secondary)' }}>
+                  {t('categories.range_hint')}
+                </small>
+              </div>
+            )}
+
             <div className="table-container" style={{ maxHeight: 320, overflow: 'auto' }}>
               <table className="table" style={{ margin: 0 }}>
                 <thead>
@@ -508,8 +601,14 @@ export default function CatalogSetupPage() {
                       <td><input className="form-input" value={v.label_en || ''} onChange={(e) => setValue(i, 'label_en', e.target.value)} /></td>
                       <td><input className="form-input" dir="rtl" value={v.label_ar || ''} onChange={(e) => setValue(i, 'label_ar', e.target.value)} /></td>
                       <td style={{ whiteSpace: 'nowrap' }}>
-                        <button type="button" className="btn btn-sm btn-secondary" onClick={() => moveValue(i, -1)} title="↑">↑</button>
-                        <button type="button" className="btn btn-sm btn-secondary" style={{ marginInlineStart: 3 }} onClick={() => moveValue(i, 1)} title="↓">↓</button>
+                        {/* Numeric lists sort themselves, so manual arrows only appear
+                            on word lists (S/M/L) where order is a real choice. */}
+                        {!editingScale.is_numeric && (
+                          <>
+                            <button type="button" className="btn btn-sm btn-secondary" onClick={() => moveValue(i, -1)} title="↑">↑</button>
+                            <button type="button" className="btn btn-sm btn-secondary" style={{ marginInlineStart: 3 }} onClick={() => moveValue(i, 1)} title="↓">↓</button>
+                          </>
+                        )}
                         <button type="button" className="btn btn-sm btn-danger" style={{ marginInlineStart: 3 }}
                           disabled={v.variant_count > 0}
                           title={v.variant_count > 0 ? t('categories.in_use_cannot_remove') : t('common.delete')}
