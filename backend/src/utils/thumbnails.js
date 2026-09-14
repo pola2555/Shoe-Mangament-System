@@ -116,19 +116,21 @@ async function generateThumbnail(subfolder, file) {
   try {
     if (env.storage.type === 's3') {
       if (!file.key) return null;
-      const source = await fetchS3Object(file.key);
+      // Prefer the buffer the upload middleware already validated in memory; only fall
+      // back to fetching the object when it isn't around (e.g. the backfill script).
+      const source = file.buffer || await fetchS3Object(file.key);
       const thumbKey = thumbKeyFor(file.key);
       await uploadThumbToS3(thumbKey, await makeThumbnailBuffer(source));
       return `https://s3.${env.storage.s3.region}.amazonaws.com/${env.storage.s3.bucket}/${thumbKey}`;
     }
 
     // Local disk
-    if (!file.path) return null;
+    if (!file.path && !file.buffer) return null;
     const relative = path.posix.join(env.storage.uploadDir, subfolder, file.filename);
     const thumbRelative = thumbKeyFor(relative);
     const thumbAbsolute = path.join(process.cwd(), thumbRelative);
     fs.mkdirSync(path.dirname(thumbAbsolute), { recursive: true });
-    await sharp(file.path, { failOn: 'none' })
+    await sharp(file.buffer || file.path, { failOn: 'none' })
       .rotate()
       .resize({ width: THUMB_WIDTH, withoutEnlargement: true })
       .webp({ quality: THUMB_QUALITY })

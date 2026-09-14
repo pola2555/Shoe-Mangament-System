@@ -57,9 +57,10 @@ export const productsAPI = {
   updateColor: (productId, colorId, data) => api.put(`/products/${productId}/colors/${colorId}`, data),
   deleteColor: (productId, colorId) => api.delete(`/products/${productId}/colors/${colorId}`),
   // Images
-  uploadImage: (productId, colorId, formData) =>
+  uploadImage: (productId, colorId, formData, config = {}) =>
     api.post(`/products/${productId}/colors/${colorId}/images`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      ...config,
     }),
   setPrimaryImage: (productId, imageId) => api.put(`/products/${productId}/images/${imageId}/primary`),
   deleteImage: (productId, imageId) => api.delete(`/products/${productId}/images/${imageId}`),

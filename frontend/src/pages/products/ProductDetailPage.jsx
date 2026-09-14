@@ -55,6 +55,8 @@ export default function ProductDetailPage() {
   });
   const [showPriceForm, setShowPriceForm] = useState(false);
   const [uploadColorId, setUploadColorId] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
   const [revealNetPrice, setRevealNetPrice] = useState(false);
   const netPriceTimerRef = useRef(null);
 
@@ -168,18 +170,34 @@ export default function ProductDetailPage() {
   // --- Images ---
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
-    if (!file || !uploadColorId) return;
+    const colorId = uploadColorId;
+    if (!file || !colorId) return;
     const formData = new FormData();
     formData.append('image', file);
+    const toastId = toast.loading(t('products.uploading'));
+    setUploading(true);
+    setUploadPct(0);
     try {
-      await productsAPI.uploadImage(id, uploadColorId, formData);
-      toast.success(t('products.image_uploaded'));
+      await productsAPI.uploadImage(id, colorId, formData, {
+        // Live feedback: the transfer percentage, then a "processing" state while the
+        // server validates the image and builds the thumbnail after 100%.
+        onUploadProgress: (evt) => {
+          if (!evt.total) return;
+          const pct = Math.round((evt.loaded / evt.total) * 100);
+          setUploadPct(pct);
+          toast.loading(pct < 100 ? t('products.uploading_pct', { pct }) : t('products.processing_image'), { id: toastId });
+        },
+      });
+      toast.success(t('products.image_uploaded'), { id: toastId });
       fetchProduct();
     } catch (err) {
-      toast.error(t('products.failed_upload'));
+      toast.error(err.response?.data?.message || t('products.failed_upload'), { id: toastId });
+    } finally {
+      setUploading(false);
+      setUploadPct(0);
+      e.target.value = '';
+      setUploadColorId(null);
     }
-    e.target.value = '';
-    setUploadColorId(null);
   };
 
   const handleDeleteImage = async (imageId) => {
@@ -587,9 +605,12 @@ export default function ProductDetailPage() {
                     {canWrite && (
                       <button
                         className="color-image color-image--add"
+                        disabled={uploading}
                         onClick={() => { setUploadColorId(color.id); fileInputRef.current?.click(); }}
                       >
-                        + {t('products.add_image')}
+                        {uploading && uploadColorId === color.id
+                          ? (uploadPct < 100 ? `${uploadPct}%` : t('products.processing_image'))
+                          : `+ ${t('products.add_image')}`}
                       </button>
                     )}
                   </div>
