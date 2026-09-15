@@ -30,9 +30,11 @@ const InventoryTreeSizeRow = ({ sizeRow }) => {
   );
 };
 
-const InventoryTreeColorRow = ({ color, defaultExpanded = false }) => {
+const InventoryTreeColorRow = ({ color, productName, onPrint, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  
+  const { t } = useTranslation();
+  const colorVariantIds = color.sizes.map((s) => s.variant_id).filter(Boolean);
+
   return (
     <Fragment>
       <tr className="tree-row color-row" onClick={() => setExpanded(!expanded)} style={{ cursor: 'pointer', backgroundColor: 'var(--color-row-alt)' }}>
@@ -44,6 +46,13 @@ const InventoryTreeColorRow = ({ color, defaultExpanded = false }) => {
             {color.hex && <span className="color-swatch-sm" style={{ backgroundColor: color.hex, width: 14, height: 14, borderRadius: '50%', display: 'inline-block', border: '1px solid var(--color-subtle-border)' }} />}
             <strong>{color.name}</strong>
           </span>
+          {onPrint && colorVariantIds.length > 0 && (
+            <button className="btn btn-sm btn-secondary" style={{ marginInlineStart: 10, padding: '0 6px' }}
+              title={t('barcode.print_labels')} data-testid="inv-print-color"
+              onClick={(e) => { e.stopPropagation(); onPrint(colorVariantIds, `${productName} — ${color.name}`); }}>
+              🏷
+            </button>
+          )}
         </td>
         <td></td>
         <td></td>
@@ -58,9 +67,15 @@ const InventoryTreeColorRow = ({ color, defaultExpanded = false }) => {
   );
 };
 
-const InventoryTreeProductRow = ({ product, defaultExpanded = false }) => {
+const InventoryTreeProductRow = ({ product, onPrint, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
-  
+  const { t } = useTranslation();
+  const productVariantIds = [...new Set(
+    Array.from(product.colors.values())
+      .flatMap((c) => c.sizes.map((s) => s.variant_id))
+      .filter(Boolean)
+  )];
+
   return (
     <Fragment>
       <tr className="tree-row product-row" onClick={() => setExpanded(!expanded)} style={{ cursor: 'pointer', backgroundColor: 'var(--color-row-alt-strong)' }}>
@@ -70,6 +85,13 @@ const InventoryTreeProductRow = ({ product, defaultExpanded = false }) => {
           </button>
           <strong>{product.code}</strong> — {product.name}
           {product.brand && <span className="badge badge-neutral" style={{ marginLeft: 8 }}>{product.brand}</span>}
+          {onPrint && productVariantIds.length > 0 && (
+            <button className="btn btn-sm btn-secondary" style={{ marginInlineStart: 10, padding: '0 6px' }}
+              title={t('barcode.print_labels')} data-testid="inv-print-product"
+              onClick={(e) => { e.stopPropagation(); onPrint(productVariantIds, `${product.code} — ${product.name}`); }}>
+              🏷
+            </button>
+          )}
         </td>
         <td></td>
         <td></td>
@@ -92,7 +114,7 @@ const InventoryTreeProductRow = ({ product, defaultExpanded = false }) => {
         </td>
       </tr>
       {expanded && Array.from(product.colors.values()).map(color => (
-        <InventoryTreeColorRow key={color.name} color={color} />
+        <InventoryTreeColorRow key={color.name} color={color} productName={product.name} onPrint={onPrint} />
       ))}
     </Fragment>
   );
@@ -230,7 +252,10 @@ export default function InventoryPage() {
   const [valuesByScale, setValuesByScale] = useState({});
   const [viewMode, setViewMode] = useState('summary'); // 'summary' or 'items'
   const [exportingWord, setExportingWord] = useState(false);
-  const [showLabels, setShowLabels] = useState(false);
+  // Label printing scope: null = closed; { variantIds, title }. Opened for the whole
+  // current view, a single product, or a single colour — all through the same modal,
+  // which pre-fills copies to match each variant's stock.
+  const [labelScope, setLabelScope] = useState(null);
   const { filterStores } = useAuth();
   const { t, locale } = useTranslation();
   const [treeData, setTreeData] = useState([]);
@@ -524,6 +549,19 @@ export default function InventoryPage() {
     setTreeData(tree);
   };
 
+  // Open the print modal for a set of variants. The rows only render their button when
+  // they have variants, so this is only ever called with a real set.
+  const openLabels = (variantIds, title) => {
+    const ids = [...new Set((variantIds || []).filter(Boolean))];
+    if (ids.length) setLabelScope({ variantIds: ids, title });
+  };
+
+  // Everything currently on screen — the tree in summary view, the rows in items view —
+  // so the top "Print labels" button covers the whole filtered selection either way.
+  const allShownVariantIds = () => (viewMode === 'summary'
+    ? treeData.flatMap((p) => Array.from(p.colors.values()).flatMap((c) => c.sizes.map((s) => s.variant_id)))
+    : (items || []).map((i) => i.variant_id));
+
   return (
     <div>
       <div className="page-header">
@@ -531,13 +569,13 @@ export default function InventoryPage() {
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
           <button
             className="btn btn-secondary"
-            onClick={() => setShowLabels(true)}
+            onClick={() => openLabels(allShownVariantIds(), t('inventory.title'))}
             // Nothing on screen means nothing to label; opening the dialog would only
             // show an empty list.
-            disabled={loading || items.length === 0}
+            disabled={loading || (viewMode === 'summary' ? treeData.length === 0 : items.length === 0)}
             data-testid="inventory-print-labels"
           >
-            🏷 {t('barcode.print_labels')}
+            🏷 {t('barcode.print_labels')} — {t('common.all')}
           </button>
           {/* Was hard-coded Arabic, so an English UI carried one Arabic button in the
               middle of its toolbar. */}
@@ -690,7 +728,7 @@ export default function InventoryPage() {
                 </td></tr>
               ) : viewMode === 'summary' ? (
                 treeData.map((product) => (
-                  <InventoryTreeProductRow key={product.id} product={product} />
+                  <InventoryTreeProductRow key={product.id} product={product} onPrint={openLabels} />
                 ))
               ) : (
                 items.map((item) => (
@@ -710,13 +748,13 @@ export default function InventoryPage() {
           </table>
         </div>
       )}
-      {showLabels && (
+      {labelScope && (
         <Suspense fallback={null}>
           <PrintLabelsModal
-            variantIds={[...new Set((items || []).map((i) => i.variant_id).filter(Boolean))]}
+            variantIds={labelScope.variantIds}
             storeId={filters.store_id || undefined}
-            title={t('inventory.title')}
-            onClose={() => setShowLabels(false)}
+            title={labelScope.title}
+            onClose={() => setLabelScope(null)}
           />
         </Suspense>
       )}
