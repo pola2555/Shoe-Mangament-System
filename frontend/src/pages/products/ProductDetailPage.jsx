@@ -40,7 +40,10 @@ export default function ProductDetailPage() {
     product_color_id: '', size_eu: '', size_us: '', size_uk: '', size_cm: '',
   });
   const [showVariantForm, setShowVariantForm] = useState(false);
-  const [showLabels, setShowLabels] = useState(false);
+  // Label printing scope: null = closed; {} = whole product; { variantIds, title } = a
+  // colour's sizes or a single variant. The modal itself lets you drop any of them from
+  // the run (set copies to 0), so this just decides which set it opens with.
+  const [labelScope, setLabelScope] = useState(null);
   const [generatorMode, setGeneratorMode] = useState(true); // true = smart generator, false = single variant
 
   // Smart Variant Generator States
@@ -341,6 +344,19 @@ export default function ProductDetailPage() {
   if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
   if (!product) return null;
 
+  const productTitle = () => `${product.brand || ''} ${product.model_name}`.trim();
+  const openProductLabels = () => setLabelScope({ title: productTitle() });
+  const openColorLabels = (color) => {
+    const variantIds = product.variants.filter((v) => v.product_color_id === color.id).map((v) => v.id);
+    if (!variantIds.length) { toast.error(t('products.no_variants')); return; }
+    setLabelScope({ variantIds, title: `${productTitle()} — ${color.color_name}` });
+  };
+  const openVariantLabel = (v) => {
+    const color = product.colors.find((c) => c.id === v.product_color_id);
+    const parts = [sizeOf(v), color?.color_name].filter(Boolean).join(' · ');
+    setLabelScope({ variantIds: [v.id], title: `${productTitle()}${parts ? ` — ${parts}` : ''}` });
+  };
+
   return (
     <div className="product-detail">
       {/* Header */}
@@ -353,10 +369,10 @@ export default function ProductDetailPage() {
           <button
             className="btn btn-secondary btn-sm"
             style={{ marginBottom: 8 }}
-            onClick={() => setShowLabels(true)}
+            onClick={openProductLabels}
             data-testid="product-print-labels"
           >
-            🏷 {t('barcode.print_labels')}
+            🏷 {t('barcode.print_labels')} — {t('common.all')}
           </button>
           <p style={{ color: 'var(--color-text-secondary)' }}>{t('products.code')}: {product.product_code} &nbsp;•&nbsp;
             {t('products.sell')}: {product.default_selling_price ?? '—'} {t('common.currency')} &nbsp;•&nbsp;
@@ -579,12 +595,16 @@ export default function ProductDetailPage() {
                         <span className={`badge ${color.is_active ? 'badge-success' : 'badge-danger'}`}>
                           {color.is_active ? t('common.active') : t('common.inactive')}
                         </span>
-                        {canWrite && (
-                          <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-                            <button className="btn btn-sm btn-secondary" onClick={() => handleEditColorClick(color)} title={t('common.edit')} style={{ padding: '2px 8px' }}>✏️</button>
-                            <button className="btn btn-sm btn-danger" onClick={() => handleDeleteColor(color.id)} title={t('common.delete')} style={{ padding: '2px 8px' }}>✕</button>
-                          </div>
-                        )}
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                          <button className="btn btn-sm btn-secondary" onClick={() => openColorLabels(color)}
+                            title={t('barcode.print_labels')} data-testid={`color-print-${color.id}`} style={{ padding: '2px 8px' }}>🏷</button>
+                          {canWrite && (
+                            <>
+                              <button className="btn btn-sm btn-secondary" onClick={() => handleEditColorClick(color)} title={t('common.edit')} style={{ padding: '2px 8px' }}>✏️</button>
+                              <button className="btn btn-sm btn-danger" onClick={() => handleDeleteColor(color.id)} title={t('common.delete')} style={{ padding: '2px 8px' }}>✕</button>
+                            </>
+                          )}
+                        </div>
                       </>
                     )}
                   </div>
@@ -726,7 +746,7 @@ export default function ProductDetailPage() {
                     {catHasSizes && <th>{cat?.display_prefix || t('products.size_generic')}</th>}
                     {catIsNumeric && <><th>US</th><th>UK</th><th>CM</th></>}
                     <th>{t('common.status')}</th>
-                    {canWrite && <th></th>}
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -800,12 +820,15 @@ export default function ProductDetailPage() {
                             {v.is_active ? t('common.active') : t('common.inactive')}
                           </span>
                         </td>
-                        {canWrite && (
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            <button className="btn btn-sm btn-secondary" onClick={() => handleEditVariantClick(v)} title={t('common.edit')}>✏️</button>
-                            <button className="btn btn-sm btn-danger" style={{ marginLeft: 4 }} onClick={() => handleDeleteVariant(v.id)} title={t('common.delete')}>✕</button>
-                          </td>
-                        )}
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <button className="btn btn-sm btn-secondary" onClick={() => openVariantLabel(v)} title={t('barcode.print_labels')} data-testid={`variant-print-${v.id}`}>🏷</button>
+                          {canWrite && (
+                            <>
+                              <button className="btn btn-sm btn-secondary" style={{ marginLeft: 4 }} onClick={() => handleEditVariantClick(v)} title={t('common.edit')}>✏️</button>
+                              <button className="btn btn-sm btn-danger" style={{ marginLeft: 4 }} onClick={() => handleDeleteVariant(v.id)} title={t('common.delete')}>✕</button>
+                            </>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -912,12 +935,13 @@ export default function ProductDetailPage() {
           )}
         </div>
       )}
-      {showLabels && (
+      {labelScope && (
         <Suspense fallback={null}>
           <PrintLabelsModal
-            productId={product.id}
-            title={`${product.brand || ''} ${product.model_name}`.trim()}
-            onClose={() => setShowLabels(false)}
+            productId={labelScope.variantIds ? undefined : product.id}
+            variantIds={labelScope.variantIds}
+            title={labelScope.title}
+            onClose={() => setLabelScope(null)}
           />
         </Suspense>
       )}
