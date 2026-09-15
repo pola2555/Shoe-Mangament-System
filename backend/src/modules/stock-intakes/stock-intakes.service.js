@@ -365,8 +365,12 @@ class StockIntakesService {
    * Only while every pair it created is untouched. A sheet whose stock has started
    * selling cannot be unwound here without unpicking sales, and `sales.void` is the
    * tool for that — so this refuses and says how many have gone.
+   *
+   * `reopen` decides where it lands: false retires the sheet (cancelled); true removes
+   * the stock but keeps the typed lines and returns it to an editable DRAFT, so a wrong
+   * quantity or cost can be corrected and the sheet posted again instead of retyped.
    */
-  async reverse(id, reason, userId) {
+  async reverse(id, reason, userId, reopen = false) {
     await db.transaction(async (trx) => {
       const intake = await trx('stock_intakes').where('id', id).forUpdate().first();
       if (!intake) throw new AppError('Stock intake not found', 404);
@@ -422,13 +426,23 @@ class StockIntakesService {
         await trx('inventory_items').whereIn('id', items.map((i) => i.id)).del();
       }
 
-      await trx('stock_intakes').where('id', id).update({
-        status: 'cancelled',
-        cancelled_by: userId,
-        cancelled_at: new Date(),
-        cancel_reason: reason || null,
-        updated_at: new Date(),
-      });
+      if (reopen) {
+        // Back to a draft, lines intact: it can be corrected and posted again.
+        await trx('stock_intakes').where('id', id).update({
+          status: 'draft',
+          posted_by: null,
+          posted_at: null,
+          updated_at: new Date(),
+        });
+      } else {
+        await trx('stock_intakes').where('id', id).update({
+          status: 'cancelled',
+          cancelled_by: userId,
+          cancelled_at: new Date(),
+          cancel_reason: reason || null,
+          updated_at: new Date(),
+        });
+      }
     });
 
     return this.getById(id);

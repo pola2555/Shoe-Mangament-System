@@ -229,6 +229,24 @@ export default function StockIntakeDetailPage() {
     }
   };
 
+  // Reverse the stock but reopen the sheet as a draft, so a mistake can be corrected and
+  // posted again instead of retyped. Same safety rules as a reverse (none of its pairs
+  // may have been sold or moved).
+  const reopenAndEdit = async () => {
+    if (!await confirm({
+      title: t('intake.reopen_title'),
+      message: t('intake.reopen_confirm'),
+      confirmText: t('intake.reopen'),
+    })) return;
+    try {
+      await stockIntakesAPI.reverse(id, null, true);
+      toast.success(t('intake.reopened_ok'));
+      await load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || t('common.failed'));
+    }
+  };
+
   const remove = async () => {
     if (!await confirm({
       title: t('intake.delete_title'),
@@ -499,7 +517,12 @@ export default function StockIntakeDetailPage() {
               </>
             )}
             {intake.status === 'posted' && (
-              <button className="btn btn-danger" onClick={reverse}>{t('intake.reverse')}</button>
+              <>
+                <button className="btn btn-secondary" onClick={reopenAndEdit} data-testid="intake-reverse-edit">
+                  {t('intake.reverse_edit')}
+                </button>
+                <button className="btn btn-danger" onClick={reverse}>{t('intake.reverse')}</button>
+              </>
             )}
           </div>
         )}

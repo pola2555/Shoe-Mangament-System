@@ -47,6 +47,9 @@ const listSchema = Joi.object({
 
 const reverseSchema = Joi.object({
   reason: Joi.string().max(500).allow('', null),
+  // true = remove the stock but reopen the sheet as an editable draft (to correct and
+  // re-post); false/absent = retire it (cancelled).
+  reopen: Joi.boolean().default(false),
 });
 
 const recostSchema = Joi.object({

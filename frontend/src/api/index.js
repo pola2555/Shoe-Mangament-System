@@ -174,7 +174,7 @@ export const stockIntakesAPI = {
   update: (id, data) => api.put(`/stock-intakes/${id}`, data),
   delete: (id) => api.delete(`/stock-intakes/${id}`),
   post: (id) => api.post(`/stock-intakes/${id}/post`),
-  reverse: (id, reason) => api.post(`/stock-intakes/${id}/reverse`, { reason }),
+  reverse: (id, reason, reopen = false) => api.post(`/stock-intakes/${id}/reverse`, { reason, reopen }),
   // The best cost we can offer for a product, and where it came from.
   costHint: (params) => api.get('/stock-intakes/cost-hint', { params }),
   // Products still carrying guessed costs, including ones already sold.

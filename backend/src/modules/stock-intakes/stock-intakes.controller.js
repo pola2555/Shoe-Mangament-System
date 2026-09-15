@@ -79,7 +79,7 @@ class StockIntakesController {
   async reverse(req, res, next) {
     try {
       await assertCanTouch(req, req.params.id);
-      const data = await service.reverse(req.params.id, req.body?.reason, req.user.id);
+      const data = await service.reverse(req.params.id, req.body?.reason, req.user.id, req.body?.reopen === true);
       res.json({ success: true, data });
     } catch (error) { next(error); }
   }
