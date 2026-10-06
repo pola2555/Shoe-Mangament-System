@@ -53,6 +53,15 @@ const SearchableSelect = ({
       backdropFilter: 'blur(10px)',
       WebkitBackdropFilter: 'blur(10px)',
     }),
+    /**
+     * The menu is rendered into document.body (see menuPortalTarget below), so it needs
+     * a z-index of its own — the one on `menu` above applies inside the portal, not to
+     * the portal itself, whose default is 1.
+     *
+     * Above the modal overlay (200) and the confirm dialog (300) in styles/index.css,
+     * because these selects are used inside both.
+     */
+    menuPortal: (base) => ({ ...base, zIndex: 400 }),
     option: (base, { isFocused, isSelected }) => ({
       ...base,
       backgroundColor: isSelected 
@@ -109,6 +118,29 @@ const SearchableSelect = ({
         isClearable={isClearable}
         classNamePrefix="react-select"
         required={required}
+        /*
+         * THE MENU ESCAPES ITS CONTAINER.
+         *
+         * Rendered inline, the list was clipped by whatever scrollable ancestor it
+         * happened to sit in, and the purchase-invoice colour picker was the worst
+         * case: its row is 600px wide, so the group around it carries
+         * `overflow-x: auto` — and CSS does not allow `overflow-x: auto` with
+         * `overflow-y: visible`, so the browser quietly promotes the vertical axis to
+         * `auto` as well. The colour list was cut off a line or two down, inside a
+         * scrollbar most people never noticed was there.
+         *
+         * A z-index cannot fix that: z-index decides what draws on top, not what gets
+         * clipped. Only moving the menu out of the clipping ancestor does, which is
+         * what the portal is for. Every table-container and modal in the app has the
+         * same overflow, so this is fixed here rather than at the twenty call sites.
+         *
+         * `fixed` keeps it pinned to the control when an ancestor scrolls, and
+         * menuShouldScrollIntoView is off because its attempt to scroll the menu into
+         * view is itself a cause of the container lurching when the list opens.
+         */
+        menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
+        menuPosition="fixed"
+        menuShouldScrollIntoView={false}
       />
     </div>
   );

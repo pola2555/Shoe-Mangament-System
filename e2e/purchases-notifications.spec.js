@@ -225,3 +225,106 @@ test('sidebar groups collapse, persist, and reopen on the active page', async ({
   await page.goto('/expenses');
   await expect(page.getByRole('link', { name: /expenses/i })).toBeVisible({ timeout: 15_000 });
 });
+
+// ---------------------------------------------------------------- dropdowns
+
+/**
+ * THE COLOUR LIST WAS CUT OFF INSIDE A SCROLLBAR NOBODY COULD SEE.
+ *
+ * Each colour group in the box editor is wrapped in `overflow-x: auto`, because the
+ * row inside it is 600px wide and has to scroll sideways on a narrow screen. CSS does
+ * not allow `overflow-x: auto` alongside `overflow-y: visible` — the browser promotes
+ * the vertical axis to `auto` as well. So the dropdown, rendered inline, was clipped a
+ * line or two down and the only way to reach the rest was a scrollbar most people
+ * never noticed.
+ *
+ * A z-index could never have fixed this: z-index decides what draws on top, not what
+ * gets clipped. The menu now renders through a portal on document.body.
+ *
+ * This measures the geometry rather than trusting the markup — the bug was entirely
+ * about where pixels landed, and the menu was always present in the DOM.
+ */
+test('the colour dropdown is not clipped by the scrolling row around it', async ({ page }) => {
+  test.skip(!ctx.invoiceId, 'no supplier to raise an invoice against');
+  await page.goto('/');
+
+  // ENOUGH COLOURS TO MAKE A TALL LIST.
+  //
+  // With one colour the menu is ~70px and fits inside the group whatever the overflow
+  // says, so a one-colour fixture tests nothing — an earlier version of this test
+  // passed happily against the unfixed code for exactly that reason. A real shop
+  // carries a dozen colours, the list hits react-select's 300px ceiling, and that is
+  // when it runs past the bottom of the scrolling group.
+  const palette = ['Crimson', 'Navy', 'Olive', 'Mustard', 'Teal',
+    'Maroon', 'Lilac', 'Charcoal', 'Sand', 'Rose', 'Mint'];
+  for (const name of palette) {
+    await api(page, 'POST', `/products/${ctx.sockProductId}/colors`, { body: { color_name: name } })
+      .catch(() => {});
+  }
+
+  const box = await api(page, 'POST', `/purchases/invoices/${ctx.invoiceId}/boxes`, {
+    body: { product_id: ctx.sockProductId, cost_per_item: 20, total_items: 6, destination_store_id: ctx.storeId },
+  });
+  expect(box.status, JSON.stringify(box.body)).toBe(201);
+
+  await page.goto(`/purchases/${ctx.invoiceId}`);
+  await page.getByRole('button', { name: /^\+?\s*(edit|box items)/i }).first().click();
+
+  // The colour picker, by its placeholder — the only select in the group row.
+  const control = page.locator('.react-select__control').filter({ hasText: /color name/i }).first();
+  await expect(control).toBeVisible({ timeout: 20_000 });
+  await control.click();
+
+  const menu = page.locator('.react-select__menu');
+  await expect(menu).toBeVisible({ timeout: 10_000 });
+  await expect(page.locator('.react-select__option').first()).toBeVisible();
+
+  // Is any ancestor clipping it? Walk up from the menu to the first element whose
+  // computed overflow is not `visible`, and compare the two rectangles. Before the
+  // fix that ancestor was the colour group's own scrolling div and the menu hung well
+  // past its bottom edge; now the menu sits on body and nothing clips it.
+  const verdict = await menu.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    let p = el.parentElement;
+    while (p && p !== document.documentElement) {
+      const cs = getComputedStyle(p);
+      const clips = [cs.overflow, cs.overflowX, cs.overflowY]
+        .some((v) => v && v !== 'visible');
+      if (clips) {
+        const pr = p.getBoundingClientRect();
+        return {
+          clipper: p.className || p.tagName,
+          hiddenBelow: Math.round(r.bottom - pr.bottom),
+          hiddenAbove: Math.round(pr.top - r.top),
+        };
+      }
+      p = p.parentElement;
+    }
+    return { clipper: null, hiddenBelow: 0, hiddenAbove: 0 };
+  });
+
+  expect(
+    verdict.hiddenBelow,
+    `the menu is cut off ${verdict.hiddenBelow}px below "${verdict.clipper}"`,
+  ).toBeLessThanOrEqual(0);
+  expect(verdict.hiddenAbove).toBeLessThanOrEqual(0);
+
+  // The whole menu is on screen, top and bottom.
+  //
+  // Note this is NOT the same as "every option is visible": a dozen colours exceed
+  // react-select's own 300px ceiling and the list scrolls inside itself, which is
+  // ordinary and plainly visible. The complaint was about the OUTER clip — a menu cut
+  // off by a container whose scrollbar you could not see.
+  const onScreen = await menu.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { top: Math.round(r.top), belowFold: Math.round(r.bottom - window.innerHeight) };
+  });
+  expect(onScreen.top, 'the menu starts above the top of the window').toBeGreaterThanOrEqual(0);
+  expect(onScreen.belowFold, 'the menu runs past the bottom of the window').toBeLessThanOrEqual(0);
+
+  await shot(page, 'box-colour-dropdown');
+
+  // And a colour can actually be chosen.
+  await page.locator('.react-select__option').first().click();
+  await expect(menu).toHaveCount(0);
+});
