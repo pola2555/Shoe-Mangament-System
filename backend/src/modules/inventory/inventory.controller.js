@@ -213,6 +213,16 @@ class InventoryController {
     } catch (error) { next(error); }
   }
 
+  async removeStock(req, res, next) {
+    try {
+      if (!userHasStoreAccess(req.user, req.body.store_id)) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+      const result = await inventoryService.removeStock(req.body);
+      res.json({ success: true, data: result });
+    } catch (error) { next(error); }
+  }
+
   async markDamaged(req, res, next) {
     try {
       // Verify item is in user's store

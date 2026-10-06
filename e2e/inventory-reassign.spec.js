@@ -230,3 +230,93 @@ test('R4 · a sold pair is never moved', async ({ page }) => {
   // Put it back so the fixture is reusable.
   await api(page, 'POST', `/sales/${sale.body.data.id}/void`, { body: { reason: 'e2e cleanup' } });
 });
+
+/**
+ * REMOVING STOCK THAT WAS NEVER REALLY THERE.
+ *
+ * `check:reassign` proves the rules — pairs with history refused in words rather than
+ * as a constraint violation, newest taken first, another branch untouched. What it
+ * cannot prove is that the screen makes the distinction the whole thing turns on:
+ * this is NOT writing stock off. Damaged and lost mean the pair existed and is gone,
+ * which is shrinkage. This means it never existed at all.
+ */
+test('R5 · stock recorded by mistake can be deleted, and the dialog says what that means', async ({ page }) => {
+  await page.goto('/');
+  const before = await countsByColor(page);
+
+  // Something to delete, so the test never eats stock another test is relying on.
+  await api(page, 'POST', '/inventory/manual', {
+    body: { variant_id: ctx.variantId, store_id: ctx.storeId, cost: 150, quantity: 2 },
+  });
+
+  await openTree(page);
+  await page.getByText('Fix Black', { exact: true }).first().click();
+  const del = page.getByTestId(`inv-remove-${ctx.variantId}`);
+  await expect(del).toBeVisible({ timeout: 15_000 });
+  await del.click();
+
+  // The distinction, on screen, before anything happens.
+  const warning = page.getByTestId('remove-warning');
+  await expect(warning).toBeVisible();
+  await expect(warning).toContainText(/cannot be undone/i);
+  await expect(warning).toContainText(/write them off instead/i);
+
+  // A reason is required: the button stays dead without one.
+  await page.getByTestId('remove-quantity').fill('2');
+  await expect(page.getByTestId('remove-save')).toBeDisabled();
+  await page.getByTestId('remove-reason').fill('quantity entered twice');
+  await expect(page.getByTestId('remove-save')).toBeEnabled();
+  await shot(page, 'inventory-remove-dialog');
+  await page.getByTestId('remove-save').click();
+
+  // Back to where it started: the two added pairs are gone, nothing else moved.
+  await expect.poll(
+    async () => (await countsByColor(page))['Fix Black'] || 0,
+    { timeout: 20_000, message: 'the two mistaken pairs were never removed' },
+  ).toBe(before['Fix Black'] || 0);
+});
+
+test('R6 · a pair with history is refused in words, not as a database error', async ({ page }) => {
+  await page.goto('/');
+  // Sell a pair, then void the sale. Voiding puts the pair back in stock and keeps the
+  // sale line as the record of what happened — so it is in stock AND still referenced.
+  // This is the case that actually turns up, and it must read as a sentence.
+  const inv = await api(page, 'GET', '/inventory', {
+    params: { store_id: ctx.storeId, variant_id: ctx.variantId, status: 'in_stock', limit: '10' },
+  });
+  const pair = (inv.body.data || [])[0];
+  test.skip(!pair, 'nothing in stock to sell');
+
+  const sale = await api(page, 'POST', '/sales', {
+    body: {
+      store_id: ctx.storeId,
+      items: [{ id: pair.id, sale_price: 400 }],
+      payments: [{ amount: 400, payment_method: 'cash' }],
+    },
+  });
+  expect(sale.status, JSON.stringify(sale.body)).toBe(201);
+  await api(page, 'POST', `/sales/${sale.body.data.id}/void`, { body: { reason: 'e2e' } });
+
+  // Every pair on this variant now includes one with a sale behind it. Asking to
+  // remove them all must be refused rather than half-done.
+  const all = await api(page, 'GET', '/inventory', {
+    params: { store_id: ctx.storeId, variant_id: ctx.variantId, status: 'in_stock', limit: '50' },
+  });
+  const res = await api(page, 'POST', '/inventory/remove', {
+    body: {
+      variant_id: ctx.variantId, store_id: ctx.storeId,
+      quantity: (all.body.data || []).length, reason: 'trying to remove a real pair',
+    },
+  });
+  expect(res.status).toBe(400);
+  const msg = JSON.stringify(res.body);
+  expect(msg).toMatch(/history/i);
+  // The thing that would otherwise leak out.
+  expect(msg).not.toMatch(/constraint|violates|foreign key/i);
+
+  // And nothing was deleted on the way to refusing.
+  const after = await api(page, 'GET', '/inventory', {
+    params: { store_id: ctx.storeId, variant_id: ctx.variantId, status: 'in_stock', limit: '50' },
+  });
+  expect((after.body.data || []).length).toBe((all.body.data || []).length);
+});

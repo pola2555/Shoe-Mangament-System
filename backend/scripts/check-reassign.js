@@ -326,6 +326,147 @@ async function stockOf(variantId, storeId) {
     return 'listed under Reassign Navy';
   });
 
+  console.log('');
+  console.log('removing stock that was never really there:');
+
+  await check('pairs are really deleted, not flagged', async () => {
+    const w = await world(store.id, { qty: 3 });
+    const res = await inventory.removeStock({
+      variant_id: w.variants['40'].id, store_id: store.id, quantity: 2,
+      reason: 'typed the quantity twice',
+    });
+    if (res.removed !== 2) throw new Error(`removed ${res.removed}`);
+    if (await stockOf(w.variants['40'].id, store.id) !== 1) throw new Error('wrong number left');
+
+    // Gone from the table entirely. A flag would have to be excluded from every query
+    // that counts stock, which is the trap voiding a sale already taught.
+    const left = await knex('inventory_items').whereIn('id', w.items.map((i) => i.id));
+    if (left.length !== 1) throw new Error(`${left.length} rows remain, expected 1`);
+    return `2 deleted, worth ${res.removed_value}`;
+  });
+
+  await check('it takes the NEWEST, the opposite of a correction', async () => {
+    // A removal undoes an entry just made; a correction relabels pairs that have been
+    // on the shelf. Different intents, deliberately different ends of the queue.
+    const w = await world(store.id, { qty: 3 });
+    await inventory.removeStock({
+      variant_id: w.variants['40'].id, store_id: store.id, quantity: 1,
+      reason: 'entered by mistake',
+    });
+    const left = await knex('inventory_items')
+      .where({ variant_id: w.variants['40'].id, status: 'in_stock' }).orderBy('created_at');
+    const goneId = w.items[w.items.length - 1].id;      // the newest
+    if (left.some((r) => r.id === goneId)) throw new Error('it removed an older pair');
+    if (left.length !== 2) throw new Error(`${left.length} left`);
+    return 'newest removed, older two kept';
+  });
+
+  await check('the value removed is reported, for the log', async () => {
+    const w = await world(store.id, { qty: 2, cost: 250 });
+    const res = await inventory.removeStock({
+      variant_id: w.variants['40'].id, store_id: store.id, quantity: 2, reason: 'duplicate entry',
+    });
+    if (res.removed_value !== 500) throw new Error(`expected 500, got ${res.removed_value}`);
+    return '2 x 250 = 500 off the stock valuation';
+  });
+
+  await check('a pair from a VOIDED sale is refused, in words', async () => {
+    // The case that actually turns up. Voiding returns the pair to stock and keeps the
+    // sale line as the record of what happened, so the pair is in stock AND still
+    // referenced. Postgres would refuse it as a constraint violation; this has to read
+    // as a sentence instead.
+    const w = await world(store.id, { qty: 1 });
+    const sale = await sales.create({
+      store_id: store.id,
+      items: [{ id: w.items[0].id, sale_price: 500 }],
+      payments: [{ amount: 500, payment_method: 'cash' }],
+    }, admin);
+    made.sales.push(sale.id);
+    await sales.voidSale(sale.id, { reason: 'test' }, admin);
+
+    if (await stockOf(w.variants['40'].id, store.id) !== 1) throw new Error('the void did not restore it');
+
+    let msg = null;
+    try {
+      await inventory.removeStock({
+        variant_id: w.variants['40'].id, store_id: store.id, quantity: 1, reason: 'oops',
+      });
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('a pair with a sale behind it was deleted');
+    if (/constraint|violates|foreign key/i.test(msg)) {
+      throw new Error('it leaked a database error: ' + msg);
+    }
+    if (!/history/i.test(msg)) throw new Error('the message does not explain why: ' + msg);
+    if (await stockOf(w.variants['40'].id, store.id) !== 1) throw new Error('it deleted it anyway');
+    return msg.slice(0, 60) + '...';
+  });
+
+  await check('a sold pair is left where it is', async () => {
+    const w = await world(store.id, { qty: 2 });
+    const sale = await sales.create({
+      store_id: store.id,
+      items: [{ id: w.items[0].id, sale_price: 500 }],
+      payments: [{ amount: 500, payment_method: 'cash' }],
+    }, admin);
+    made.sales.push(sale.id);
+    // Only the unsold pair is a candidate at all, so this removes one and the sale is
+    // untouched rather than the whole request being refused.
+    const res = await inventory.removeStock({
+      variant_id: w.variants['40'].id, store_id: store.id, quantity: 1, reason: 'mis-entry',
+    });
+    if (res.removed !== 1) throw new Error(`removed ${res.removed}`);
+    const sold = await knex('inventory_items').where('id', w.items[0].id).first();
+    if (!sold) throw new Error('the SOLD pair was deleted');
+    if (sold.status !== 'sold') throw new Error('the sold pair changed');
+  });
+
+  await check('asking for more than exist names how many there are', async () => {
+    const w = await world(store.id, { qty: 2 });
+    let msg = null;
+    try {
+      await inventory.removeStock({
+        variant_id: w.variants['40'].id, store_id: store.id, quantity: 9, reason: 'x',
+      });
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('it removed more than exist');
+    if (!/\b2\b/.test(msg)) throw new Error('does not say how many: ' + msg);
+    if (await stockOf(w.variants['40'].id, store.id) !== 2) throw new Error('it removed some anyway');
+  });
+
+  await check('another branch is never touched', async () => {
+    const other = await knex('stores').whereNot('id', store.id).first('id');
+    if (!other) return 'only one branch — skipped';
+    const w = await world(store.id, { qty: 1 });
+    const [elsewhere] = await knex('inventory_items').insert({
+      id: generateUUID(), variant_id: w.variants['40'].id, store_id: other.id,
+      cost: 100, source: 'manual', status: 'in_stock',
+    }).returning('*');
+    made.items.push(elsewhere.id);
+
+    await inventory.removeStock({
+      variant_id: w.variants['40'].id, store_id: store.id, quantity: 1, reason: 'mis-entry',
+    });
+    const far = await knex('inventory_items').where('id', elsewhere.id).first();
+    if (!far) throw new Error('it deleted a pair belonging to another branch');
+    return 'the other branch kept its pair';
+  });
+
+  await check('invoiced pairs are counted, and the invoice itself stands', async () => {
+    const w = await world(store.id, { qty: 2 });
+    const box = await knex('purchase_invoice_boxes').first('id');
+    if (!box) return 'no purchase box in this database — skipped';
+    // The newest pair is the one that will be taken.
+    await knex('inventory_items').where('id', w.items[1].id).update({ invoice_box_id: box.id });
+
+    const res = await inventory.removeStock({
+      variant_id: w.variants['40'].id, store_id: store.id, quantity: 1, reason: 'over-received',
+    });
+    if (res.from_purchase !== 1) throw new Error(`from_purchase was ${res.from_purchase}`);
+    const stillThere = await knex('purchase_invoice_boxes').where('id', box.id).first();
+    if (!stillThere) throw new Error('it deleted the invoice box');
+    return 'flagged as invoiced stock; the invoice stands';
+  });
+
   // ---------------------------------------------------------------- cleanup
   for (const id of made.sales) {
     await knex('sale_payments').where('sale_id', id).del();

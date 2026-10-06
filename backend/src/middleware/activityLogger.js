@@ -201,6 +201,9 @@ function resolveActivityInfo(req) {
     // the log: it is the one action that moves pairs between variants, so "where did
     // these three Navy 42 come from" has an answer.
     else if (path.includes('/reassign')) { result.action = 'reassign_variant'; }
+    // Stock removed as never having existed. The rows are really gone, so this entry
+    // is the only remaining record that they were ever there.
+    else if (path.includes('/remove')) { result.action = 'remove_stock'; }
   }
   if (base === 'sales') {
     if (path.includes('/void')) { result.action = 'void'; }
@@ -345,6 +348,11 @@ function buildDetails(req, body, info) {
   }
 
   // Add useful identifiers
+  // What a removal destroyed, in money. The rows are deleted outright, so without
+  // this the log could say how many pairs went but never what they were worth.
+  if (body.data?.removed_value != null) details.removed_value = body.data.removed_value;
+  if (body.data?.removed != null) details.removed = body.data.removed;
+
   if (body.data?.sale_number) details.sale_number = body.data.sale_number;
   if (body.data?.invoice_number) details.invoice_number = body.data.invoice_number;
   if (body.data?.transfer_number) details.transfer_number = body.data.transfer_number;

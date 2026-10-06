@@ -686,6 +686,100 @@ class InventoryService {
   }
 
   /**
+   * Remove stock that should never have been recorded.
+   *
+   * NOT the same thing as writing stock off, and the difference matters. Damaged and
+   * lost say "this pair existed and is gone", which is shrinkage and belongs in the
+   * reports. This says "this pair never existed" — ten booked in when five arrived, a
+   * quantity typed twice, a test entry. Marking those damaged would report theft that
+   * never happened; leaving them means the shelf and the system disagree forever.
+   *
+   * THE PAIR IS REALLY DELETED, not flagged. A flag would have to be excluded from
+   * every query that counts stock, and this codebase already knows what that costs —
+   * voiding a sale needed the predicate in some forty places. What keeps it
+   * accountable is the activity log, which records who removed what, how many, from
+   * where and why.
+   *
+   * NEWEST FIRST, which is the opposite of `reassign` above, deliberately. A
+   * correction is about pairs that have been on the shelf and should be labelled
+   * right, so it takes the oldest — the ones that will sell first. A removal is
+   * almost always undoing an entry just made, so it takes the most recent.
+   *
+   * WHAT IS REFUSED, and why it is checked here rather than left to the database:
+   * `sale_items`, `transfer_items` and `supplier_return_items` all reference a pair
+   * with ON DELETE RESTRICT, so Postgres would stop it — but as a constraint error
+   * with a constraint's name in it. The case that actually turns up is a VOIDED sale:
+   * voiding returns the pair to stock and deliberately keeps the sale line as the
+   * record of what happened, so the pair is in stock AND still referenced. That must
+   * read as a sentence, not as a foreign key violation.
+   */
+  async removeStock({ variant_id, store_id, quantity, reason }) {
+    return db.transaction(async (trx) => {
+      const variant = await trx('product_variants').where('id', variant_id).first();
+      if (!variant) throw new AppError('Product variant not found', 404);
+
+      let pick = trx('inventory_items')
+        .where({ variant_id, store_id, status: 'in_stock' })
+        .orderBy([{ column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }])
+        .forUpdate();
+      if (quantity) pick = pick.limit(quantity);
+      const items = await pick;
+
+      if (!items.length) {
+        throw new AppError('There are no pairs in stock to remove for that colour and size.', 400);
+      }
+      if (quantity && items.length < quantity) {
+        throw new AppError(
+          `Only ${items.length} pair(s) of that are in stock here, not ${quantity}.`, 400,
+        );
+      }
+
+      const ids = items.map((i) => i.id);
+
+      // Anything that has happened to these pairs. A pair with history is not a
+      // mistaken entry — it is a real pair that was really handled.
+      // Sequential, NOT Promise.all. A knex transaction is one connection, and firing
+      // three queries at it concurrently is "client.query() when the client is already
+      // executing a query" — deprecated in pg 8 and an error in pg 9. Parallelism is
+      // free outside a transaction and unavailable inside one.
+      const onSales = await trx('sale_items').whereIn('inventory_item_id', ids).count('id as c').first();
+      const onTransfers = await trx('transfer_items').whereIn('inventory_item_id', ids).count('id as c').first();
+      const onReturns = await trx('supplier_return_items').whereIn('inventory_item_id', ids).count('id as c').first();
+      const held = [
+        Number(onSales.c) ? `${onSales.c} on a sale (a voided sale keeps its line)` : null,
+        Number(onTransfers.c) ? `${onTransfers.c} on a transfer` : null,
+        Number(onReturns.c) ? `${onReturns.c} on a supplier return` : null,
+      ].filter(Boolean);
+
+      if (held.length) {
+        throw new AppError(
+          `These pairs cannot be removed because they have history — ${held.join(', ')}. `
+          + 'Removing is only for stock that was recorded by mistake. Mark them damaged '
+          + 'or lost instead, which keeps what happened to them.',
+          400,
+        );
+      }
+
+      const value = items.reduce((s, i) => s + (parseFloat(i.cost) || 0), 0);
+      const fromPurchase = items.filter((i) => i.invoice_box_id).length;
+
+      await trx('inventory_items').whereIn('id', ids).del();
+
+      return {
+        removed: items.length,
+        // The money leaving the stock valuation, so the log says what it was worth
+        // rather than only how many there were.
+        removed_value: Math.round(value * 100) / 100,
+        // A purchase invoice is a record of what was ordered and paid for, and it is
+        // NOT changed by this. Surfaced so the screen can say so rather than leaving
+        // somebody to notice the two no longer agree.
+        from_purchase: fromPurchase,
+        variant_id, store_id, sku: variant.sku, reason: reason || null,
+      };
+    });
+  }
+
+  /**
    * Mark an inventory item as damaged.
    */
   async markDamaged(itemId, notes) {

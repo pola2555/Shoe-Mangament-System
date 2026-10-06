@@ -481,7 +481,18 @@
     "reassign_reason_hint": "e.g. booked in as Black by mistake",
     "reassign_done": "Moved {count} pair(s) to {color}",
     "reassign_nothing_changed": "Choose a different colour or size first",
-    "reassign_bad_quantity": "Enter a number between 1 and {max}"
+    "reassign_bad_quantity": "Enter a number between 1 and {max}",
+    "remove": "Remove stock",
+    "remove_title": "Remove stock recorded by mistake",
+    "remove_how_many": "How many pairs ({max} in stock here)",
+    "remove_newest_first": "The most recently added are removed first.",
+    "remove_reason": "Why",
+    "remove_reason_hint": "e.g. quantity entered twice",
+    "remove_reason_why": "Required. Once the pairs are gone, the activity log is the only record that they were ever here.",
+    "remove_warning": "This deletes the pairs outright and cannot be undone. Use it only for stock that was never really there. If the pairs existed and have gone missing or been damaged, write them off instead — that keeps what happened to them.",
+    "remove_confirm": "Remove {count} pair(s)",
+    "remove_done": "Removed {count} pair(s)",
+    "remove_invoice_note": "{count} of those were received on a purchase invoice. That invoice still records what was ordered and paid for — it has not been changed."
   },
   "transfers": {
     "title": "Transfers",

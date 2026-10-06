@@ -69,6 +69,21 @@ const reassignSchema = Joi.object({
   reason: Joi.string().max(500).allow('', null),
 }).or('product_color_id', 'size_eu');
 
+/**
+ * Removing stock that was recorded by mistake.
+ *
+ * `reason` is required, unlike everywhere else. This is the one action that destroys
+ * rows outright, and the activity log is the only thing left afterwards — a log entry
+ * that cannot say WHY is barely a log entry at all.
+ */
+const removeStockSchema = Joi.object({
+  variant_id: Joi.string().uuid().required(),
+  store_id: Joi.string().uuid().required(),
+  quantity: Joi.number().integer().min(1).max(1000).required(),
+  reason: Joi.string().trim().min(3).max(500).required(),
+});
+
 module.exports = {
   inventoryQuerySchema, manualEntrySchema, markDamagedSchema, reassignSchema,
+  removeStockSchema,
 };

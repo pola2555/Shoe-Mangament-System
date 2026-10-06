@@ -167,6 +167,10 @@ export const inventoryAPI = {
   // wrong. The response carries the new barcode, because every moved pair is still
   // wearing a label for what it used to be.
   reassign: (data) => api.post('/inventory/reassign', data),
+  // Delete pairs that should never have been recorded. A POST, not a DELETE, because
+  // it removes a COUNT of interchangeable pairs at one branch rather than one
+  // addressable row.
+  remove: (data) => api.post('/inventory/remove', data),
 };
 
 // Stock entered without a purchase invoice: opening stock, counts, write-offs.

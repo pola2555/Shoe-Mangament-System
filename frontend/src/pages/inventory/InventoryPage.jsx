@@ -6,6 +6,7 @@ import { formatSize, formatColor, compareSize, localizedName, sizeValueLabel } f
 import SearchableSelect from '../../components/common/SearchableSelect';
 import ClickableImage from '../../components/common/ClickableImage';
 import ReassignStockModal from '../../components/catalog/ReassignStockModal';
+import RemoveStockModal from '../../components/catalog/RemoveStockModal';
 import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
 
@@ -17,7 +18,7 @@ const loadDocx = () => import('docx');
 
 // --- Tree View Components ---
 
-const InventoryTreeSizeRow = ({ sizeRow, onReassign }) => {
+const InventoryTreeSizeRow = ({ sizeRow, onReassign, onRemove }) => {
   const { t, locale } = useTranslation();
   return (
   <tr className="tree-row size-row" style={{ backgroundColor: 'transparent' }}>
@@ -31,19 +32,28 @@ const InventoryTreeSizeRow = ({ sizeRow, onReassign }) => {
           because that is the only level that identifies one variant at one branch —
           the colour row above it spans several sizes, and moving all of them at once
           is not what "this was booked in wrong" ever means. */}
-      {onReassign && (
-        <button className="btn btn-sm btn-secondary" style={{ padding: '0 6px' }}
-          title={t('inventory.reassign')} data-testid={`inv-reassign-${sizeRow.variant_id}`}
-          onClick={(e) => { e.stopPropagation(); onReassign(sizeRow); }}>
-          ✎
-        </button>
-      )}
+      <span style={{ display: 'inline-flex', gap: 6 }}>
+        {onReassign && (
+          <button className="btn btn-sm btn-secondary" style={{ padding: '0 6px' }}
+            title={t('inventory.reassign')} data-testid={`inv-reassign-${sizeRow.variant_id}`}
+            onClick={(e) => { e.stopPropagation(); onReassign(sizeRow); }}>
+            ✎
+          </button>
+        )}
+        {onRemove && (
+          <button className="btn btn-sm btn-danger" style={{ padding: '0 6px' }}
+            title={t('inventory.remove')} data-testid={`inv-remove-${sizeRow.variant_id}`}
+            onClick={(e) => { e.stopPropagation(); onRemove(sizeRow); }}>
+            🗑
+          </button>
+        )}
+      </span>
     </td>
   </tr>
   );
 };
 
-const InventoryTreeColorRow = ({ color, productName, onPrint, onReassign, defaultExpanded = false }) => {
+const InventoryTreeColorRow = ({ color, productName, onPrint, onReassign, onRemove, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const { t } = useTranslation();
   const colorVariantIds = color.sizes.map((s) => s.variant_id).filter(Boolean);
@@ -74,13 +84,13 @@ const InventoryTreeColorRow = ({ color, productName, onPrint, onReassign, defaul
         <td></td>
       </tr>
       {expanded && color.sizes.map((sizeRow, idx) => (
-        <InventoryTreeSizeRow key={idx} sizeRow={sizeRow} onReassign={onReassign} />
+        <InventoryTreeSizeRow key={idx} sizeRow={sizeRow} onReassign={onReassign} onRemove={onRemove} />
       ))}
     </Fragment>
   );
 };
 
-const InventoryTreeProductRow = ({ product, onPrint, onReassign, defaultExpanded = false }) => {
+const InventoryTreeProductRow = ({ product, onPrint, onReassign, onRemove, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const { t } = useTranslation();
   const productVariantIds = [...new Set(
@@ -127,7 +137,7 @@ const InventoryTreeProductRow = ({ product, onPrint, onReassign, defaultExpanded
         </td>
       </tr>
       {expanded && Array.from(product.colors.values()).map(color => (
-        <InventoryTreeColorRow key={color.name} color={color} productName={product.name} onPrint={onPrint} onReassign={onReassign} />
+        <InventoryTreeColorRow key={color.name} color={color} productName={product.name} onPrint={onPrint} onReassign={onReassign} onRemove={onRemove} />
       ))}
     </Fragment>
   );
@@ -565,6 +575,9 @@ export default function InventoryPage() {
 
   // Stock booked under the wrong colour or size. Null when the dialog is closed.
   const [reassignRow, setReassignRow] = useState(null);
+  // Stock being deleted as never having existed. Separate from the correction
+  // dialog above it: they look alike and mean opposite things.
+  const [removeRow, setRemoveRow] = useState(null);
 
   /**
    * After a correction: refresh, then offer to reprint.
@@ -760,7 +773,7 @@ export default function InventoryPage() {
                 </td></tr>
               ) : viewMode === 'summary' ? (
                 treeData.map((product) => (
-                  <InventoryTreeProductRow key={product.id} product={product} onPrint={openLabels} onReassign={canWrite ? setReassignRow : null} />
+                  <InventoryTreeProductRow key={product.id} product={product} onPrint={openLabels} onReassign={canWrite ? setReassignRow : null} onRemove={canWrite ? setRemoveRow : null} />
                 ))
               ) : (
                 items.map((item) => (
@@ -785,6 +798,13 @@ export default function InventoryPage() {
           row={reassignRow}
           onClose={() => setReassignRow(null)}
           onDone={afterReassign}
+        />
+      )}
+      {removeRow && (
+        <RemoveStockModal
+          row={removeRow}
+          onClose={() => setRemoveRow(null)}
+          onDone={() => fetchData()}
         />
       )}
       {labelScope && (
