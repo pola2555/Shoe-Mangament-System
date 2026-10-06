@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import SearchableSelect from '../common/SearchableSelect';
+import ColorThumb from './ColorThumb';
 import { useTranslation } from '../../i18n/i18nContext';
 import { sizeValueLabel } from '../../utils/variantFormat';
 
@@ -91,16 +92,33 @@ export default function SizeRunPicker({
 
       <div className="form-row" style={{ alignItems: 'flex-end', marginBottom: 0, flexWrap: 'wrap' }}>
         {hasColors && (
-          <div className="form-group" style={{ flex: '1 1 180px', margin: 0 }}>
+          <div className="form-group" style={{ flex: '1 1 260px', margin: 0 }}>
             <label className="form-label">{t('products.color_name')}</label>
-            <SearchableSelect
-              options={[
-                { value: '', label: t('common.select') },
-                ...colors.map((c) => ({ value: c.id, label: c.color_name })),
-              ]}
-              value={colorId || ''}
-              onChange={(e) => onColorChange(e.target.value)}
-            />
+            {/* The row is its own element rather than the .form-group, which is a flex
+                COLUMN. Winning that by specificity would make the layout depend on
+                which stylesheet the bundler happened to emit last. */}
+            <div className="color-pick">
+              <div className="color-pick__select">
+                {/* The same picture the colour groups below use, for the same reason:
+                    this generator writes a whole size run against one colour, and
+                    picking the wrong one fills a box with the wrong stock. */}
+                <SearchableSelect
+                  options={[
+                    { value: '', label: t('common.select') },
+                    ...colors.map((c) => ({ value: c.id, label: c.color_name, color: c })),
+                  ]}
+                  value={colorId || ''}
+                  onChange={(e) => onColorChange(e.target.value)}
+                  formatOptionLabel={(opt) => (
+                    <span className="color-option">
+                      {opt.color && <ColorThumb color={opt.color} size="sm" />}
+                      <span className="color-option__name">{opt.label}</span>
+                    </span>
+                  )}
+                />
+              </div>
+              {colorId && <ColorThumb size="lg" zoomable color={colors.find((c) => c.id === colorId)} />}
+            </div>
           </div>
         )}
 

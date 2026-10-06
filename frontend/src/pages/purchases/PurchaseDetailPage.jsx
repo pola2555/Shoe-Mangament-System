@@ -9,6 +9,7 @@ import useProductCategory from '../../hooks/useProductCategory';
 import SizeValueInput from '../../components/catalog/SizeValueInput';
 import SizeRunPicker from '../../components/catalog/SizeRunPicker';
 import SearchableSelect from '../../components/common/SearchableSelect';
+import ColorThumb from '../../components/catalog/ColorThumb';
 import ImageViewerModal from '../../components/common/ImageViewerModal';
 import { useTranslation } from '../../i18n/i18nContext';
 import useQueueOffer from '../../hooks/useQueueOffer';
@@ -916,17 +917,45 @@ export default function PurchaseDetailPage() {
                                 server-side, so asking for one here would be a question
                                 with no answer. */}
                             {editingCategory.hasColors ? (
-                              <div className="form-group" style={{ margin: 0, width: 250 }}>
-                                <SearchableSelect
-                                  required
-                                  options={[
-                                    { value: '', label: `${t('products.color_name')}...` },
-                                    ...editingCategory.colors.map((c) => ({ value: c.id, label: c.color_name }))
-                                  ]}
-                                  value={group.color_id}
-                                  onChange={(e) => updateColorGroupColor(gIdx, e.target.value)}
-                                  style={{ borderColor: 'var(--color-primary)' }}
-                                />
+                              /* The picker shows every colour as a photograph, and the
+                                 chosen one again beside it, larger and openable.
+                                 Unpacking a delivery means matching what is in the box
+                                 to a name in a list — and whoever is unpacking did not
+                                 choose the names. A picture settles it. */
+                              <div className="form-group" style={{ margin: 0, width: 330 }}>
+                               {/* The row lives in its own element rather than on the
+                                   .form-group, which is a flex COLUMN. Overriding that
+                                   by specificity would make the layout depend on which
+                                   stylesheet the bundler emitted last. */}
+                               <div className="color-pick">
+                                <div className="color-pick__select">
+                                  <SearchableSelect
+                                    required
+                                    options={[
+                                      { value: '', label: `${t('products.color_name')}...` },
+                                      ...editingCategory.colors.map((c) => ({ value: c.id, label: c.color_name, color: c }))
+                                    ]}
+                                    value={group.color_id}
+                                    onChange={(e) => updateColorGroupColor(gIdx, e.target.value)}
+                                    style={{ borderColor: 'var(--color-primary)' }}
+                                    formatOptionLabel={(opt) => (
+                                      <span className="color-option">
+                                        {opt.color && <ColorThumb color={opt.color} size="sm" />}
+                                        <span className="color-option__name">{opt.label}</span>
+                                      </span>
+                                    )}
+                                  />
+                                </div>
+                                {/* Only once something is picked — an empty tile beside
+                                    an empty select is noise, not a preview. */}
+                                {group.color_id && (
+                                  <ColorThumb
+                                    size="lg"
+                                    zoomable
+                                    color={editingCategory.colors.find((c) => c.id === group.color_id)}
+                                  />
+                                )}
+                               </div>
                               </div>
                             ) : (
                               <span style={{ color: 'var(--color-text-secondary)' }}>

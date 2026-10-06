@@ -1,0 +1,117 @@
+/*
+ * The colour thumbnail.
+ *
+ * Two sizes: `sm` sits in a dropdown row, `lg` beside the picker as the preview of
+ * what is currently chosen. Everything is drawn from the theme tokens so it holds up
+ * in both light and dark without a second set of rules.
+ */
+
+.color-thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: var(--color-bg-base);
+  /* A ring rather than a border: it reads as the edge of a photograph instead of a
+     box drawn around one, and it keeps pale images from dissolving into the surface. */
+  box-shadow: 0 0 0 1px var(--color-border);
+  position: relative;
+}
+
+.color-thumb--sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+/* Sized against the 40px select it stands beside: large enough to recognise a shoe
+   in, small enough that it does not become the loudest thing in the row. */
+.color-thumb--lg {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--color-border), 0 2px 6px rgba(0, 0, 0, 0.14);
+  transition: transform 0.14s ease, box-shadow 0.14s ease;
+}
+
+/* The large preview lifts slightly under the cursor, so it reads as something you can
+   open rather than decoration. */
+.color-thumb--lg.color-thumb--photo:hover {
+  transform: translateY(-1px) scale(1.03);
+  box-shadow: 0 0 0 1px var(--color-primary), 0 6px 16px rgba(0, 0, 0, 0.22);
+}
+
+.color-thumb__img,
+.color-thumb img {
+  width: 100%;
+  height: 100%;
+  /* Cover, so a tall photo and a wide one present the same square and a row of them
+     keeps one baseline. */
+  object-fit: cover;
+  display: block;
+}
+
+.color-thumb--lg.color-thumb--photo { cursor: zoom-in; }
+
+/* "+2" when a colour has more photos than the one being shown. */
+.color-thumb__more {
+  position: absolute;
+  inset-block-end: 2px;
+  inset-inline-end: 2px;
+  padding: 0 4px;
+  border-radius: 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* No photo, but a hex was chosen — show the colour itself. */
+.color-thumb--hex {
+  box-shadow: 0 0 0 1px var(--color-border), inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+/* Neither. A deliberate placeholder, not an empty hole. */
+.color-thumb--empty {
+  box-shadow: none;
+  border: 1px dashed var(--color-border);
+  color: var(--color-text-muted);
+  font-weight: 700;
+  background: var(--color-surface);
+}
+
+.color-thumb--sm.color-thumb--empty { font-size: 0.68rem; }
+.color-thumb--lg.color-thumb--empty { font-size: 1.4rem; }
+
+/* The row a thumbnail and a label share, inside a dropdown option. */
+.color-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.color-option__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The picker and its preview, side by side. */
+.color-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+
+.color-pick__select { flex: 1 1 auto; min-width: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .color-thumb--lg { transition: none; }
+  .color-thumb--lg.color-thumb--photo:hover { transform: none; }
+}

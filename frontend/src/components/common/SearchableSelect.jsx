@@ -16,6 +16,14 @@ const SearchableSelect = ({
   className = '',
   style = {},
   isClearable = true,
+  /**
+   * Optional rich rendering for an option, e.g. a colour's photograph beside its name.
+   *
+   * Only the DRAWING changes. Searching still runs against `option.label`, so typing
+   * "oli" finds Olive exactly as before — which is why the label has to stay a plain
+   * string even when the row is a picture.
+   */
+  formatOptionLabel,
 }) => {
   // Find the full option object that matches the current raw string value
   const selectedOption = options.find(opt => opt.value === value) || null;
@@ -118,6 +126,7 @@ const SearchableSelect = ({
         isClearable={isClearable}
         classNamePrefix="react-select"
         required={required}
+        formatOptionLabel={formatOptionLabel}
         /*
          * THE MENU ESCAPES ITS CONTAINER.
          *

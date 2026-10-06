@@ -328,3 +328,145 @@ test('the colour dropdown is not clipped by the scrolling row around it', async 
   await page.locator('.react-select__option').first().click();
   await expect(menu).toHaveCount(0);
 });
+
+// ---------------------------------------------------------------- colour previews
+
+/**
+ * A COLOUR IS EASIER TO RECOGNISE AS A PICTURE THAN AS A WORD.
+ *
+ * Receiving a delivery means matching what is physically in the box against a name in
+ * a list — and whoever is unpacking did not choose the names. "Olive" and "Sand" are
+ * a guess as words and obvious as photographs.
+ *
+ * Nothing here uploads an image: local dev writes to a real S3 bucket. The photo path
+ * is exercised by injecting image rows into the product response, which is exactly the
+ * shape `products.getById` returns (it calls attachColorImages), so the component is
+ * fed the real thing without a byte going near the bucket.
+ */
+
+// 1x1 PNG. Enough for the browser to decode and lay out; nothing is fetched.
+const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+/** Give every colour on every product `n` images, on the way to the browser. */
+async function withColorImages(page, n = 2) {
+  await page.route('**/api/products/*', async (route) => {
+    const res = await route.fetch();
+    let body;
+    try { body = await res.json(); } catch { return route.fulfill({ response: res }); }
+    const colors = body?.data?.colors;
+    if (Array.isArray(colors)) {
+      for (const c of colors) {
+        c.images = Array.from({ length: n }, (_, i) => ({
+          id: `stub-${c.id}-${i}`, image_url: PIXEL, thumb_url: PIXEL,
+          is_primary: i === 0, sort_order: i,
+        }));
+      }
+    }
+    return route.fulfill({ response: res, body: JSON.stringify(body) });
+  });
+}
+
+async function openSockBoxEditor(page) {
+  const box = await api(page, 'POST', `/purchases/invoices/${ctx.invoiceId}/boxes`, {
+    body: { product_id: ctx.sockProductId, cost_per_item: 20, total_items: 6, destination_store_id: ctx.storeId },
+  });
+  expect(box.status, JSON.stringify(box.body)).toBe(201);
+  await page.goto(`/purchases/${ctx.invoiceId}`);
+  await page.getByRole('button', { name: /^\+?\s*(edit|box items)/i }).first().click();
+}
+
+test('every colour in the picker carries a thumbnail', async ({ page }) => {
+  test.skip(!ctx.invoiceId, 'no supplier to raise an invoice against');
+  await page.goto('/');
+  await withColorImages(page, 2);
+  await openSockBoxEditor(page);
+
+  const control = page.locator('.react-select__control').filter({ hasText: /color name/i }).first();
+  await expect(control).toBeVisible({ timeout: 20_000 });
+  await control.click();
+
+  const options = page.locator('.react-select__option');
+  await expect(options.first()).toBeVisible({ timeout: 10_000 });
+
+  // Every option that names a real colour shows one. The placeholder row ("Color
+  // Name...") carries no colour and correctly has none.
+  const named = options.filter({ hasNot: page.locator('text=/^Color Name\.\.\.$/') });
+  const count = await named.count();
+  expect(count).toBeGreaterThan(0);
+  let withThumb = 0;
+  for (let i = 0; i < count; i++) {
+    if (await named.nth(i).locator('.color-thumb').count()) withThumb++;
+  }
+  expect(withThumb, `${withThumb} of ${count} options had a thumbnail`).toBe(count);
+  await shot(page, 'box-colour-options');
+});
+
+test('picking a colour shows a larger preview of it', async ({ page }) => {
+  test.skip(!ctx.invoiceId, 'no supplier');
+  await page.goto('/');
+  await withColorImages(page, 3);
+  await openSockBoxEditor(page);
+
+  // Nothing chosen yet, so no preview — an empty tile beside an empty select is noise.
+  await expect(page.locator('.color-thumb--lg')).toHaveCount(0);
+
+  const control = page.locator('.react-select__control').filter({ hasText: /color name/i }).first();
+  await control.click();
+  await page.locator('.react-select__option').nth(1).click();
+
+  const preview = page.locator('.color-thumb--lg').first();
+  await expect(preview).toBeVisible({ timeout: 10_000 });
+  await expect(preview).toHaveClass(/color-thumb--photo/);
+
+  // It is a real square with a real image in it, not a collapsed span.
+  const box = await preview.boundingBox();
+  expect(box.width).toBeGreaterThan(40);
+  expect(box.height).toBeGreaterThan(40);
+  await expect(preview.locator('img')).toHaveAttribute('src', PIXEL);
+
+  // Three images, one shown: the badge says there are more without opening anything.
+  await expect(preview.locator('.color-thumb__more')).toHaveText('+2');
+  await shot(page, 'box-colour-preview');
+});
+
+test('a colour with no photo gets a deliberate placeholder, not a hole', async ({ page }) => {
+  test.skip(!ctx.invoiceId, 'no supplier');
+  // No stubbing: the fixture's colours have neither an image nor a hex, which is the
+  // state most of a real catalogue starts in. It must read as "no photo yet" rather
+  // than as something that failed to load.
+  await page.goto('/');
+  await openSockBoxEditor(page);
+
+  const control = page.locator('.react-select__control').filter({ hasText: /color name/i }).first();
+  await expect(control).toBeVisible({ timeout: 20_000 });
+  await control.click();
+  await page.locator('.react-select__option').nth(1).click();
+
+  const preview = page.locator('.color-thumb--lg').first();
+  await expect(preview).toBeVisible({ timeout: 10_000 });
+  await expect(preview).toHaveClass(/color-thumb--empty/);
+  // Its initial, so the tile still says which colour it stands for.
+  await expect(preview).not.toBeEmpty();
+  const box = await preview.boundingBox();
+  expect(box.width).toBeGreaterThan(40);
+  await shot(page, 'box-colour-placeholder');
+});
+
+test('typing still filters the list now that options are pictures', async ({ page }) => {
+  test.skip(!ctx.invoiceId, 'no supplier');
+  await page.goto('/');
+  await withColorImages(page, 1);
+  await openSockBoxEditor(page);
+
+  const control = page.locator('.react-select__control').filter({ hasText: /color name/i }).first();
+  await control.click();
+  const all = await page.locator('.react-select__option').count();
+
+  // Search runs on the option's label, which stays a plain string even though the row
+  // is rendered as a picture. Easy to break by moving the name into the renderer.
+  await page.keyboard.type('Crim', { delay: 20 });
+  const filtered = page.locator('.react-select__option');
+  await expect(filtered.first()).toBeVisible();
+  expect(await filtered.count()).toBeLessThan(all);
+  await expect(filtered.first()).toContainText(/crimson/i);
+});
