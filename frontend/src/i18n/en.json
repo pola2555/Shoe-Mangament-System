@@ -471,7 +471,17 @@
     "category_no_sizes": "Products in this category have no size.",
     "numeric_only_hint": "A number range matches numeric sizes only. Pick a category to filter word sizes such as Kids or M.",
     "export_word": "Export Word",
-    "exporting": "Exporting…"
+    "exporting": "Exporting…",
+    "reassign": "Fix colour / size",
+    "reassign_title": "Fix the colour or size this stock was booked under",
+    "reassign_move": "Move stock",
+    "reassign_how_many": "How many pairs ({max} in stock here)",
+    "reassign_in_stock_only": "Only pairs still in stock can move. Sold and damaged pairs stay where they are, so past sales keep describing what was actually sold.",
+    "reassign_label_warning": "⚠ The labels already on these pairs encode the old colour and size, so they will scan as the old one until reprinted.",
+    "reassign_reason_hint": "e.g. booked in as Black by mistake",
+    "reassign_done": "Moved {count} pair(s) to {color}",
+    "reassign_nothing_changed": "Choose a different colour or size first",
+    "reassign_bad_quantity": "Enter a number between 1 and {max}"
   },
   "transfers": {
     "title": "Transfers",

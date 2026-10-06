@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { formatSize, formatColor, compareSize, localizedName, sizeValueLabel } from '../../utils/variantFormat';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import ClickableImage from '../../components/common/ClickableImage';
+import ReassignStockModal from '../../components/catalog/ReassignStockModal';
 import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
 
@@ -16,7 +17,7 @@ const loadDocx = () => import('docx');
 
 // --- Tree View Components ---
 
-const InventoryTreeSizeRow = ({ sizeRow }) => {
+const InventoryTreeSizeRow = ({ sizeRow, onReassign }) => {
   const { t, locale } = useTranslation();
   return (
   <tr className="tree-row size-row" style={{ backgroundColor: 'transparent' }}>
@@ -25,12 +26,24 @@ const InventoryTreeSizeRow = ({ sizeRow }) => {
     <td>{sizeRow.store_name}</td>
     <td>{parseFloat(sizeRow.avg_cost).toFixed(2)} {t('common.currency')}</td>
     <td><strong>{sizeRow.quantity}</strong></td>
-    <td></td>
+    <td>
+      {/* Correcting stock booked under the wrong colour or size. On the SIZE row
+          because that is the only level that identifies one variant at one branch —
+          the colour row above it spans several sizes, and moving all of them at once
+          is not what "this was booked in wrong" ever means. */}
+      {onReassign && (
+        <button className="btn btn-sm btn-secondary" style={{ padding: '0 6px' }}
+          title={t('inventory.reassign')} data-testid={`inv-reassign-${sizeRow.variant_id}`}
+          onClick={(e) => { e.stopPropagation(); onReassign(sizeRow); }}>
+          ✎
+        </button>
+      )}
+    </td>
   </tr>
   );
 };
 
-const InventoryTreeColorRow = ({ color, productName, onPrint, defaultExpanded = false }) => {
+const InventoryTreeColorRow = ({ color, productName, onPrint, onReassign, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const { t } = useTranslation();
   const colorVariantIds = color.sizes.map((s) => s.variant_id).filter(Boolean);
@@ -61,13 +74,13 @@ const InventoryTreeColorRow = ({ color, productName, onPrint, defaultExpanded = 
         <td></td>
       </tr>
       {expanded && color.sizes.map((sizeRow, idx) => (
-        <InventoryTreeSizeRow key={idx} sizeRow={sizeRow} />
+        <InventoryTreeSizeRow key={idx} sizeRow={sizeRow} onReassign={onReassign} />
       ))}
     </Fragment>
   );
 };
 
-const InventoryTreeProductRow = ({ product, onPrint, defaultExpanded = false }) => {
+const InventoryTreeProductRow = ({ product, onPrint, onReassign, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const { t } = useTranslation();
   const productVariantIds = [...new Set(
@@ -114,7 +127,7 @@ const InventoryTreeProductRow = ({ product, onPrint, defaultExpanded = false }) 
         </td>
       </tr>
       {expanded && Array.from(product.colors.values()).map(color => (
-        <InventoryTreeColorRow key={color.name} color={color} productName={product.name} onPrint={onPrint} />
+        <InventoryTreeColorRow key={color.name} color={color} productName={product.name} onPrint={onPrint} onReassign={onReassign} />
       ))}
     </Fragment>
   );
@@ -256,7 +269,8 @@ export default function InventoryPage() {
   // current view, a single product, or a single colour — all through the same modal,
   // which pre-fills copies to match each variant's stock.
   const [labelScope, setLabelScope] = useState(null);
-  const { filterStores } = useAuth();
+  const { filterStores, hasPermission } = useAuth();
+  const canWrite = hasPermission('inventory', 'write');
   const { t, locale } = useTranslation();
   const [treeData, setTreeData] = useState([]);
 
@@ -549,6 +563,24 @@ export default function InventoryPage() {
     setTreeData(tree);
   };
 
+  // Stock booked under the wrong colour or size. Null when the dialog is closed.
+  const [reassignRow, setReassignRow] = useState(null);
+
+  /**
+   * After a correction: refresh, then offer to reprint.
+   *
+   * The pairs that just moved are still wearing labels for the variant they used to
+   * be — the barcode encodes colour and size — so until they are relabelled they scan
+   * as the old one at the till. Offered rather than queued silently, because only the
+   * person who moved them knows whether the box is still in front of them.
+   */
+  const afterReassign = (res) => {
+    fetchData();
+    if (res?.to?.variant_id) {
+      openLabels([res.to.variant_id], `${res.to.color_name} — ${res.to.sku}`);
+    }
+  };
+
   // Open the print modal for a set of variants. The rows only render their button when
   // they have variants, so this is only ever called with a real set.
   const openLabels = (variantIds, title) => {
@@ -728,7 +760,7 @@ export default function InventoryPage() {
                 </td></tr>
               ) : viewMode === 'summary' ? (
                 treeData.map((product) => (
-                  <InventoryTreeProductRow key={product.id} product={product} onPrint={openLabels} />
+                  <InventoryTreeProductRow key={product.id} product={product} onPrint={openLabels} onReassign={canWrite ? setReassignRow : null} />
                 ))
               ) : (
                 items.map((item) => (
@@ -747,6 +779,13 @@ export default function InventoryPage() {
             </tbody>
           </table>
         </div>
+      )}
+      {reassignRow && (
+        <ReassignStockModal
+          row={reassignRow}
+          onClose={() => setReassignRow(null)}
+          onDone={afterReassign}
+        />
       )}
       {labelScope && (
         <Suspense fallback={null}>

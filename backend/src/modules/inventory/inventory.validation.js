@@ -50,4 +50,25 @@ const markDamagedSchema = Joi.object({
   notes: Joi.string().max(500).allow('', null),
 });
 
-module.exports = { inventoryQuerySchema, manualEntrySchema, markDamagedSchema };
+/**
+ * Correcting the colour or size stock was booked under.
+ *
+ * At least one of colour/size must be given, or there is nothing to correct — but
+ * WHICH of them changed is decided in the service against the variant's current
+ * values, because sending the colour it already has is not a change either and Joi
+ * cannot see that from the request alone.
+ *
+ * `quantity` omitted means every pair in stock on that variant at that branch.
+ */
+const reassignSchema = Joi.object({
+  variant_id: Joi.string().uuid().required(),
+  store_id: Joi.string().uuid().required(),
+  product_color_id: Joi.string().uuid(),
+  size_eu: Joi.string().max(20).trim(),
+  quantity: Joi.number().integer().min(1).max(1000),
+  reason: Joi.string().max(500).allow('', null),
+}).or('product_color_id', 'size_eu');
+
+module.exports = {
+  inventoryQuerySchema, manualEntrySchema, markDamagedSchema, reassignSchema,
+};

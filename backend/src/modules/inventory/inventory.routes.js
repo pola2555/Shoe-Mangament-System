@@ -3,7 +3,9 @@ const controller = require('./inventory.controller');
 const validate = require('../../middleware/validate');
 const auth = require('../../middleware/auth');
 const permission = require('../../middleware/permission');
-const { inventoryQuerySchema, manualEntrySchema, markDamagedSchema } = require('./inventory.validation');
+const {
+  inventoryQuerySchema, manualEntrySchema, markDamagedSchema, reassignSchema,
+} = require('./inventory.validation');
 
 const router = Router();
 router.use(auth);
@@ -14,6 +16,7 @@ router.get('/product-grid', permission('inventory', 'read'), validate(inventoryQ
 router.get('/facets', permission('inventory', 'read'), validate(inventoryQuerySchema, 'query'), controller.facets);
 router.get('/export-image', permission('inventory', 'read'), controller.exportImageProxy);
 router.post('/manual', permission('inventory', 'write'), validate(manualEntrySchema), controller.manualEntry);
+router.post('/reassign', permission('inventory', 'write'), validate(reassignSchema), controller.reassign);
 router.put('/:id/damaged', permission('inventory', 'write'), validate(markDamagedSchema), controller.markDamaged);
 
 module.exports = router;

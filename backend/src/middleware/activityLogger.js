@@ -197,6 +197,10 @@ function resolveActivityInfo(req) {
   if (base === 'inventory') {
     if (path.includes('/manual')) { result.action = 'manual_entry'; }
     else if (path.includes('/damaged')) { result.action = 'mark_damaged'; }
+    // Stock changing which colour or size it is recorded as. Worth its own name in
+    // the log: it is the one action that moves pairs between variants, so "where did
+    // these three Navy 42 come from" has an answer.
+    else if (path.includes('/reassign')) { result.action = 'reassign_variant'; }
   }
   if (base === 'sales') {
     if (path.includes('/void')) { result.action = 'void'; }

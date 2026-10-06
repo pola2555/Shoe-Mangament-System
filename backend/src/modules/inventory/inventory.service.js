@@ -236,6 +236,7 @@ class InventoryService {
         'product_variants.size_sort',
         'product_variants.sku',
         'product_variants.barcode',
+        'product_colors.id as product_color_id',
         'product_colors.is_placeholder as color_is_placeholder',
         'products.category_id',
         'pcat.has_sizes',
@@ -254,6 +255,7 @@ class InventoryService {
         db.raw('COALESCE(color_img.thumb_url, color_img.image_url) as product_image_thumb')
       )
       .groupBy(
+        'product_colors.id',
         'products.id', 'products.product_code', 'products.model_name', 'products.brand',
         'products.net_price',
         'products.default_selling_price', 'products.min_selling_price', 'products.max_selling_price',
@@ -531,6 +533,156 @@ class InventoryService {
 
     await db('inventory_items').insert(items);
     return { created: items.length, variant_sku: variant.sku, store_name: store.name };
+  }
+
+  /**
+   * Correct the colour or size that stock was recorded under.
+   *
+   * Pairs get entered under the wrong colour — a box of Navy booked in as Black, a
+   * size run typed one row out. Until now the only remedies were to write the stock
+   * off and re-enter it, which loses its cost and its history, or to leave it wrong.
+   *
+   * This moves the physical pairs onto the right variant. Nothing is created and
+   * nothing is destroyed: the same `inventory_items` rows keep their id, their cost,
+   * the invoice box they arrived on and their estimated-cost mark. Only which variant
+   * they point at changes, which is exactly what was wrong.
+   *
+   * FOUR RULES
+   *
+   * 1. ONLY PAIRS IN STOCK. A sold pair is referenced by its `sale_items` row, which
+   *    photocopied the cost at the moment of sale; moving it would quietly restate
+   *    what was sold and to whom. Damaged and lost pairs are a record of a specific
+   *    pair's fate and are left alone for the same reason. Correct the stock you still
+   *    have; history stays as it happened.
+   *
+   * 2. THE SAME PRODUCT, ALWAYS. This fixes a colour or a size, not what the thing is.
+   *    A colour belonging to another product is refused by `resolveVariantTarget`,
+   *    which looks it up scoped to this product. Turning a shoe into a sock is a
+   *    write-off and a fresh entry, because none of the cost would carry over honestly.
+   *
+   * 3. OLDEST FIRST when only some of the pairs move. They are interchangeable as
+   *    objects but not as money — each carries its own cost — and oldest-first is the
+   *    order the till hands them out and a stock count writes them off, so one rule
+   *    covers all three.
+   *
+   * 4. THE PRINTED LABEL IS NOW WRONG. A barcode encodes product, colour and size, so
+   *    a moved pair carries a label that scans as what it used to be. This cannot be
+   *    fixed from here — the label is on a shelf — so the new variant's barcode comes
+   *    back in the response and the screen offers to reprint. Said out loud rather
+   *    than left for somebody to discover at the till.
+   */
+  async reassign({ variant_id, store_id, quantity, product_color_id, size_eu, reason }) {
+    const {
+      categoryOfProduct, resolveVariantTarget, generateSku,
+    } = require('../../utils/variantIdentity');
+    const barcodesService = require('../barcodes/barcodes.service');
+
+    return db.transaction(async (trx) => {
+      const source = await trx('product_variants').where('id', variant_id).first();
+      if (!source) throw new AppError('Product variant not found', 404);
+
+      const product = await trx('products').where('id', source.product_id).first();
+      if (!product) throw new AppError('Product not found', 404);
+      const category = await categoryOfProduct(trx, product.id);
+
+      // Anything not being changed stays as it is, so the caller can send only the
+      // colour, only the size, or both.
+      const wantColorId = product_color_id || source.product_color_id;
+      const wantSize = size_eu === undefined || size_eu === null || String(size_eu).trim() === ''
+        ? source.size_eu
+        : String(size_eu).trim();
+
+      if (wantColorId === source.product_color_id && wantSize === source.size_eu) {
+        throw new AppError('That is the colour and size it already has — nothing to change.', 400);
+      }
+
+      // Off-scale sizes are allowed here for the same reason receiving allows them:
+      // this is a correction, and refusing one because the catalogue's size list is
+      // incomplete leaves the stock wrong, which is worse.
+      const target = await resolveVariantTarget(
+        trx, product, { product_color_id: wantColorId, size_eu: wantSize }, category,
+        { allowOffScale: true },
+      );
+
+      // Find or create the variant being moved to — the same resolution a purchase
+      // uses, so a variant born from a correction is indistinguishable from one
+      // created by hand.
+      let variant = await trx('product_variants')
+        .where({
+          product_id: product.id,
+          product_color_id: target.color.id,
+          size_eu: target.size_eu,
+        })
+        .first();
+
+      let createdVariant = false;
+      if (!variant) {
+        const sku = await generateSku(trx, product, target.color, target.size_eu);
+        [variant] = await trx('product_variants').insert({
+          id: generateUUID(),
+          product_id: product.id,
+          product_color_id: target.color.id,
+          size_eu: target.size_eu,
+          size_sort: target.size_sort,
+          size_scale_value_id: target.size_scale_value_id,
+          sku,
+        }).returning('*');
+        createdVariant = true;
+      }
+      // Idempotent, and needed either way: an older variant that predates barcodes
+      // must pick one up before anything is moved onto it, or the corrected stock
+      // would have no label to print at all.
+      await barcodesService.assignForVariant(variant.id, trx);
+      // Re-read, because the row above was loaded or inserted BEFORE the barcode was
+      // minted onto it. Returning the stale copy handed the screen `barcode: null` for
+      // every newly created variant — exactly the case that most needs a label, since
+      // nothing has ever been printed for it.
+      variant = await trx('product_variants').where('id', variant.id).first();
+
+      // Locked before they are counted. Between reading and writing, one of these
+      // pairs can be sold at the till — FOR UPDATE in READ COMMITTED re-checks the
+      // WHERE after taking each lock, so a pair that has just gone drops out here
+      // rather than being moved out from under the sale.
+      let pick = trx('inventory_items')
+        .where({ variant_id, store_id, status: 'in_stock' })
+        .orderBy([{ column: 'created_at', order: 'asc' }, { column: 'id', order: 'asc' }])
+        .forUpdate();
+      if (quantity) pick = pick.limit(quantity);
+      const items = await pick;
+
+      if (!items.length) {
+        throw new AppError('There are no pairs in stock to move for that colour and size.', 400);
+      }
+      if (quantity && items.length < quantity) {
+        throw new AppError(
+          `Only ${items.length} pair(s) of that are in stock here, not ${quantity}.`, 400,
+        );
+      }
+
+      const note = reason
+        ? `Corrected from ${source.sku}: ${reason}`
+        : `Corrected from ${source.sku}`;
+
+      await trx('inventory_items')
+        .whereIn('id', items.map((i) => i.id))
+        .update({ variant_id: variant.id, notes: note, updated_at: new Date() });
+
+      return {
+        moved: items.length,
+        created_variant: createdVariant,
+        from: {
+          variant_id: source.id, sku: source.sku, size_eu: source.size_eu,
+          product_color_id: source.product_color_id,
+        },
+        to: {
+          variant_id: variant.id, sku: variant.sku, barcode: variant.barcode,
+          size_eu: variant.size_eu, product_color_id: variant.product_color_id,
+          color_name: target.color.color_name,
+        },
+        // Every moved pair is now wearing a label for the variant it used to be.
+        labels_to_reprint: items.length,
+      };
+    });
   }
 
   /**

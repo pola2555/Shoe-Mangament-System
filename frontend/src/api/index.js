@@ -163,6 +163,10 @@ export const inventoryAPI = {
   exportImage: (url) => api.get('/inventory/export-image', { params: { url }, responseType: 'blob' }),
   manualEntry: (data) => api.post('/inventory/manual', data),
   markDamaged: (id, notes) => api.put(`/inventory/${id}/damaged`, { notes }),
+  // Move pairs onto a different colour/size of the SAME product, for stock booked in
+  // wrong. The response carries the new barcode, because every moved pair is still
+  // wearing a label for what it used to be.
+  reassign: (data) => api.post('/inventory/reassign', data),
 };
 
 // Stock entered without a purchase invoice: opening stock, counts, write-offs.

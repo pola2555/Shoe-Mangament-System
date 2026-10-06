@@ -200,6 +200,19 @@ class InventoryController {
     }
   }
 
+  async reassign(req, res, next) {
+    try {
+      // The branch whose pairs are moving, checked the same way manual entry checks
+      // the branch it is adding to. Nothing here trusts a store id just because it
+      // was sent.
+      if (!userHasStoreAccess(req.user, req.body.store_id)) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+      const result = await inventoryService.reassign(req.body);
+      res.json({ success: true, data: result });
+    } catch (error) { next(error); }
+  }
+
   async markDamaged(req, res, next) {
     try {
       // Verify item is in user's store
