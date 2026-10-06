@@ -664,7 +664,21 @@
     "create_invoice": "Create Invoice",
     "add_payment": "Add Payment",
     "deactivate_title": "Deactivate this dealer?",
-    "deactivate_confirm": "They will stop appearing on new invoices. Their history is kept."
+    "deactivate_confirm": "They will stop appearing on new invoices. Their history is kept.",
+    "record_payment": "Record Payment",
+    "payment_amount": "Amount",
+    "edit_payment": "Edit payment",
+    "delete_payment_title": "Delete this payment?",
+    "delete_payment_simple": "{amount} will be removed from this dealer's record. It settled no invoices, so nothing reopens.",
+    "delete_payment_applied": "{amount} will be removed. It is currently paying {count} invoice(s) — {invoices} — which will go back to owing that money.",
+    "delete_payment_warning": "This cannot be undone.",
+    "payment_saved": "Payment saved",
+    "payment_deleted": "Payment deleted",
+    "applied_to": "Applied to",
+    "held_as_credit": "{amount} held as credit",
+    "settles_nothing": "Not applied to any invoice",
+    "reallocate_note": "Changing the amount re-applies it across this dealer's unpaid invoices, oldest first.",
+    "no_payments": "No payments recorded"
   },
   "expenses": {
     "title": "Expenses",

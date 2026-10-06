@@ -278,6 +278,9 @@ export const dealersAPI = {
   createInvoice: (data) => api.post('/dealers/invoices', data),
   getInvoice: (invoiceId) => api.get(`/dealers/invoices/${invoiceId}`),
   createPayment: (data) => api.post('/dealers/payments', data),
+  getPayment: (paymentId) => api.get(`/dealers/payments/${paymentId}`),
+  updatePayment: (paymentId, data) => api.put(`/dealers/payments/${paymentId}`, data),
+  deletePayment: (paymentId) => api.delete(`/dealers/payments/${paymentId}`),
 };
 
 export const returnsAPI = {

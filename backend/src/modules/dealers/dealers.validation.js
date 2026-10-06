@@ -36,4 +36,22 @@ const createDealerPaymentSchema = Joi.object({
   notes: Joi.string().allow('', null),
 });
 
-module.exports = { createDealerSchema, updateDealerSchema, createWholesaleInvoiceSchema, createDealerPaymentSchema };
+/**
+ * Editing a recorded payment. Every field optional, at least one required.
+ *
+ * `total_amount` keeps the same floor as creation: a payment of zero is not a
+ * correction, it is a deletion written in a way that leaves a misleading row behind.
+ * Whoever wants the payment gone should delete it, which puts the invoices back.
+ */
+const updateDealerPaymentSchema = Joi.object({
+  total_amount: Joi.number().precision(2).min(0.01).max(999999999),
+  payment_method: Joi.string().valid('cash', 'bank_transfer', 'instapay', 'vodafone_cash'),
+  payment_date: Joi.date(),
+  reference_no: Joi.string().max(100).allow('', null),
+  notes: Joi.string().allow('', null),
+}).min(1);
+
+module.exports = {
+  createDealerSchema, updateDealerSchema, createWholesaleInvoiceSchema,
+  createDealerPaymentSchema, updateDealerPaymentSchema,
+};

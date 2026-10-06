@@ -3,7 +3,10 @@ const controller = require('./dealers.controller');
 const validate = require('../../middleware/validate');
 const auth = require('../../middleware/auth');
 const permission = require('../../middleware/permission');
-const { createDealerSchema, updateDealerSchema, createWholesaleInvoiceSchema, createDealerPaymentSchema } = require('./dealers.validation');
+const {
+  createDealerSchema, updateDealerSchema, createWholesaleInvoiceSchema,
+  createDealerPaymentSchema, updateDealerPaymentSchema,
+} = require('./dealers.validation');
 
 const router = Router();
 router.use(auth);
@@ -14,6 +17,17 @@ router.post('/', permission('dealers', 'write'), validate(createDealerSchema), c
 router.post('/invoices', permission('dealer_invoices', 'write'), validate(createWholesaleInvoiceSchema), controller.createInvoice);
 router.post('/payments', permission('dealer_payments', 'write'), validate(createDealerPaymentSchema), controller.createPayment);
 router.get('/invoices/:invoiceId', permission('dealer_invoices', 'read'), controller.getInvoice);
+
+// Editing and removing a recorded payment. Above the `/:id` routes by the same rule
+// as the POSTs above them — and these carry two path segments, so they could not be
+// captured by `/:id` in any case.
+//
+// Gated on `dealer_payments`, not `dealers`: deciding that money arrived, and taking
+// that decision back, is a different authority from maintaining a contact record.
+router.get('/payments/:paymentId', permission('dealer_payments', 'read'), controller.getPayment);
+router.put('/payments/:paymentId', permission('dealer_payments', 'write'), validate(updateDealerPaymentSchema), controller.updatePayment);
+router.delete('/payments/:paymentId', permission('dealer_payments', 'write'), controller.deletePayment);
+
 router.get('/:id', permission('dealers', 'read'), controller.getById);
 router.put('/:id', permission('dealers', 'write'), validate(updateDealerSchema), controller.update);
 router.delete('/:id', permission('dealers', 'write'), controller.delete);

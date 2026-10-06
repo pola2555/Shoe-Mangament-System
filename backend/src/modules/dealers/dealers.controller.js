@@ -33,6 +33,20 @@ class DealersController {
     try { res.status(201).json({ success: true, data: await dealersService.createPayment(req.body, req.user.id) }); }
     catch (error) { next(error); }
   }
+  async getPayment(req, res, next) {
+    try { res.json({ success: true, data: await dealersService.getPaymentById(req.params.paymentId) }); }
+    catch (error) { next(error); }
+  }
+  async updatePayment(req, res, next) {
+    try { res.json({ success: true, data: await dealersService.updatePayment(req.params.paymentId, req.body) }); }
+    catch (error) { next(error); }
+  }
+  async deletePayment(req, res, next) {
+    try {
+      const result = await dealersService.deletePayment(req.params.paymentId);
+      res.json({ success: true, message: 'Payment deleted', data: result });
+    } catch (error) { next(error); }
+  }
 }
 
 module.exports = new DealersController();

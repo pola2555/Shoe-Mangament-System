@@ -155,6 +155,20 @@ const DELETE_TARGETS = [
     entityType: 'supplier',
   },
   {
+    // Before the dealer rule below it. Both are under /api/dealers/, and although the
+    // segment counts differ today, a rule that only works because of how many slashes
+    // are in the path is one edit away from matching the wrong row.
+    //
+    // A deleted payment is money the books said had arrived and now say did not, so
+    // the log keeps what it was worth and who it was from — the row itself is gone,
+    // and its allocations go with it.
+    match: /^\/api\/dealers\/payments\/([^/]+)$/,
+    table: 'dealer_payments',
+    columns: ['id', 'dealer_id', 'total_amount', 'payment_method', 'payment_date', 'reference_no'],
+    where: (m) => ({ id: m[1] }),
+    entityType: 'dealer_payment',
+  },
+  {
     match: /^\/api\/dealers\/([^/]+)$/,
     table: 'dealers',
     columns: ['id', 'name', 'phone', 'is_active'],

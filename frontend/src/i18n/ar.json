@@ -664,7 +664,21 @@
     "create_invoice": "إنشاء فاتورة",
     "add_payment": "إضافة دفعة",
     "deactivate_title": "إيقاف هذا التاجر؟",
-    "deactivate_confirm": "لن يظهر في الفواتير الجديدة. يبقى سجله محفوظاً."
+    "deactivate_confirm": "لن يظهر في الفواتير الجديدة. يبقى سجله محفوظاً.",
+    "record_payment": "تسجيل دفعة",
+    "payment_amount": "المبلغ",
+    "edit_payment": "تعديل الدفعة",
+    "delete_payment_title": "حذف هذه الدفعة؟",
+    "delete_payment_simple": "سيتم حذف {amount} من سجل هذا التاجر. لم تُسدَّد بها أي فاتورة، لذلك لن يتغير شيء آخر.",
+    "delete_payment_applied": "سيتم حذف {amount}. تُسدِّد حالياً {count} فاتورة — {invoices} — وستعود هذه الفواتير مستحقة الدفع.",
+    "delete_payment_warning": "لا يمكن التراجع عن هذا.",
+    "payment_saved": "تم حفظ الدفعة",
+    "payment_deleted": "تم حذف الدفعة",
+    "applied_to": "مُطبَّقة على",
+    "held_as_credit": "{amount} محفوظة كرصيد",
+    "settles_nothing": "غير مُطبَّقة على أي فاتورة",
+    "reallocate_note": "تغيير المبلغ يعيد توزيعه على فواتير التاجر غير المسددة، الأقدم أولاً.",
+    "no_payments": "لا توجد دفعات مسجلة"
   },
   "expenses": {
     "title": "المصروفات",

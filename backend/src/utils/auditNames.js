@@ -117,6 +117,11 @@ const SOURCES = {
     columns: ['id', 'amount', 'payment_date'],
     label: (r) => `${r.amount} on ${r.payment_date}`,
   },
+  dealer_payment: {
+    table: 'dealer_payments',
+    columns: ['id', 'total_amount', 'payment_date'],
+    label: (r) => `${r.total_amount} on ${r.payment_date}`,
+  },
   shift: { table: 'shifts', columns: ['id', 'shift_number'], label: (r) => r.shift_number },
   stock_count: {
     table: 'stock_counts',
@@ -237,6 +242,7 @@ const ENTITY_SOURCES = {
   product_category: 'product_category',
   loan: 'loan',
   loan_payment: 'loan_payment',
+  dealer_payment: 'dealer_payment',
   shift: 'shift',
   stock_count: 'stock_count',
   stock_intake: 'stock_intake',
