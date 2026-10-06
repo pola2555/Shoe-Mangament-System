@@ -516,6 +516,27 @@ class SalesService {
             );
           }
 
+          // An impossible band has to name ITSELF, not blame the price.
+          //
+          // Products written before the guard in `products.service#assertSellingBand`
+          // can still carry a floor above their ceiling, and so can one assembled from
+          // a branch floor and a catalogue ceiling. Falling through to the two checks
+          // below would then reject every price on earth while reporting "cannot be
+          // more than the maximum allowed (80)" — which reads as a price problem and
+          // sends a cashier hunting for a number that does not exist. Worse, it is the
+          // ONLY message they get: the band itself is stripped from their responses by
+          // `middleware/priceVisibility`, so the till cannot even grey the button out.
+          if (minPrice !== null && maxPrice !== null
+              && Number.isFinite(minPrice) && Number.isFinite(maxPrice)
+              && minPrice > maxPrice) {
+            throw new AppError(
+              `${product.model_name} cannot be sold: its minimum price (${minPrice} EGP) `
+              + `is above its maximum (${maxPrice} EGP), so no price is allowed. `
+              + 'Ask an administrator to correct the product\'s price range.',
+              400,
+            );
+          }
+
           if (minPrice !== null && Number.isFinite(minPrice) && sellingPrice < minPrice) {
             throw new AppError(`Price for ${product.model_name} cannot be less than the minimum allowed (${minPrice} EGP)`, 400);
           }

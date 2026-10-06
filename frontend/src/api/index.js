@@ -393,6 +393,33 @@ export const barcodesAPI = {
   clear: (variantId) => api.delete(`/barcodes/${variantId}`),
 };
 
+/**
+ * The label print queue.
+ *
+ * `labels` is deliberately its own endpoint rather than a call to barcodesAPI.labels:
+ * it is gated on `print_queue` instead of `barcodes`, so whoever runs the printer needs
+ * no ability to mint barcodes — and it returns `copies` already set to what the queue
+ * owes, summed across every row for that size.
+ */
+export const printQueueAPI = {
+  list: (params) => api.get('/print-queue', { params }),
+  summary: (params) => api.get('/print-queue/summary', { params }),
+  // POST, for a read: "Print everything" on a busy queue names every row, and an id is
+  // 37 characters — three hundred rows would be an 11 KB query string, past nginx's
+  // default request-line limit and back as a bare 414. The GET form still exists for a
+  // handful of ids.
+  labels: (ids) => api.post('/print-queue/labels', { ids }),
+  // What a purchase box or a stock intake put on the shelf, offered as a print run.
+  sourceLines: (params) => api.get('/print-queue/source-lines', { params }),
+  add: (data) => api.post('/print-queue', data),
+  addFromSource: (data) => api.post('/print-queue/from-source', data),
+  update: (id, data) => api.patch(`/print-queue/${id}`, data),
+  markPrinted: (items) => api.post('/print-queue/mark-printed', { items }),
+  requeue: (id) => api.post(`/print-queue/${id}/requeue`),
+  remove: (id) => api.delete(`/print-queue/${id}`),
+  clear: (data) => api.post('/print-queue/clear', data),
+};
+
 export const backupAPI = {
   download: () => api.get('/backup/download', { responseType: 'blob' }),
 };

@@ -538,7 +538,173 @@ async function snapshot(storeId) {
     return '2 when asked, never more than 200';
   });
 
+  // ================================================================
+  //  AN IMPOSSIBLE PRICE BAND
+  //
+  //  Reported from the shop: one product, and one only, could be added to the cart
+  //  but never sold. Its floor was 90 and its ceiling 80 — the two had been typed in
+  //  the wrong boxes. Nothing compared them, because each is a perfectly good number
+  //  on its own, so the product looked completely normal everywhere except the till,
+  //  where it silently could not be sold.
+  // ================================================================
+  console.log('');
+  console.log('an impossible price band (min above max):');
+
+  const cats2 = await cats.listCategories({});
+  const shoeCat = cats2.find((c) => c.code === 'shoes');
+  const newProduct = async (over) => products.create({
+    product_code: 'ZZBAND-' + Date.now() + '-' + Math.floor(pass * 97 + fail),
+    model_name: 'band test', category_id: shoeCat.id, default_selling_price: 100,
+    ...over,
+  });
+
+  await check('a product cannot be created with a floor above its ceiling', async () => {
+    let msg = null;
+    try {
+      const p = await newProduct({ min_selling_price: 90, max_selling_price: 80 });
+      made.products.push(p.id);
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('90/80 was accepted');
+    if (!/swapped/i.test(msg)) throw new Error('the message does not suggest the cause: ' + msg);
+    return msg.slice(0, 60) + '...';
+  });
+
+  await check('a legal band, and a fixed price, are both still accepted', async () => {
+    const p = await newProduct({ min_selling_price: 50, max_selling_price: 80 });
+    made.products.push(p.id);
+    const q = await newProduct({ min_selling_price: 80, max_selling_price: 80 });
+    made.products.push(q.id);
+    return '50-80 and 80-80';
+  });
+
+  let banded;
+  await check('raising the floor alone, above the STORED ceiling, is refused', async () => {
+    // The case a request-only check cannot see: one number arrives, and whether it is
+    // legal depends entirely on the one already in the table.
+    banded = await newProduct({ min_selling_price: 50, max_selling_price: 80 });
+    made.products.push(banded.id);
+    let msg = null;
+    try {
+      await products.update(banded.id, { min_selling_price: 90 });
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('a floor of 90 was accepted against a stored ceiling of 80');
+    const still = await knex('products').where('id', banded.id).first();
+    if (Number(still.min_selling_price) !== 50) throw new Error('the product was changed anyway');
+    return 'refused, and nothing was written';
+  });
+
+  await check('lowering the ceiling alone, below the STORED floor, is refused', async () => {
+    let msg = null;
+    try {
+      await products.update(banded.id, { max_selling_price: 40 });
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('a ceiling of 40 was accepted against a stored floor of 50');
+  });
+
+  await check('an ordinary edit is untouched by the guard', async () => {
+    const p = await products.update(banded.id, { max_selling_price: 120 });
+    if (Number(p.max_selling_price) !== 120) throw new Error('a legal edit was blocked');
+    await products.update(banded.id, { is_active: true });
+    return 'ceiling raised to 120, and a toggle still works';
+  });
+
+  await check('a BRANCH floor above the CATALOGUE ceiling is refused', async () => {
+    // The band a branch trades in is a mixture — each end is the branch's if it set
+    // one, the catalogue's otherwise. So both numbers in the request can look sane
+    // while the pair that reaches the till cannot be satisfied.
+    const p = await newProduct({ min_selling_price: 50, max_selling_price: 80 });
+    made.products.push(p.id);
+    let msg = null;
+    try {
+      await products.setStorePrice(p.id, store.id, { selling_price: 100, min_selling_price: 90 });
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('branch floor 90 accepted against catalogue ceiling 80');
+    if (!msg.includes(store.name)) throw new Error('the message does not say which branch: ' + msg);
+    const row = await knex('store_product_prices').where({ product_id: p.id, store_id: store.id }).first();
+    if (row) throw new Error('the branch price was written anyway');
+
+    // ...and the same branch floor is fine once it fits under the catalogue ceiling,
+    // as is clearing the override back to the catalogue's own numbers.
+    await products.setStorePrice(p.id, store.id, { selling_price: 100, min_selling_price: 70 });
+    await products.setStorePrice(p.id, store.id, { selling_price: 100, min_selling_price: null });
+    return 'refused; 70 accepted; cleared back to the catalogue accepted';
+  });
+
+  await check('the branch pricing tab is the same door, and is guarded too', async () => {
+    // `store_product_prices` has TWO writers — the product page and the branch's own
+    // pricing tab. The tab already compared the two numbers it was handed, which
+    // never fires when only one of them is sent.
+    const stores = require('../src/modules/stores/stores.service');
+    const p = await newProduct({ min_selling_price: 50, max_selling_price: 80 });
+    made.products.push(p.id);
+    let msg = null;
+    try {
+      await stores.setPrice(store.id, p.id, { selling_price: 100, min_selling_price: 90 });
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('branch floor 90 accepted against catalogue ceiling 80');
+    const row = await knex('store_product_prices').where({ product_id: p.id, store_id: store.id }).first();
+    if (row) throw new Error('the branch price was written anyway');
+
+    // The check it already had still works, and a legal band still saves.
+    let both = null;
+    try {
+      await stores.setPrice(store.id, p.id, { selling_price: 70, min_selling_price: 90, max_selling_price: 60 });
+    } catch (e) { both = e.message; }
+    if (!both) throw new Error('90/60 accepted in one request');
+    await stores.setPrice(store.id, p.id, { selling_price: 70, min_selling_price: 60, max_selling_price: 75 });
+    return 'one-sided and two-sided both refused, 60-75 saved';
+  });
+
+  await check('a product already inverted in the database names the band, not the price', async () => {
+    // Exactly what production holds today: written before the guard existed. The till
+    // must say what is wrong with it, because a cashier is never sent the band at all
+    // and so cannot be shown anything by the screen.
+    const bad = await stockUp(store.id, ['43']);
+    await knex('products').where('id', bad.product.id)
+      .update({ min_selling_price: 90, max_selling_price: 80 });
+
+    let msg = null;
+    try {
+      const s = await sales.create({
+        store_id: store.id,
+        items: [{ id: bad.items[0].id, sale_price: 90 }],
+        payments: [{ amount: 90, payment_method: 'cash' }],
+      }, admin);
+      made.sales.push(s.id);
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('an unsellable product sold');
+    if (/cannot be more than the maximum/.test(msg)) {
+      throw new Error('still blaming the price instead of the band: ' + msg);
+    }
+    if (!msg.includes('90') || !msg.includes('80')) {
+      throw new Error('the message names neither end of the band: ' + msg);
+    }
+    if (!/minimum/i.test(msg) || !/maximum/i.test(msg)) {
+      throw new Error('the message does not explain the band: ' + msg);
+    }
+    // The pair must still be in stock — a refused sale may not consume anything.
+    const item = await knex('inventory_items').where('id', bad.items[0].id).first();
+    if (item.status !== 'in_stock') throw new Error('the refused sale still marked the pair ' + item.status);
+    return msg.slice(0, 70) + '...';
+  });
+
+  await check('correcting the band makes that same product sellable', async () => {
+    const bad = await stockUp(store.id, ['44']);
+    await knex('products').where('id', bad.product.id)
+      .update({ min_selling_price: 90, max_selling_price: 80 });
+    // The fix a shop applies: swap the two back.
+    await products.update(bad.product.id, { min_selling_price: 80, max_selling_price: 90 });
+    const s = await sales.create({
+      store_id: store.id,
+      items: [{ id: bad.items[0].id, sale_price: 85 }],
+      payments: [{ amount: 85, payment_method: 'cash' }],
+    }, admin);
+    made.sales.push(s.id);
+    return s.sale_number + ' at 85, inside 80-90';
+  });
+
   // ---------------------------------------------------------------- cleanup
+  await knex('store_product_prices').whereIn('product_id', made.products).del();
   await knex('notifications').whereIn('id', made.notifications).del();
   await knex('notification_dismissals').where('user_id', user.id).del().catch(() => {});
   for (const id of made.sales) {

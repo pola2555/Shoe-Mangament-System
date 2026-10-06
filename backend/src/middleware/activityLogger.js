@@ -149,6 +149,7 @@ function resolveActivityInfo(req) {
     exchanges: { module: 'exchanges', entityType: 'exchange' },
     'stock-counts': { module: 'stock_counts', entityType: 'stock_count' },
     discounts: { module: 'discounts', entityType: 'discount_request' },
+    'print-queue': { module: 'print_queue', entityType: 'print_queue_item' },
   };
 
   const base = segments[0];
@@ -239,6 +240,19 @@ function resolveActivityInfo(req) {
     else if (path.includes('/cancel')) result.action = 'cancel';
     else if (path.includes('/revert')) { result.action = 'revert_correction'; result.entityType = 'cost_correction'; }
     else if (path.includes('/recost')) { result.action = 'recost'; result.entityType = 'product'; }
+  }
+  if (base === 'print-queue') {
+    // /labels is a READ that has to be a POST, because a few hundred row ids do not fit
+    // in a URL. Logging it would put a "queued labels" entry in the audit trail every
+    // time somebody opened the print dialog, describing something that did not happen.
+    if (path.endsWith('/labels')) return null;
+    // Queueing is not a stock movement, but it IS what decides how much paper comes out
+    // of the printer, and "who put 400 labels on the queue" is a real question.
+    if (path.includes('/from-source')) result.action = 'queue_from_document';
+    else if (path.includes('/mark-printed')) result.action = 'mark_printed';
+    else if (path.includes('/requeue')) result.action = 'requeue';
+    else if (path.includes('/clear')) result.action = 'clear_queue';
+    else if (method === 'POST') result.action = 'queue_labels';
   }
   if (base === 'discounts') {
     // A seller code is a credential. Record that it changed and for whom; the code

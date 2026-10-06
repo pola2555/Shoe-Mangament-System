@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -24,6 +24,7 @@ const InventoryPage = lazy(() => import('./pages/inventory/InventoryPage'));
 const StockIntakesPage = lazy(() => import('./pages/inventory/StockIntakesPage'));
 const StockIntakeDetailPage = lazy(() => import('./pages/inventory/StockIntakeDetailPage'));
 const StockCountPage = lazy(() => import('./pages/inventory/StockCountPage'));
+const PrintQueuePage = lazy(() => import('./pages/print-queue/PrintQueuePage'));
 const ShiftsPage = lazy(() => import('./pages/shifts/ShiftsPage'));
 const ExchangePage = lazy(() => import('./pages/returns/ExchangePage'));
 const ApprovalsPage = lazy(() => import('./pages/pos/ApprovalsPage'));
@@ -134,16 +135,22 @@ function PermissionRoute({ perm, children }) {
 }
 
 function AppRoutes() {
-  const location = useLocation();
   return (
-    // Suspense handles the loading state for the lazy route chunks above; the error
-    // boundary handles the failure case, which Suspense does not cover — a chunk that
-    // 404s after a deploy would otherwise unmount the app to a blank page.
+    // THE SUSPENSE AND THE PER-PAGE BOUNDARY LIVE IN MainLayout, AROUND THE OUTLET.
     //
-    // Keyed on pathname so navigating away remounts it: without the key one page's
-    // render error would latch and blank the whole app until a manual reload.
-    <RouteErrorBoundary key={location.pathname}>
-    <Suspense fallback={<div className="loading-screen"><div className="spinner" /></div>}>
+    // They used to sit here, wrapping everything. Both unmounted the sidebar:
+    // the boundary because it was keyed on the pathname, so every single navigation
+    // rebuilt the whole tree; Suspense because the first visit to any code-split page
+    // replaced the entire app with a spinner while the chunk downloaded. Either way
+    // the menu was reconstructed from scratch and `.sidebar__nav` came back scrolled
+    // to the top — a long menu jumped away from wherever the user had left it.
+    //
+    // Moving them inside the layout also means a page that fails to load now does so
+    // inside the frame, with the menu still there to click somewhere else.
+    //
+    // What stays here is an unkeyed last resort for the shell itself — the login page
+    // and the layout. It must NOT be keyed: that is the bug above.
+    <RouteErrorBoundary>
     <Routes>
       {/* Public */}
       <Route path="/login" element={
@@ -164,6 +171,9 @@ function AppRoutes() {
         {/* Reading uses inventory:read so nobody is locked out of seeing what was
             entered after the write permission is switched off. */}
         <Route path="stock-counts" element={<PermissionRoute perm="inventory"><StockCountPage /></PermissionRoute>} />
+        {/* Its own permission, not `barcodes`: whoever runs the printer needs no
+            ability to mint barcodes, and vice versa. */}
+        <Route path="print-queue" element={<PermissionRoute perm="print_queue"><PrintQueuePage /></PermissionRoute>} />
         {/* Reading the till is part of selling, so it rides with `shifts`. */}
         <Route path="shifts" element={<PermissionRoute perm="shifts"><ShiftsPage /></PermissionRoute>} />
         <Route path="exchanges" element={<PermissionRoute perm="exchanges"><ExchangePage /></PermissionRoute>} />
@@ -192,7 +202,6 @@ function AppRoutes() {
       {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
-    </Suspense>
     </RouteErrorBoundary>
   );
 }

@@ -11,9 +11,11 @@ import SizeRunPicker from '../../components/catalog/SizeRunPicker';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import ImageViewerModal from '../../components/common/ImageViewerModal';
 import { useTranslation } from '../../i18n/i18nContext';
+import useQueueOffer from '../../hooks/useQueueOffer';
 import '../products/Products.css';
 
 const PrintLabelsModal = lazy(() => import('../../components/barcode/PrintLabelsModal'));
+const ReceivedStockLabelFlow = lazy(() => import('../../components/barcode/ReceivedStockLabelFlow'));
 
 export default function PurchaseDetailPage() {
   const { id } = useParams();
@@ -37,8 +39,12 @@ export default function PurchaseDetailPage() {
 
   // Box items form
   const [editingBoxId, setEditingBoxId] = useState(null);
-  // Box whose labels are being printed; also auto-opened right after completion.
+  // Box whose labels are being printed.
   const [labelBoxId, setLabelBoxId] = useState(null);
+  // Box just completed, offered to the print queue. Separate state because the two are
+  // different offers: one prints now, the other remembers for later.
+  const [queueBoxId, setQueueBoxId] = useState(null);
+  const { canQueue, shouldOffer } = useQueueOffer();
   const [boxItems, setBoxItems] = useState([{ size_eu: '', size_us: '', size_uk: '', size_cm: '', quantity: '' }]);
 
   // Payment form
@@ -437,9 +443,20 @@ export default function PurchaseDetailPage() {
       await purchasesAPI.completeBox(boxId);
       toast.success(t('common.success'));
       await fetchAll();
-      // Offer the labels immediately: the stock is on the bench right now, which is
-      // the one moment labelling costs nothing extra.
-      setLabelBoxId(boxId);
+      // Offer the labels immediately: the stock is on the bench right now, which is the
+      // one moment anybody knows exactly what arrived.
+      //
+      // Which offer depends on the shop, and there are three answers, not two:
+      //
+      //   uses the queue           -> offer the queue
+      //   uses it, asked not to    -> offer NOTHING. "Don't ask me again" has to mean
+      //                               that; substituting a different dialog is still
+      //                               being asked. The labels are a click away on the
+      //                               box row whenever they are wanted.
+      //   cannot use the queue     -> the old straight-to-print dialog, unchanged, so
+      //                               nothing is taken from a shop that does not use it.
+      if (shouldOffer) setQueueBoxId(boxId);
+      else if (!canQueue) setLabelBoxId(boxId);
     } catch (err) {
       toast.error(err.response?.data?.message || t('common.error'));
     }
@@ -1174,6 +1191,17 @@ export default function PurchaseDetailPage() {
             invoiceBoxId={labelBoxId}
             title={t('purchases.box_items')}
             onClose={() => setLabelBoxId(null)}
+          />
+        </Suspense>
+      )}
+
+      {queueBoxId && (
+        <Suspense fallback={null}>
+          <ReceivedStockLabelFlow
+            sourceType="purchase_box"
+            sourceId={queueBoxId}
+            title={invoice?.invoice_number}
+            onClose={() => setQueueBoxId(null)}
           />
         </Suspense>
       )}

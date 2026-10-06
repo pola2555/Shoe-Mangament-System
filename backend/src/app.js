@@ -9,6 +9,7 @@ const errorHandler = require('./middleware/errorHandler');
 const activityLogger = require('./middleware/activityLogger');
 const priceVisibility = require('./middleware/priceVisibility');
 const { startRetentionJob } = require('./utils/retention');
+const { startBackupJob } = require('./utils/dbBackup');
 
 // Module routes
 const authRoutes = require('./modules/auth/auth.routes');
@@ -39,6 +40,7 @@ const shiftRoutes = require('./modules/shifts/shifts.routes');
 const exchangeRoutes = require('./modules/exchanges/exchanges.routes');
 const stockCountRoutes = require('./modules/stock-counts/stock-counts.routes');
 const discountRoutes = require('./modules/discounts/discounts.routes');
+const printQueueRoutes = require('./modules/print-queue/print-queue.routes');
 
 const app = express();
 
@@ -140,6 +142,7 @@ app.use('/api/shifts', shiftRoutes);
 app.use('/api/exchanges', exchangeRoutes);
 app.use('/api/stock-counts', stockCountRoutes);
 app.use('/api/discounts', discountRoutes);
+app.use('/api/print-queue', printQueueRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -163,6 +166,10 @@ const server = app.listen(env.port, () => {
   // Periodic pruning of activity_log / refresh_tokens / notifications, which
   // otherwise grow without bound.
   startRetentionJob();
+
+  // Nightly database dump to S3. Logs why it is not running when it is not, rather
+  // than staying silent — "I assumed it was backing up" is the usual way this fails.
+  startBackupJob();
 });
 
 // Close idle connections rather than letting sockets accumulate.

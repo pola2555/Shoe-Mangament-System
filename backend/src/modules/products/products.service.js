@@ -9,6 +9,7 @@ const { capabilities } = require('../../utils/schemaCapabilities');
 const {
   categoryOfProduct, ensurePlaceholderColor, resolveVariantTarget, generateSku,
 } = require('../../utils/variantIdentity');
+const { assertSellingBand, effectiveBand } = require('../../utils/priceBand');
 
 /**
  * Index rows by a key column, for stitching grouped query results back onto parents.
@@ -244,6 +245,8 @@ class ProductsService {
   }
 
   async create(data) {
+    assertSellingBand(data.min_selling_price, data.max_selling_price);
+
     // Whitelisted, not spread. Joi strips unknown keys today, so a bare `...data` is
     // safe only for as long as every caller goes through validation — one internal
     // caller, or one schema gaining `.unknown(true)`, turns it into mass assignment.
@@ -264,6 +267,19 @@ class ProductsService {
 
   async update(id, data) {
     if (data.category_id !== undefined) await this._assertCategoryChangeAllowed(id, data.category_id);
+
+    // Raising the floor alone is how this goes wrong in practice — the ceiling is
+    // already stored and nobody is looking at it. So the pair is compared as it will
+    // END UP, not as it arrived. Only fetched when one of the two is actually being
+    // touched, so an is_active toggle still costs one query.
+    if (data.min_selling_price !== undefined || data.max_selling_price !== undefined) {
+      const current = await db('products').where('id', id).first();
+      if (!current) throw new AppError('Product not found', 404);
+      assertSellingBand(
+        data.min_selling_price !== undefined ? data.min_selling_price : current.min_selling_price,
+        data.max_selling_price !== undefined ? data.max_selling_price : current.max_selling_price,
+      );
+    }
 
     // Whitelist allowed fields to prevent mass assignment
     const allowed = UPDATABLE_FIELDS;
@@ -606,7 +622,7 @@ class ProductsService {
   }
 
   async setStorePrice(productId, storeId, data) {
-    await this._ensureProductExists(productId);
+    const product = await this._ensureProductExists(productId);
 
     // Check if store exists
     const store = await db('stores').where('id', storeId).first();
@@ -621,6 +637,13 @@ class ProductsService {
     const existing = await db('store_product_prices')
       .where({ product_id: productId, store_id: storeId })
       .first();
+
+    // Checked as the band will END UP and as the till will read it: this request
+    // merged over whatever the branch already had, then each end falling back to the
+    // catalogue on its own. See `utils/priceBand` for why that mixture is the thing
+    // that has to be checked rather than the two numbers in the request.
+    const band = effectiveBand({ ...(existing || {}), ...safeData }, product);
+    assertSellingBand(band.min, band.max, `${product.model_name} at ${store.name}`);
 
     if (existing) {
       const [price] = await db('store_product_prices')

@@ -677,6 +677,21 @@ a:hover { color: var(--color-accent-hover); }
   backdrop-filter: blur(4px);
 }
 
+/**
+ * A confirmation always sits above whatever asked it.
+ *
+ * Every overlay in the app shares one z-index, so which of two lands on top comes down
+ * to document order — and most modals here render through createPortal into
+ * `document.body`, which puts them AFTER the confirm dialog, which renders inline
+ * inside #root. So a modal asking "are you sure?" got a dialog drawn behind itself:
+ * present in the DOM, invisible on screen, and impossible to answer. A confirmation is
+ * always the newest and most urgent thing on screen, so it is the one case that earns
+ * its own layer.
+ */
+.modal-overlay--confirm {
+  z-index: 300;
+}
+
 .modal-content {
   width: 100%;
   max-width: 560px;

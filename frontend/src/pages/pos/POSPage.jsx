@@ -507,14 +507,68 @@ export default function POSPage() {
   const needsSellerCode = Boolean(shift?.require_seller_passcode)
     || Boolean(stores.find((s) => s.id === selectedStore)?.require_seller_passcode);
 
+  /**
+   * The band this line is actually judged against.
+   *
+   * The branch's number when the branch has set one, the catalogue's otherwise, each
+   * resolved independently — which is precisely how `sales.service` resolves it, and
+   * the only reason the screen and the server agree. `null` means unconstrained, the
+   * same as a null column; the old sentinels of 0 and 999999 meant a missing floor was
+   * indistinguishable from a floor of zero.
+   *
+   * A cashier receives neither number: `middleware/priceVisibility` strips the band
+   * from every response for anyone who may not see it. So for them both sides come
+   * back null, nothing is ever flagged here, and the server is what refuses the sale.
+   */
+  const bandOf = (item) => {
+    const num = (v) => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = parseFloat(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    return {
+      min: num(item.store_min_selling_price ?? item.min_selling_price),
+      max: num(item.store_max_selling_price ?? item.max_selling_price),
+    };
+  };
+
   const isValidPrice = (item) => {
     const price = parseFloat(item.sale_price);
     if (isNaN(price)) return false;
-    const min = parseFloat(item.store_min_selling_price ?? item.min_selling_price ?? 0) || 0;
-    const max = parseFloat(item.store_max_selling_price ?? item.max_selling_price ?? 999999) || 999999;
-    return price >= min && price <= max;
+    const { min, max } = bandOf(item);
+    if (min !== null && price < min) return false;
+    if (max !== null && price > max) return false;
+    return true;
   };
-  
+
+  /**
+   * Why this line cannot be sold, in a sentence.
+   *
+   * This used to be the two numbers and a dash — "90 - 80 EGP" — which says nothing to
+   * anyone who does not already know what they are looking at, and says it only to
+   * users who could ALSO edit the price. Someone with `product_prices` or
+   * `discount_approval` receives the band, so the line was flagged and Checkout went
+   * dead, with no message at all to explain it.
+   *
+   * The impossible case gets its own sentence. "Must be between 90 and 80" is not an
+   * instruction anyone can follow; the problem is the product, not the price, and the
+   * message has to say so or the next hour is spent typing numbers into a box.
+   */
+  const priceProblem = (item) => {
+    if (isValidPrice(item)) return null;
+    const price = parseFloat(item.sale_price);
+    if (isNaN(price)) return t('pos.price_missing');
+    const { min, max } = bandOf(item);
+    const cur = t('common.currency');
+    if (min !== null && max !== null && min > max) {
+      return t('pos.price_band_impossible', { min, max, currency: cur });
+    }
+    if (min !== null && max !== null) return t('pos.price_between', { min, max, currency: cur });
+    if (min !== null) return t('pos.price_at_least', { min, currency: cur });
+    if (max !== null) return t('pos.price_at_most', { max, currency: cur });
+    return t('pos.price_missing');
+  };
+
   const isCartValid = cart.length > 0 && cart.every(isValidPrice);
 
   const handleQuickAddCustomer = async (e) => {
@@ -865,8 +919,7 @@ export default function POSPage() {
             <div className="pos-cart-list">
               {cart.map((item, index) => {
                 const isValid = isValidPrice(item);
-                const minP = parseFloat(item.min_selling_price || 0);
-                const maxP = parseFloat(item.max_selling_price || 999999);
+                const problem = priceProblem(item);
                 return (
                   <div key={`${item.id}-${index}`} className="pos-cart-item">
                     <div className="pos-cart-item-info">
@@ -878,12 +931,14 @@ export default function POSPage() {
                       <div className="pos-cart-item-variant">
                         {[formatSize(item, locale), formatColor(item)].filter(Boolean).join(' • ') || '—'}
                       </div>
-                      {/* The floor and ceiling are shown only to somebody who is
-                          allowed to move a price between them. To everyone else the
-                          band does not exist, and the server does not send it. */}
-                      {!isValid && !hidePrices && canSetPrice && (
-                        <div className="pos-cart-item-error">
-                          {minP} - {maxP < 999999 ? maxP : '∞'} {t('common.currency')}
+                      {/* Shown to anyone the line is blocked for, not only to someone
+                          who could fix it by typing — a dead Checkout button with no
+                          reason beside it is the worst version of this. The numbers in
+                          the sentence can only exist for a user who was sent the band,
+                          so writing it out leaks nothing. */}
+                      {!isValid && !hidePrices && problem && (
+                        <div className="pos-cart-item-error" data-testid={`pos-price-problem-${index}`}>
+                          {problem}
                         </div>
                       )}
                     </div>

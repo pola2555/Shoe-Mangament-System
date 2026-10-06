@@ -61,6 +61,11 @@ const SOURCES = {
     columns: ['id', 'sku', 'size_eu'],
     label: (r) => (r.sku ? `${r.sku}` : `size ${r.size_eu}`),
   },
+  print_queue_item: {
+    table: 'print_queue_items',
+    columns: ['id', 'quantity', 'source_ref'],
+    label: (r) => `${r.quantity} labels${r.source_ref ? ` · ${r.source_ref}` : ''}`,
+  },
   inventory_item: {
     table: 'inventory_items',
     columns: ['id', 'barcode'],
@@ -240,6 +245,7 @@ const ENTITY_SOURCES = {
   customer_return: 'customer_return',
   supplier_return: 'supplier_return',
   inventory_item: 'inventory_item',
+  print_queue_item: 'print_queue_item',
   box_template: 'box_template',
   notification: 'notification',
   seller_code: 'user',

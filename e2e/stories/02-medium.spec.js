@@ -81,7 +81,16 @@ test('M2 · a walk-in cannot walk out owing money, and is told why', async ({ br
 });
 
 test('M3 · Rania takes the shoes today and pays the rest on Friday', async ({ browser }) => {
-  const page = await pageAs(browser, 'cashier');
+  // Mona, not Karim.
+  //
+  // This story was written before PLAN 10 made letting a customer pay later need a
+  // manager's say-so (`credit_approval`), and it rang the sale up as the cashier. The
+  // server now refuses that — correctly — with "You need a manager to approve letting
+  // this customer pay later", so the story was describing behaviour the product had
+  // deliberately changed. What it is actually about is what Rania owes afterwards, and
+  // that is the same whoever serves her; the cashier being refused is exercised in
+  // depth by `npm run check:controls`, including the approve-then-resume path.
+  const page = await pageAs(browser, 'manager');
   await page.goto('/');
   const pair = await takePair(api, page, { storeId: A(), productId: world.products.shoe.id, exclude: claimed });
   const price = world.products.shoe.price;

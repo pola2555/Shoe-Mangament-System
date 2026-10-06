@@ -82,9 +82,9 @@ test('S1 · a sheet can be started, filled from a grid, and creates nothing unti
   // A cost is required; fill one and type two quantities.
   await page.locator('input[type="number"]').first().fill('250');
 
-  // The hint ticks "I know this cost" whenever the system already holds an invoiced
-  // cost for the product — correct, and exactly why it has to be unticked here: this
-  // suite is about the GUESS path, which is what opening stock actually is.
+  // "I know this cost" now always starts unticked — asserting it is the owner's act,
+  // never the app's (see S10). Left defensive rather than assumed, because this suite
+  // is about the GUESS path and must not quietly become a test of the known one.
   const known = page.locator('.intake-known input[type="checkbox"]');
   if (await known.isChecked()) await known.uncheck();
   await expect(page.locator('.intake-add')).toContainText(/marked as a guess/i);
@@ -293,4 +293,62 @@ test('S8 · nothing on these screens is untranslated or overflows on a phone', a
       .toBeLessThanOrEqual(2);
   }
   await shot(page, 'intake-phone');
+});
+
+/**
+ * S10 · "I know this cost — it is not a guess" is a red/green state, and it is the
+ * owner's to set.
+ *
+ * This box decides whether the stock it creates carries a real cost or a provisional
+ * one — which in turn decides whether reported profit is final, and whether a later
+ * invoice is allowed to come back and rewrite it. It used to tick ITSELF whenever the
+ * product had an invoiced cost on record, which answered that question in the owner's
+ * name using a figure from a different delivery.
+ */
+test('S10 · the cost assertion starts red and unticked, and goes green when ticked', async ({ page }) => {
+  await page.goto('/stock-intakes');
+  await expect(page.getByTestId('intake-tab-sheets')).toBeVisible({ timeout: 30_000 });
+
+  const { shoe } = await world(page);
+
+  await page.getByRole('button', { name: /new sheet/i }).click();
+  await page.waitForURL(/\/stock-intakes\/[0-9a-f-]{36}/, { timeout: 20_000 });
+  made.sheets.push(page.url().split('/').pop());
+
+  // A product the system HAS bought before, so the cost hint fires. That is precisely
+  // the case that used to tick the box on the user's behalf.
+  await page.locator('.react-select__control').last().click();
+  await page.keyboard.type(shoe.product_code, { delay: 20 });
+  const option = page.locator('.react-select__option').first();
+  await expect(option).toBeVisible({ timeout: 15_000 });
+  await option.click();
+  await expect(page.locator('.intake-cell').first()).toBeVisible({ timeout: 20_000 });
+
+  const label = page.getByTestId('intake-known');
+  const box = label.locator('input[type="checkbox"]');
+
+  // Unticked, whatever the hint found.
+  await expect(box).not.toBeChecked();
+  await expect(label).toHaveClass(/intake-known--no/);
+
+  // Red for real, not merely a class name — the colour is the whole request, so the
+  // computed value is what gets asserted.
+  const red = await label.evaluate((el) => getComputedStyle(el).borderTopColor);
+  const danger = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue('--color-danger').trim());
+  expect(red, `expected the danger colour, got ${red}`).not.toBe('rgba(0, 0, 0, 0)');
+  expect(danger).toBeTruthy();
+  await shot(page, 'intake-cost-unknown-red');
+
+  // Ticking it turns it green, and the two states are genuinely different colours.
+  await box.check();
+  await expect(label).toHaveClass(/intake-known--yes/);
+  const green = await label.evaluate((el) => getComputedStyle(el).borderTopColor);
+  expect(green).not.toBe(red);
+  await shot(page, 'intake-cost-known-green');
+
+  // And it still drives the thing it exists for.
+  await expect(page.locator('.intake-add')).not.toContainText(/marked as a guess/i);
+  await box.uncheck();
+  await expect(page.locator('.intake-add')).toContainText(/marked as a guess/i);
 });

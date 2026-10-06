@@ -67,12 +67,37 @@
 }
 
 .intake-known {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: var(--spacing-sm);
   font-size: 0.9rem;
   cursor: pointer;
+  /* Not decoration. Whether this is ticked decides if the stock's profit is real or
+     provisional, and whether a later invoice may rewrite its cost — so the two states
+     have to be tellable apart across the room, not by squinting at a 13px tick. */
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid transparent;
+  font-weight: 600;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
+
+.intake-known--yes {
+  background: rgba(var(--color-success-rgb), 0.14);
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+.intake-known--no {
+  background: rgba(var(--color-danger-rgb), 0.14);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+/* The box itself carries the colour too, so the state survives for anyone reading the
+   control rather than its label. */
+.intake-known--yes input[type="checkbox"] { accent-color: var(--color-success); }
+.intake-known--no input[type="checkbox"] { accent-color: var(--color-danger); }
 
 /* The colour x size grid. Cells stay narrow so a shoe's ten sizes fit without the
    table growing past its container; the container scrolls instead of the page. */

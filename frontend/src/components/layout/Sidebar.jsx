@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { printQueueAPI } from '../../api';
 import { useTranslation } from '../../i18n/i18nContext';
 import {
   HiOutlineHome,
@@ -20,6 +21,7 @@ import {
   HiOutlineUserCircle,
   HiOutlineCog6Tooth,
   HiOutlineChevronDown,
+  HiOutlinePrinter,
 } from 'react-icons/hi2';
 import NotificationsPanel from './NotificationsPanel';
 import './Sidebar.css';
@@ -55,6 +57,9 @@ const navGroups = [
       { path: '/inventory', icon: HiOutlineClipboardDocumentList, labelKey: 'sidebar.inventory', perm: 'inventory' },
       { path: '/stock-intakes', icon: HiOutlineClipboardDocumentList, labelKey: 'sidebar.stock_intakes', perm: 'inventory' },
       { path: '/stock-counts', icon: HiOutlineClipboardDocumentList, labelKey: 'sidebar.stock_counts', perm: 'inventory' },
+      // The one item that carries a count. A queue nobody can see the size of is a
+      // queue nobody clears — the number IS the reminder.
+      { path: '/print-queue', icon: HiOutlinePrinter, labelKey: 'sidebar.print_queue', perm: 'print_queue', badge: 'print_queue' },
       { path: '/transfers', icon: HiOutlineArrowsRightLeft, labelKey: 'sidebar.transfers', perm: 'transfers' },
     ]
   },
@@ -80,6 +85,51 @@ const navGroups = [
 ];
 
 const COLLAPSED_GROUPS_KEY = 'sidebar_collapsed_groups';
+const SCROLL_KEY = 'sidebar_scroll';
+
+/**
+ * Keep the menu where the user left it.
+ *
+ * The menu is taller than most screens, so somebody working out of the bottom of it
+ * scrolls down to reach Reports or Users. Every navigation used to rebuild the sidebar
+ * — see the note in MainLayout — and a rebuilt element starts at scrollTop 0, so the
+ * menu jumped back to the top on every single click and had to be scrolled down again.
+ *
+ * That cause is fixed at the root; this remembers the position across the cases a
+ * mounted component cannot cover anyway — a reload, a re-login, a second tab. Written
+ * to sessionStorage rather than localStorage because it describes where this tab is,
+ * not a preference, and rAF-throttled so a flick of the wheel is one write, not fifty.
+ */
+function useNavScrollMemory(ref) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    try {
+      const saved = parseInt(sessionStorage.getItem(SCROLL_KEY) || '', 10);
+      // Only restore a position the menu can actually hold: a shorter menu (fewer
+      // permissions, a collapsed group) would otherwise clamp to the bottom, which
+      // looks like it scrolled on its own.
+      if (Number.isFinite(saved) && saved > 0 && saved <= el.scrollHeight - el.clientHeight) {
+        el.scrollTop = saved;
+      }
+    } catch { /* private mode */ }
+
+    let frame = 0;
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        try { sessionStorage.setItem(SCROLL_KEY, String(el.scrollTop)); } catch { /* private mode */ }
+      });
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [ref]);
+}
 
 export default function Sidebar({ mobileOpen }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -87,6 +137,8 @@ export default function Sidebar({ mobileOpen }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const navRef = useRef(null);
+  useNavScrollMemory(navRef);
 
   // Which groups the user has folded away, remembered between sessions. Stored as the
   // collapsed set rather than the open one, so a group added later starts open instead
@@ -97,6 +149,30 @@ export default function Sidebar({ mobileOpen }) {
       return new Set(raw ? JSON.parse(raw) : []);
     } catch { return new Set(); }
   });
+
+  /**
+   * How many labels are owed, for the badge.
+   *
+   * Fetched once on mount and refreshed when something in the app changes the queue,
+   * which it announces with a `print-queue-changed` event. Deliberately NOT polled: the
+   * queue only ever moves because somebody in this session moved it, and a timer would
+   * add a request a minute per open till for a number that had not changed.
+   */
+  const [queueLabels, setQueueLabels] = useState(0);
+  const canSeeQueue = hasPermission('print_queue', 'read') && !isPageHidden('/print-queue');
+
+  const loadQueueCount = useCallback(() => {
+    if (!canSeeQueue) { setQueueLabels(0); return; }
+    printQueueAPI.summary()
+      .then(({ data }) => setQueueLabels(Number(data?.data?.labels) || 0))
+      .catch(() => { /* the badge is a convenience; never break the menu over it */ });
+  }, [canSeeQueue]);
+
+  useEffect(() => {
+    loadQueueCount();
+    window.addEventListener('print-queue-changed', loadQueueCount);
+    return () => window.removeEventListener('print-queue-changed', loadQueueCount);
+  }, [loadQueueCount]);
 
   const toggleGroup = (titleKey) => {
     setClosedGroups((prev) => {
@@ -148,7 +224,7 @@ export default function Sidebar({ mobileOpen }) {
         </div>
       </div>
 
-      <nav className="sidebar__nav">
+      <nav className="sidebar__nav" ref={navRef}>
         {navGroups.map((group, groupIndex) => {
           const visibleGroupItems = group.items.filter(
             // Two different reasons a link is absent: the person may not use the page
@@ -189,6 +265,15 @@ export default function Sidebar({ mobileOpen }) {
                 >
                   <item.icon size={20} />
                   {!collapsed && <span>{t(item.labelKey)}</span>}
+                  {item.badge === 'print_queue' && queueLabels > 0 && (
+                    <span
+                      className={`sidebar__badge ${collapsed ? 'sidebar__badge--dot' : ''}`}
+                      data-testid="sidebar-print-queue-badge"
+                      title={t('print_queue.badge_hint', { count: queueLabels })}
+                    >
+                      {queueLabels > 99 ? '99+' : queueLabels}
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </div>

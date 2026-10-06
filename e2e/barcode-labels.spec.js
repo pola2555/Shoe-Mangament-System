@@ -28,7 +28,14 @@ test.beforeAll(async ({ browser }) => {
   // made this suite depend on catalogue ordering, and the catalogue now contains
   // categories with alpha sizes or none at all.
   const rows = products.body.data;
-  ctx.product = rows.find((p) => p.has_sizes && p.scale_is_numeric && p.variant_count > 0)
+  // TWO variants, not one. The print rules under test are about what separates one
+  // label from the NEXT one — `.shoe-label` sets `page-break-after: always` and
+  // `:last-child` unsets it — so a product whose preview renders a single label makes
+  // the first label the last one and the assertion reads its exception as a failure.
+  // A one-variant product is the third time this suite has been tripped by picking
+  // "whichever product came back first"; the pick now names what the test needs.
+  ctx.product = rows.find((p) => p.has_sizes && p.scale_is_numeric && p.variant_count > 1)
+    || rows.find((p) => p.has_sizes && p.scale_is_numeric && p.variant_count > 0)
     || rows.find((p) => p.variant_count > 0)
     || rows[0];
   expect(ctx.product, 'need a product with variants').toBeTruthy();
@@ -283,8 +290,13 @@ async function openPreview(page, productId) {
   // The preview toggle does not exist until the label payload has arrived, and the
   // dev server's first compile of a run can outlast the default action timeout.
   await expect(modal.locator('tbody tr').first()).toBeVisible({ timeout: 30_000 });
+  // One label per SIZE, rather than the default of one per pair in stock. The layout
+  // rules below are about what separates one label from the next, so the preview has
+  // to hold more than one — and how many pairs happen to be on the shelf today is not
+  // something this test should depend on.
+  await modal.getByRole('button', { name: /^one each$/i }).click();
   await modal.getByText(/^preview$/i).click();
-  await expect(modal.locator('.shoe-label').first()).toBeVisible();
+  await expect(modal.locator('.shoe-label').nth(1)).toBeVisible();
   return modal;
 }
 

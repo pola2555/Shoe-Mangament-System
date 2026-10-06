@@ -27,6 +27,7 @@ const APP_PAGES = [
   { path: '/inventory', key: 'inventory', group: 'products_inventory', perm: 'inventory' },
   { path: '/stock-intakes', key: 'stock_intakes', group: 'products_inventory', perm: 'inventory' },
   { path: '/stock-counts', key: 'stock_counts', group: 'products_inventory', perm: 'inventory' },
+  { path: '/print-queue', key: 'print_queue', group: 'products_inventory', perm: 'print_queue' },
   { path: '/transfers', key: 'transfers', group: 'products_inventory', perm: 'transfers' },
   { path: '/purchases', key: 'purchases', group: 'purchases_finance', perm: 'purchases' },
   { path: '/suppliers', key: 'suppliers', group: 'purchases_finance', perm: 'suppliers' },

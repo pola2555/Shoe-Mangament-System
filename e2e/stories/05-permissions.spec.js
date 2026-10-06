@@ -264,12 +264,22 @@ test('P11 · assigning staff to a branch needs the power to change what people s
   });
   expect(assign.status, 'assigning staff needs users:write, not stores:write').toBe(403);
 
-  // And the branch's staff list is unchanged.
-  const staff = await api(page, 'GET', `/stores/${A()}/staff`);
+  // She cannot even READ the roster, and that is deliberate: a staff list is a list of
+  // users, so stores.routes.js gates it on `users` too. (`npm run check:audit` asserts
+  // that gate, under "a staff roster needs the users permission".) This test used to
+  // expect a 200 here, from before the gate existed.
+  const roster = await api(page, 'GET', `/stores/${A()}/staff`);
+  expect(roster.status, 'a roster is a list of users, so it needs the users permission').toBe(403);
+  await closePage(page);
+
+  // So the real assertion — that nobody was let in — is made as somebody who may look.
+  const admin = await pageAs(browser, 'admin');
+  await admin.goto('/');
+  const staff = await api(admin, 'GET', `/stores/${A()}/staff`);
   expect(staff.status).toBe(200);
   expect(staff.body.data.some((u) => u.id === world.users.nostore.id && u.assigned),
     'nobody was let in').toBe(false);
-  await closePage(page);
+  await closePage(admin);
 });
 
 test('P12 · the sidebar shows each person only what they can actually open', async ({ browser }) => {

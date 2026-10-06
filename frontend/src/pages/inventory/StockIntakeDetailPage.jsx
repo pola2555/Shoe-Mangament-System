@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { stockIntakesAPI, productsAPI, suppliersAPI, storesAPI } from '../../api';
@@ -8,8 +8,12 @@ import { useConfirm } from '../../components/common/ConfirmDialog';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import useProductCategory from '../../hooks/useProductCategory';
 import { formatSize, formatColor } from '../../utils/variantFormat';
+import useQueueOffer from '../../hooks/useQueueOffer';
 import '../products/Products.css';
 import './StockIntake.css';
+
+// Only reached after a sheet is posted, so it stays out of this page's chunk.
+const ReceivedStockLabelFlow = lazy(() => import('../../components/barcode/ReceivedStockLabelFlow'));
 
 /**
  * One stock intake sheet.
@@ -50,6 +54,9 @@ export default function StockIntakeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [stores, setStores] = useState([]);
   const [saving, setSaving] = useState(false);
+  // Offered once, straight after posting. See the note where it is set.
+  const [queueSheet, setQueueSheet] = useState(false);
+  const { shouldOffer } = useQueueOffer();
   const [header, setHeader] = useState({
     store_id: '', supplier_id: '', reason: 'opening', intake_date: '', notes: '',
   });
@@ -119,13 +126,17 @@ export default function StockIntakeDetailPage() {
     stockIntakesAPI.costHint({ product_id: pickedProduct })
       .then(({ data }) => {
         setHint(data.data);
-        if (data.data.unit_cost != null) {
-          setUnitCost(String(data.data.unit_cost));
-          setKnown(true);      // it came off an invoice; it is not a guess
-        } else {
-          setUnitCost('');
-          setKnown(false);
-        }
+        setUnitCost(data.data.unit_cost != null ? String(data.data.unit_cost) : '');
+        // ASSERTING THE COST IS THE OWNER'S ACT, NEVER THE APP'S.
+        //
+        // This used to tick itself whenever the product had an invoiced cost on
+        // record, on the reasoning that such a cost is not a guess. But the cost on
+        // record belongs to a PREVIOUS delivery, and the whole purpose of this sheet
+        // is stock that arrived some other way — so the box was pre-answering, in the
+        // owner's name, the one question only they can answer. It stays unticked and
+        // red until somebody says otherwise; the figure is still filled in for them,
+        // and the hint beside it says where it came from.
+        setKnown(false);
       })
       .catch(() => setHint(null));
   }, [pickedProduct]);
@@ -200,6 +211,13 @@ export default function StockIntakeDetailPage() {
       if (thenPost) {
         await stockIntakesAPI.post(id);
         toast.success(t('intake.posted_ok'));
+        // Posting is the moment this stock exists, and the moment anybody knows exactly
+        // what it is. Opening stock needs labels more than new stock does — it has
+        // never had any — so offer the queue right here rather than hoping somebody
+        // comes back for it. `shouldOffer` is false both for somebody who cannot use
+        // the queue and for somebody who asked not to be prompted; either way nothing
+        // opens, which is what both of them asked for.
+        if (shouldOffer) setQueueSheet(true);
       } else {
         toast.success(t('common.saved'));
       }
@@ -383,7 +401,12 @@ export default function StockIntakeDetailPage() {
                     )}
                   </div>
 
-                  <label className="intake-known">
+                  {/* Green once asserted, red until then. Which of the two it is
+                      decides whether this stock's profit is real or provisional, and
+                      whether a later invoice is allowed to rewrite its cost — so it
+                      reads as a state, not as a tick in a row of ticks. */}
+                  <label className={`intake-known ${known ? 'intake-known--yes' : 'intake-known--no'}`}
+                    data-testid="intake-known">
                     <input type="checkbox" checked={known} onChange={(e) => setKnown(e.target.checked)} />
                     <span>{t('intake.i_know_this_cost')}</span>
                   </label>
@@ -532,6 +555,17 @@ export default function StockIntakeDetailPage() {
           </p>
         )}
       </div>
+
+      {queueSheet && (
+        <Suspense fallback={null}>
+          <ReceivedStockLabelFlow
+            sourceType="stock_intake"
+            sourceId={id}
+            title={intake?.intake_number}
+            onClose={() => setQueueSheet(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
-import { barcodesAPI } from '../../api';
+import { barcodesAPI, printQueueAPI } from '../../api';
+import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../i18n/i18nContext';
 import LabelSheet, { labelCss, LABEL_SIZES, LABEL_ROTATIONS } from './LabelSheet';
 import { downloadTspl } from '../../utils/tspl';
@@ -21,12 +22,30 @@ import { formatSize, formatColor } from '../../utils/variantFormat';
  * way a given driver behaves, one of the two settings comes out straight, so the
  * operator can calibrate with a single test label instead of a whole run.
  *
- * Source is one of: { productId } | { variantIds } | { invoiceBoxId }.
+ * Source is one of: { productId } | { variantIds } | { invoiceBoxId } | { queueIds }.
+ *
+ * `queueIds` is the print queue's own source and reads through a different endpoint,
+ * because the queue is gated on `print_queue` and not on `barcodes` — whoever runs the
+ * printer needs no ability to mint barcodes. It also arrives with `copies` already set
+ * to what the queue OWES rather than to what is in stock, which is the point of a
+ * queue: a label was asked for, and stock sold since then does not cancel that.
+ *
+ * `onPrinted` fires after a real print run (never the single test label) with the
+ * number of labels sent, so the caller can offer to record them as printed. It is not
+ * called automatically for a reason: a browser cannot see whether a print dialog was
+ * cancelled, let alone whether the paper came out, so only the person watching the
+ * printer can say.
  */
 export default function PrintLabelsModal({
-  productId, variantIds, invoiceBoxId, storeId, title, onClose,
+  productId, variantIds, invoiceBoxId, queueIds, storeId, title, onClose, onPrinted,
 }) {
   const { t, locale } = useTranslation();
+  // Minting a barcode is a different permission from printing one, and the print queue
+  // is deliberately grantable without it. So the "generate the missing ones" button is
+  // only offered to somebody who can actually do it — otherwise it is a button whose
+  // only possible outcome is a 403.
+  const { hasPermission } = useAuth();
+  const canMint = hasPermission('barcodes', 'write');
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [copies, setCopies] = useState({});
@@ -40,7 +59,10 @@ export default function PrintLabelsModal({
   const previewRef = useRef(null);
   const testRef = useRef(null);
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [productId, invoiceBoxId, storeId]);
+  // Joined rather than passed as an array: a caller that builds the list inline would
+  // otherwise hand a new array identity every render and reload in a loop.
+  const queueKey = (queueIds || []).join(',');
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [productId, invoiceBoxId, storeId, queueKey]);
   useEffect(() => { localStorage.setItem('label_size', size); }, [size]);
   useEffect(() => { localStorage.setItem('label_rotate', String(rotate)); }, [rotate]);
   useEffect(() => { localStorage.setItem('label_setup_done', setupHidden ? '1' : '0'); }, [setupHidden]);
@@ -49,7 +71,7 @@ export default function PrintLabelsModal({
     // An explicitly empty variant list is a legitimate state (an inventory filter that
     // matched nothing), not an error. Show an empty dialog rather than firing a
     // request the API will reject and bouncing the user out.
-    if (!productId && !invoiceBoxId && (!variantIds || variantIds.length === 0)) {
+    if (!productId && !invoiceBoxId && !queueKey && (!variantIds || variantIds.length === 0)) {
       setRows([]);
       setCopies({});
       setLoading(false);
@@ -58,18 +80,28 @@ export default function PrintLabelsModal({
 
     try {
       setLoading(true);
-      const params = { store_id: storeId || undefined };
-      if (productId) params.product_id = productId;
-      if (invoiceBoxId) params.invoice_box_id = invoiceBoxId;
-      if (variantIds?.length) params.variant_ids = variantIds.join(',');
 
-      const res = await barcodesAPI.labels(params);
-      const data = res.data.data || [];
+      let data;
+      if (queueKey) {
+        const res = await printQueueAPI.labels(queueIds);
+        data = res.data.data || [];
+      } else {
+        const params = { store_id: storeId || undefined };
+        if (productId) params.product_id = productId;
+        if (invoiceBoxId) params.invoice_box_id = invoiceBoxId;
+        if (variantIds?.length) params.variant_ids = variantIds.join(',');
+        const res = await barcodesAPI.labels(params);
+        data = res.data.data || [];
+      }
+
       setRows(data);
-      // Default to one label per pair actually on hand, so the common case needs no
-      // counting. Variants with no stock default to 0 rather than 1 — printing a
-      // label for something you do not have is pure waste.
-      setCopies(Object.fromEntries(data.map((r) => [r.variant_id, r.stock_count || 0])));
+      // From the queue: what was asked for. Everywhere else: one label per pair actually
+      // on hand, so the common case needs no counting — and 0, not 1, for a variant with
+      // no stock, because printing a label for something you do not have is pure waste.
+      setCopies(Object.fromEntries(data.map((r) => [
+        r.variant_id,
+        r.copies != null ? r.copies : (r.stock_count || 0),
+      ])));
     } catch (err) {
       toast.error(err.response?.data?.message || t('barcode.labels_failed'));
       onClose();
@@ -112,6 +144,11 @@ export default function PrintLabelsModal({
   function handlePrint() {
     if (totalLabels === 0) { toast.error(t('barcode.nothing_to_print')); return; }
     printMarkup(previewRef.current?.innerHTML);
+    // Snapshot, not the live state: the caller may keep this dialog open and change a
+    // count afterwards, and what it is told must be what actually went to the printer.
+    // The rows go with it so a caller holding queue rows can work out which of them the
+    // labels came from — one size can be owed by more than one document.
+    onPrinted?.(totalLabels, { ...copies }, printable);
   }
 
   /** Burn exactly one label to check the driver settings, not the whole run. */
@@ -242,11 +279,13 @@ export default function PrintLabelsModal({
               <div className="alert alert-warning" style={{ marginBottom: 'var(--spacing-md)', padding: '.75rem', borderRadius: 'var(--radius-md)', background: 'var(--color-warning-bg, #fff4e5)', border: '1px solid var(--color-warning, #e0a030)' }}>
                 <strong>{t('barcode.missing_barcodes', { count: missing.length })}</strong>
                 <div style={{ fontSize: 'var(--font-size-sm)', margin: '.35rem 0 .6rem' }}>
-                  {t('barcode.missing_hint')}
+                  {canMint ? t('barcode.missing_hint') : t('barcode.missing_no_permission')}
                 </div>
-                <button className="btn btn-primary btn-sm" onClick={generateMissing} disabled={generating}>
-                  {generating ? t('common.loading') : t('barcode.generate_now')}
-                </button>
+                {canMint && (
+                  <button className="btn btn-primary btn-sm" onClick={generateMissing} disabled={generating}>
+                    {generating ? t('common.loading') : t('barcode.generate_now')}
+                  </button>
+                )}
               </div>
             )}
 
@@ -269,6 +308,11 @@ export default function PrintLabelsModal({
                 </select>
               </label>
               <div style={{ display: 'flex', gap: '.4rem' }}>
+                {queueKey && (
+                  <button className="btn btn-secondary btn-sm" data-testid="label-match-queue" onClick={() => bulkSet((r) => r.copies || 0)}>
+                    {t('barcode.match_queue')}
+                  </button>
+                )}
                 <button className="btn btn-secondary btn-sm" onClick={() => bulkSet((r) => r.stock_count || 0)}>{t('barcode.match_stock')}</button>
                 <button className="btn btn-secondary btn-sm" onClick={() => bulkSet(() => 1)}>{t('barcode.one_each')}</button>
                 <button className="btn btn-secondary btn-sm" onClick={() => bulkSet(() => 0)}>{t('barcode.clear_all')}</button>

@@ -169,6 +169,16 @@ const DELETE_TARGETS = [
     entityType: 'box_template',
   },
   {
+    // Taking a row off the print queue. Not stock — a note about labels owed — but the
+    // note is the only place the request existed, so the log keeps what it said.
+    match: /^\/api\/print-queue\/([^/]+)$/,
+    table: 'print_queue_items',
+    columns: ['id', 'store_id', 'variant_id', 'quantity', 'printed_qty', 'status',
+      'source_type', 'source_ref'],
+    where: (m) => ({ id: m[1] }),
+    entityType: 'print_queue_item',
+  },
+  {
     match: /^\/api\/stock-intakes\/([^/]+)$/,
     table: 'stock_intakes',
     columns: ['id', 'intake_number', 'store_id', 'status', 'reason', 'intake_date'],

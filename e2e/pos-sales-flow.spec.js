@@ -293,3 +293,81 @@ test('scrolling a form does not silently edit a number', async ({ page }) => {
 
   await expect(amount).toHaveValue('1234');
 });
+
+// ---------------------------------------------------------------- the price band
+
+/**
+ * One product in the shop could be added to the cart and never sold. Its floor was 90
+ * and its ceiling 80 — typed into the wrong boxes — so `price >= 90 && price <= 80`
+ * was unsatisfiable and Checkout stayed dead. All the till said about it was the bare
+ * string "90 - 80 EGP", which means nothing unless you already know what you are
+ * looking at, and which was shown only to users who could also edit the price.
+ *
+ * The cart is seeded through localStorage, which is how the app itself restores one —
+ * and it is the only way to put a line with an impossible band on screen, now that the
+ * server refuses to store one.
+ */
+async function seedCart(page, storeId, line) {
+  await page.addInitScript(([store, cart]) => {
+    localStorage.setItem('pos_store', store);
+    localStorage.setItem('pos_cart', JSON.stringify(cart));
+    localStorage.setItem('pos_customer', '');
+    localStorage.setItem('pos_hide_prices', '0');
+  }, [storeId, [line]]);
+  await page.goto('/pos');
+  await expect(page.getByTestId('pos-scan-strip')).toBeVisible({ timeout: 25_000 });
+}
+
+test('an impossible price band says so, instead of showing two bare numbers', async ({ page }) => {
+  await page.goto('/');
+  const inv = await api(page, 'GET', '/inventory', {
+    params: { store_id: ctx.storeId, product_id: ctx.productId, status: 'in_stock' },
+  });
+  const line = inv.body.data[0];
+  expect(line, 'need stock to put in the cart').toBeTruthy();
+
+  await seedCart(page, ctx.storeId, {
+    ...line, sale_price: 90, min_selling_price: 90, max_selling_price: 80,
+    store_min_selling_price: null, store_max_selling_price: null,
+  });
+
+  const problem = page.getByTestId('pos-price-problem-0');
+  await expect(problem).toBeVisible();
+
+  // A sentence, not "90 - 80". Both ends named, and the blame on the product.
+  const text = await problem.textContent();
+  expect(text).toMatch(/90/);
+  expect(text).toMatch(/80/);
+  expect(text).toMatch(/minimum/i);
+  expect(text).toMatch(/maximum/i);
+  expect(text.trim()).not.toMatch(/^90\s*-\s*80/);
+
+  // And it is still refused, which was never the problem — only the silence was.
+  await expect(page.getByRole('button', { name: /checkout/i })).toBeDisabled();
+  await shot(page, 'pos-impossible-band');
+});
+
+test('the reason quotes the branch band that is actually enforced', async ({ page }) => {
+  await page.goto('/');
+  const inv = await api(page, 'GET', '/inventory', {
+    params: { store_id: ctx.storeId, product_id: ctx.productId, status: 'in_stock' },
+  });
+  const line = inv.body.data[0];
+
+  // A perfectly ordinary catalogue band, and a branch that prices above it. The line
+  // is judged against the BRANCH numbers — as it is on the server — but the message
+  // used to print the catalogue ones, so it named a range the price was already
+  // inside and gave no way to work out what was wrong.
+  await seedCart(page, ctx.storeId, {
+    ...line, sale_price: 100,
+    min_selling_price: 50, max_selling_price: 500,
+    store_min_selling_price: 200, store_max_selling_price: 300,
+  });
+
+  const problem = page.getByTestId('pos-price-problem-0');
+  await expect(problem).toBeVisible();
+  const text = await problem.textContent();
+  expect(text).toMatch(/200/);
+  expect(text).toMatch(/300/);
+  expect(text).not.toMatch(/50|500/);
+});

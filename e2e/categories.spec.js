@@ -240,13 +240,21 @@ test('two colours whose names start the same way can both take size variants', a
   if (selected > 0) await page.getByTestId('matrix-create').click();
 
   const variantsTable = page.locator('.table-container table');
-  await expect(variantsTable.locator('tbody tr')).toHaveCount(4, { timeout: 20_000 });
+  await expect(variantsTable.locator('tbody tr').first()).toBeVisible({ timeout: 20_000 });
 
-  // What used to fail: four rows, four distinct SKUs, four distinct barcodes.
+  // SCOPED TO THE TWO SIZES THIS TEST CREATED, never to the whole table.
+  //
+  // It used to assert the product had exactly four variants full stop, which quietly
+  // made it a test of the entire catalogue's tidiness. Receiving stock creates a
+  // variant for any size that does not exist yet, so the stock-intake specs — picking
+  // whichever product they find first — can leave an extra size on this product and
+  // fail a test about SKU abbreviation for a reason with nothing to do with SKUs.
+  // The same brittleness has bitten this suite twice before.
   const rows = await api(page, 'GET', `/products/${product.id}/variants`);
-  const skus = rows.body.data.map((v) => v.sku);
-  const barcodes = rows.body.data.map((v) => v.barcode);
-  expect(skus.length, 'expected four variants').toBe(4);
+  const mine = rows.body.data.filter((v) => ['40', '41'].includes(String(v.size_eu)));
+  const skus = mine.map((v) => v.sku);
+  const barcodes = mine.map((v) => v.barcode);
+  expect(skus.length, `expected four variants at sizes 40/41, got ${skus.join(', ')}`).toBe(4);
   expect(new Set(skus).size, `duplicate SKUs: ${skus.join(', ')}`).toBe(4);
   expect(new Set(barcodes).size, 'duplicate barcodes').toBe(4);
 

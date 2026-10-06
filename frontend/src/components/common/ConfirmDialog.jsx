@@ -77,7 +77,7 @@ export function ConfirmProvider({ children }) {
     <ConfirmContext.Provider value={ask}>
       {children}
       {state && (
-        <div className="modal-overlay" data-testid="confirm-overlay"
+        <div className="modal-overlay modal-overlay--confirm" data-testid="confirm-overlay"
           onClick={() => close(state.mode === 'prompt' ? null : false)}>
           <div className="modal-content card" style={{ maxWidth: 460 }}
             data-testid="confirm-dialog" onClick={(e) => e.stopPropagation()}>

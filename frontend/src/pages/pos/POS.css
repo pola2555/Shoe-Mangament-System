@@ -233,6 +233,10 @@
   font-size: 0.7rem;
   color: var(--color-danger);
   margin-top: 2px;
+  /* It used to be "90 - 80 EGP" and now it is a sentence, so it has to be allowed to
+     take a second line rather than run out of the cart panel on a phone. */
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .pos-cart-item-actions {

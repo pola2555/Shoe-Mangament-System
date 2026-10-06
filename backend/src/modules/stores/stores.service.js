@@ -4,6 +4,7 @@ const { generateUUID } = require('../../utils/generateCodes');
 const { applyStoreScope, resolveStoreScope } = require('../../utils/storeScope');
 const { applyDateRange, defaultRange, businessDayStart, businessDayBoundary } = require('../../utils/dateRange');
 const { ITEM_PROFIT } = require('../../utils/saleMath');
+const { assertSellingBand, effectiveBand } = require('../../utils/priceBand');
 const { invalidateUserCache } = require('../../middleware/auth');
 
 /**
@@ -460,9 +461,15 @@ class StoresService {
     // The till enforces min <= price <= max at checkout. A band that cannot contain
     // its own default would reject every sale of this product in this store, so it is
     // refused here where the message can say so.
-    if (min !== null && max !== null && min > max) {
-      throw new AppError('Minimum price cannot be above the maximum price', 400);
-    }
+    //
+    // Against the EFFECTIVE band, not the two numbers in this request. Each end falls
+    // back to the catalogue when this branch leaves it unset, so a branch floor of 90
+    // set against a catalogue ceiling of 80 is two reasonable-looking edits and one
+    // product that can never be sold here — and the pair check alone never sees it,
+    // because only one of the two was supplied. Same rule, same message, as the other
+    // door onto this table (`products.setStorePrice`).
+    const band = effectiveBand({ min_selling_price: min, max_selling_price: max }, product);
+    assertSellingBand(band.min, band.max, `${product.model_name} at this branch`);
     if (min !== null && price < min) throw new AppError('Selling price is below this store\'s minimum', 400);
     if (max !== null && price > max) throw new AppError('Selling price is above this store\'s maximum', 400);
 

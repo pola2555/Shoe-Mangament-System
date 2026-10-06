@@ -312,3 +312,41 @@
 [dir="rtl"] .sidebar__group-title--toggle.is-closed .sidebar__group-chevron {
   transform: rotate(90deg);
 }
+
+/* ============================================================
+   PRINT QUEUE BADGE
+
+   The only counted item in the menu. A queue nobody can see the size of is a
+   queue nobody clears, so the number is the reminder — which is also why it
+   survives the sidebar being collapsed to icons, as a dot in the corner of the
+   printer glyph rather than disappearing with the label.
+   ============================================================ */
+
+.sidebar__badge {
+  margin-inline-start: auto;
+  padding: 0 0.4rem;
+  min-width: 1.3rem;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.3rem;
+  text-align: center;
+}
+
+.sidebar--collapsed .sidebar__badge--dot {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-end: 4px;
+  min-width: 0.55rem;
+  height: 0.55rem;
+  padding: 0;
+  line-height: 0;
+  font-size: 0;
+  overflow: hidden;
+}
+
+.sidebar--collapsed .sidebar__link {
+  position: relative;
+}

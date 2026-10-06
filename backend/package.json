@@ -21,10 +21,13 @@
     "check:stores": "node scripts/check-stores.js",
     "check:intake": "node scripts/check-intake.js",
     "check:operations": "node scripts/check-operations.js",
+    "check:print-queue": "node scripts/check-print-queue.js",
     "check:audit": "node scripts/check-audit.js",
     "check:security": "node scripts/check-security.js",
     "audit:permissions": "node scripts/audit-permissions.js",
-    "check:controls": "node scripts/check-controls.js"
+    "check:controls": "node scripts/check-controls.js",
+    "backup:db": "node scripts/backup-db.js",
+    "check:backup": "node scripts/check-backup.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1018.0",

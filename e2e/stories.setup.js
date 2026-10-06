@@ -33,6 +33,16 @@ const PASSWORD = 'story-pass-1';
  * and the gaps in each list are the point: the cashier has no `sale_void` and no
  * `reports`, and that is what several stories are about.
  */
+/**
+ * NOTE: nobody here is granted `notifications`.
+ *
+ * That code was removed from the permissions table by migration
+ * 20260903_004_permission_cleanup — the notifications routes are scoped to
+ * `req.user.id` and are deliberately ungated, so the permission gated nothing.
+ * `user_permissions.permission_code` is a foreign key to `permissions.code`, so
+ * granting a code that no longer exists is a 400 and the whole story world fails to
+ * build — taking all seventy stories with it.
+ */
 const CAST = {
   manager: {
     username: 'story_manager',
@@ -50,11 +60,15 @@ const CAST = {
       supplier_payments: 'write', supplier_returns: 'write',
       expenses: 'write', expense_categories: 'write', loans: 'write',
       dealers: 'write', dealer_invoices: 'write', dealer_payments: 'write',
-      barcodes: 'write', notifications: 'read', audit_log: 'read',
+      barcodes: 'write', audit_log: 'read',
       // PLAN 3. A manager may price away from the default, answer discount requests,
       // run the till and count stock. Karim below gets NONE of these, which is what
       // makes the pair a real test of the feature rather than a description of it.
       price_override: 'write', discount_approval: 'write',
+      // PLAN 6/10, added after this cast was first written: letting a customer take
+      // goods and pay later needs a manager's say-so. Mona is the manager, and the
+      // stories that sell on credit are hers.
+      credit_approval: 'write',
       shifts: 'write', cash_drawer: 'write', exchanges: 'write',
       stock_count: 'write', stock_intake: 'write',
     },
@@ -70,7 +84,7 @@ const CAST = {
     permissions: {
       pos: 'write', sales: 'write', sale_payments: 'write',
       customers: 'write', inventory: 'read', products: 'read',
-      barcodes: 'read', notifications: 'read', product_categories: 'read',
+      barcodes: 'read', product_categories: 'read',
       shifts: 'write',
     },
   },
@@ -85,7 +99,6 @@ const CAST = {
       purchases: 'write', purchase_boxes: 'write',
       products: 'write', product_variants: 'write', product_categories: 'read',
       suppliers: 'read', barcodes: 'write', box_templates: 'read',
-      notifications: 'read',
     },
   },
   viewer: {
@@ -95,7 +108,7 @@ const CAST = {
     stores: ['A'],
     permissions: {
       products: 'read', inventory: 'read', sales: 'read', customers: 'read',
-      reports: 'read', expenses: 'read', stores: 'read', notifications: 'read',
+      reports: 'read', expenses: 'read', stores: 'read',
     },
   },
   nostore: {
@@ -105,7 +118,7 @@ const CAST = {
     stores: [],
     permissions: {
       pos: 'write', sales: 'write', customers: 'read',
-      inventory: 'read', products: 'read', notifications: 'read',
+      inventory: 'read', products: 'read',
     },
   },
 };

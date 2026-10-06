@@ -350,15 +350,39 @@ async function main() {
   });
 
   await check('a write route is never gated at read level', async () => {
+    /**
+     * A POST that is genuinely a READ has to be named here, with its reason.
+     *
+     * The rule this check enforces is that the HTTP verb and the permission level must
+     * agree, and it is worth keeping strict — a write gated at read level is a real
+     * hole. But a handful of reads cannot be GETs: a selection of a few hundred uuids
+     * is an 11 KB query string, past nginx's default request line, and comes back as a
+     * bare 414. Those carry the selection in a body instead.
+     *
+     * An excuse is a named path, never a pattern, so a genuine write added next to one
+     * still fails this check.
+     */
+    const READ_ONLY_POSTS = new Map([
+      ['/api/print-queue/labels',
+        'label payloads for a selection of queue rows; writes nothing, and the selection '
+        + 'is too long for a URL. The GET form of the same read is mounted beside it.'],
+    ]);
+
     const bad = [];
     for (const r of apiRoutes) {
       const isWrite = r.methods.some((m) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(m));
       if (!isWrite) continue;
+      // Only a POST can be excused, and only by exact path: a PUT, PATCH or DELETE is a
+      // write whatever anybody says about it.
+      const excused = READ_ONLY_POSTS.has(r.path)
+        && r.methods.every((m) => m === 'POST' || m === 'GET');
+      if (excused) continue;
       for (const g of r.gates) {
         if (g.level === 'read') bad.push(`${r.methods.join('|')} ${r.path} (${g.code})`);
       }
     }
     assert(bad.length === 0, bad.join('; '));
+    return `${READ_ONLY_POSTS.size} read-only POST excused by name`;
   });
 
   await check('branch pricing has exactly one permission, not two', async () => {
