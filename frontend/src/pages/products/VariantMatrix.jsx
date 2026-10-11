@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import PhoneSizePicker from '../../components/catalog/PhoneSizePicker';
+import useIsNarrow from '../../hooks/useIsNarrow';
 import { useTranslation } from '../../i18n/i18nContext';
 import { sizeValueLabel } from '../../utils/variantFormat';
 
@@ -20,6 +22,11 @@ import { sizeValueLabel } from '../../utils/variantFormat';
 export default function VariantMatrix({ product, onCreate, creating }) {
   const { t, locale } = useTranslation();
   const [selected, setSelected] = useState(() => new Set());
+  // On a phone the colour x size table is unusable — it was measured at 294px of
+  // 2539px — so one colour is current and its sizes become a list. Both layouts read
+  // and write the same `selected` set, so rotating the phone never loses a choice.
+  const narrow = useIsNarrow();
+  const [activeColor, setActiveColor] = useState(null);
   const [rangeFrom, setRangeFrom] = useState('');
   const [rangeTo, setRangeTo] = useState('');
 
@@ -177,6 +184,21 @@ export default function VariantMatrix({ product, onCreate, creating }) {
         )}
       </div>
 
+      {narrow ? (
+        <PhoneSizePicker
+          colors={colors}
+          sizeValues={sizeValues}
+          hasColors={hasColors}
+          labelFor={labelFor}
+          cellExists={cellExists}
+          isSelected={(cid, v) => selected.has(keyOf(cid, v))}
+          toggle={toggle}
+          setMany={setMany}
+          activeColor={activeColor}
+          setActiveColor={setActiveColor}
+          t={t}
+        />
+      ) : (
       <div style={{ overflowX: 'auto' }}>
         <table className="table" style={{ margin: 0, width: 'auto' }}>
           <thead>
@@ -229,6 +251,7 @@ export default function VariantMatrix({ product, onCreate, creating }) {
           </tbody>
         </table>
       </div>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '.5rem', marginTop: 'var(--spacing-md)' }}>
         <span style={{ alignSelf: 'center', color: 'var(--color-text-secondary)' }}>

@@ -20,6 +20,10 @@ export default function useProductCategory(productId) {
   const [state, setState] = useState({
     loading: false,
     colors: [],
+    // The sizes this product already carries. `getById` returns them anyway, and a
+    // phone needs them: a shoe category lists 41 sizes, of which a given product
+    // usually stocks six. Offering all 41 first makes every entry a scroll.
+    stockedSizes: [],
     category: null,
     sizeValues: [],
     hasColors: true,
@@ -34,7 +38,7 @@ export default function useProductCategory(productId) {
     let cancelled = false;
 
     if (!productId) {
-      setState((s) => ({ ...s, loading: false, colors: [], category: null, sizeValues: [] }));
+      setState((s) => ({ ...s, loading: false, colors: [], stockedSizes: [], category: null, sizeValues: [] }));
       return undefined;
     }
 
@@ -47,6 +51,8 @@ export default function useProductCategory(productId) {
         setState({
           loading: false,
           colors: product.colors || [],
+          stockedSizes: [...new Set((product.variants || [])
+            .map((v) => (v.size_eu == null ? null : String(v.size_eu))))],
           category,
           sizeValues: category?.size_values || [],
           // No category: behave as before — both required, free text.

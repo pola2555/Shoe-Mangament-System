@@ -646,7 +646,7 @@ export default function PurchaseDetailPage() {
               </div>
               <div className="form-group">
                 <label className="form-label">{t('purchases.upload_image')} ({t('common.optional')})</label>
-                <input ref={fileInputRef} type="file" accept="image/*" className="form-input" />
+                <input ref={fileInputRef} type="file" accept="image/*" capture="environment" className="form-input" />
               </div>
               
               <div className="modal-actions">
@@ -1170,7 +1170,7 @@ export default function PurchaseDetailPage() {
           {canWrite && (
             <div style={{ marginBottom: 'var(--spacing-lg)' }}>
               <button className="btn btn-primary" onClick={() => fileInputRef.current?.click()}>+ {t('purchases.upload_image')}</button>
-              <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageUpload} />
+              <input ref={fileInputRef} type="file" accept="image/*" capture="environment" hidden onChange={handleImageUpload} />
             </div>
           )}
 

@@ -444,7 +444,9 @@
     "size_not_in_list": "هذا المقاس غير موجود في قائمة الفئة",
     "manage_categories": "إدارة الفئات",
     "select_size": "اختر مقاسًا",
-    "size_generic": "المقاس"
+    "size_generic": "المقاس",
+    "already_exists": "موجود بالفعل",
+    "select_all_sizes": "اختيار كل المقاسات"
   },
   "inventory": {
     "title": "المخزون",
@@ -1522,7 +1524,11 @@
     "undo_title": "التراجع عن تصحيح التكلفة؟",
     "reverse_title": "عكس هذا الإدخال؟",
     "delete_title": "حذف هذه المسودة؟",
-    "delete_confirm": "هذه المسودة لم تُرحَّل، لذا لن يتغير المخزون. لا يمكن استرجاعها."
+    "delete_confirm": "هذه المسودة لم تُرحَّل، لذا لن يتغير المخزون. لا يمكن استرجاعها.",
+    "phone_tally": "{colour} هنا · {total} الإجمالي",
+    "phone_clear_colour": "مسح هذا اللون",
+    "phone_show_all_sizes": "إظهار {count} مقاس إضافي",
+    "phone_show_fewer_sizes": "إظهار مقاسات هذا المنتج فقط"
   },
   "receipt": {
     "title": "الإيصال",

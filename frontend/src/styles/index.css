@@ -369,6 +369,45 @@ a:hover { color: var(--color-accent-hover); }
   border: 1px solid var(--color-border);
 }
 
+/*
+ * ON A PHONE, A SCROLLED TABLE MUST NOT LOSE THE ROW YOU ARE READING.
+ *
+ * A read table scrolling sideways is a fair pattern — it is discoverable and the
+ * alternative is unreadably squeezed columns. What is not fair is scrolling to the
+ * fourth column and no longer knowing which product the row is about. The first cell
+ * is almost always the identifying one here (product, colour, size, name), so it
+ * stays put and the rest moves under it.
+ *
+ * Entry grids do NOT rely on this — they stop being tables below this width. This is
+ * for the tables you read.
+ */
+@media (max-width: 768px) {
+  .table-container > .table > thead > tr > th:first-child,
+  .table-container > .table > tbody > tr > td:first-child {
+    position: sticky;
+    inset-inline-start: 0;
+    z-index: 1;
+    /* Opaque, or the scrolling columns show through underneath it. */
+    background: var(--color-surface);
+  }
+
+  .table-container > .table > thead > tr > th:first-child {
+    background: var(--color-row-alt, var(--color-surface));
+    z-index: 2;
+  }
+
+  /* The edge that says "there is more this way". */
+  .table-container > .table > thead > tr > th:first-child::after,
+  .table-container > .table > tbody > tr > td:first-child::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    width: 1px;
+    background: var(--color-border);
+  }
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;

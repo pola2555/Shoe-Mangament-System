@@ -640,7 +640,7 @@ export default function ProductDetailPage() {
               ))}
             </div>
           )}
-          <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageUpload} />
+          <input ref={fileInputRef} type="file" accept="image/*" capture="environment" hidden onChange={handleImageUpload} />
         </div>
       )}
 

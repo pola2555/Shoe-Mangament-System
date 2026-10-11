@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import { stockIntakesAPI, productsAPI, suppliersAPI, storesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useTranslation } from '../../i18n/i18nContext';
+import PhoneQuantityEntry from '../../components/catalog/PhoneQuantityEntry';
+import useIsNarrow from '../../hooks/useIsNarrow';
 import { useConfirm } from '../../components/common/ConfirmDialog';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import useProductCategory from '../../hooks/useProductCategory';
@@ -69,6 +71,10 @@ export default function StockIntakeDetailPage() {
   const [grid, setGrid] = useState({});          // `${colorId}|${size}` -> qty
   const [unitCost, setUnitCost] = useState('');
   const [known, setKnown] = useState(false);
+  // Which colour the phone layout is filling. The wide grid shows every colour at
+  // once; a phone cannot, so one is current and the chips carry the rest.
+  const narrow = useIsNarrow();
+  const [activeColor, setActiveColor] = useState(null);
   const [hint, setHint] = useState(null);
   const [margin, setMargin] = useState(() => {
     try { return localStorage.getItem(MARGIN_KEY) || '40'; } catch { return '40'; }
@@ -417,7 +423,21 @@ export default function StockIntakeDetailPage() {
               </div>
 
               {/* Colour x size. One row and one column collapse away for a colourless
-                  or sizeless category, so the same grid serves every product shape. */}
+                  or sizeless category, so the same grid serves every product shape.
+                  On a phone it stops being a grid at all — see below. */}
+              {narrow ? (
+                <PhoneQuantityEntry
+                  colorRows={colorRows}
+                  sizeCols={sizeCols}
+                  grid={grid}
+                  setGrid={setGrid}
+                  cat={cat}
+                  locale={locale}
+                  t={t}
+                  activeColor={activeColor}
+                  setActiveColor={setActiveColor}
+                />
+              ) : (
               <div className="table-container">
                 <table className="table intake-grid">
                   <thead>
@@ -453,8 +473,10 @@ export default function StockIntakeDetailPage() {
                   </tbody>
                 </table>
               </div>
+              )}
 
-              <button type="button" className="btn btn-primary" onClick={addToSheet}>
+              <button type="button" className="btn btn-primary" onClick={addToSheet}
+                data-testid="intake-add-to-sheet">
                 {t('intake.add_to_sheet')}
               </button>
             </>

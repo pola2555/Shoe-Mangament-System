@@ -1,0 +1,227 @@
+/*
+ * The phone layout for the two colour x size grids.
+ *
+ * Both were tables as wide as the size list — measured at 3688px of content in a
+ * 292px window, so about two of forty columns were reachable at a time. On a phone
+ * that is not slow, it is impractical. Here the colour becomes a chip row and the
+ * sizes become a vertical list, so the only scrolling left is the one a phone is
+ * actually good at.
+ *
+ * Every tappable thing is at least 44px on its short edge. That is the figure both
+ * Apple and Google publish for a reliable thumb target, and the audit that prompted
+ * this found grid cells well under it.
+ */
+
+/* ---- colour chips -------------------------------------------------------- */
+
+.phone-chips {
+  display: flex;
+  gap: var(--spacing-sm);
+  overflow-x: auto;
+  padding-block-end: 4px;
+  margin-block-end: var(--spacing-md);
+  /* A few chips scrolling sideways is fine — they are big, self-labelling, and you
+     can see there are more. Forty anonymous size columns were not. */
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.phone-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.phone-chip--on {
+  border-color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.12);
+  /* Two signals, not one: colour alone would leave the selected chip invisible to
+     anyone who cannot separate these two hues. */
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+
+.phone-chip__name {
+  max-width: 10ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* How much has already been entered against this colour. The whole reason chips can
+   replace the grid: the overview the grid gave for free has to come back somewhere. */
+.phone-chip__count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--color-success);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- the size list ------------------------------------------------------- */
+
+.phone-sizes {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+}
+
+.phone-size-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-height: 52px;
+  padding: 6px 10px;
+  border-block-end: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.phone-size-row:last-child { border-block-end: none; }
+
+/* A row that already carries a number stands out, so scanning for gaps is quick. */
+.phone-size-row--filled { background: rgba(var(--color-success-rgb), 0.08); }
+
+.phone-size-row__label {
+  flex: 1 1 auto;
+  font-weight: 600;
+  font-size: 0.95rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- the stepper --------------------------------------------------------- */
+
+.phone-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.phone-step__btn {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-hover, var(--color-bg-base));
+  color: var(--color-text-primary);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  /* Tapping + repeatedly must not select the glyph and pop a text handle. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.phone-step__btn:disabled { opacity: 0.4; cursor: default; }
+.phone-step__btn:active:not(:disabled) { background: var(--color-primary); color: #fff; }
+
+.phone-step__input {
+  width: 62px;
+  height: 44px;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+/* ---- selection rows (the variant matrix) --------------------------------- */
+
+.phone-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-height: 52px;
+  padding: 8px 12px;
+  width: 100%;
+  border: none;
+  border-block-end: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+
+.phone-pick:last-child { border-block-end: none; }
+.phone-pick[data-state="selected"] { background: rgba(var(--color-primary-rgb, 99, 102, 241), 0.14); }
+.phone-pick[data-state="exists"] { background: rgba(var(--color-success-rgb), 0.12); cursor: default; }
+
+/* The state in a glyph as well as a colour, for the same reason the chip has two
+   signals — and because "already there" and "about to be added" must not rely on a
+   green/indigo distinction alone. */
+.phone-pick__mark {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  background: var(--color-bg-base);
+}
+
+.phone-pick[data-state="selected"] .phone-pick__mark { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.phone-pick[data-state="exists"] .phone-pick__mark { background: var(--color-success); color: #fff; border-color: var(--color-success); }
+
+.phone-pick__note {
+  margin-inline-start: auto;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+/* ---- the bar that says where you are ------------------------------------- */
+
+.phone-tally {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  margin-block: var(--spacing-sm);
+  font-size: 0.88rem;
+  color: var(--color-text-secondary);
+}
+
+.phone-tally strong { color: var(--color-text-primary); }
+
+.phone-bulk {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  margin-block-end: var(--spacing-sm);
+}
+
+.phone-bulk .btn { min-height: 40px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .phone-chip { transition: none; }
+}
