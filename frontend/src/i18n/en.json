@@ -94,7 +94,10 @@
     "discount": "Discount",
     "reason": "Reason",
     "showing_range": "Showing {from}-{to} of {total}",
-    "per_page": "{n} / page"
+    "per_page": "{n} / page",
+    "returned": "Returned",
+    "updated": "Updated",
+    "created": "Created"
   },
   "sidebar": {
     "app_name": "Bavly Shoes",
@@ -276,7 +279,8 @@
     "ask_for_discount": "Ask for a discount",
     "approved_discount": "Approved discount ({number})",
     "selling_code": "Your selling code",
-    "selling_code_hint": "This branch asks who made the sale."
+    "selling_code_hint": "This branch asks who made the sale.",
+    "failed_to_load_variants": "Could not load this product's variants"
   },
   "sales": {
     "title": "Sales History",
@@ -316,7 +320,8 @@
     "voided_by": "Voided by",
     "show_voided": "Show voided",
     "sale_voided": "Sale voided — stock returned",
-    "image": "Image"
+    "image": "Image",
+    "payment_method": "Payment method"
   },
   "products": {
     "title": "Products",
@@ -446,7 +451,8 @@
     "select_size": "Choose a size",
     "size_generic": "Size",
     "already_exists": "already there",
-    "select_all_sizes": "Select all sizes"
+    "select_all_sizes": "Select all sizes",
+    "no_image": "No image"
   },
   "inventory": {
     "title": "Inventory",

@@ -41,6 +41,54 @@ async function hiddenSideways(page) {
   });
 }
 
+/**
+ * Anything painted past the right edge of the screen.
+ *
+ * `hiddenSideways` only looks at containers that scroll (overflow-x auto/scroll), so
+ * it cannot see the other way content goes missing: an element that simply overflows
+ * an `overflow: visible` ancestor and pushes the whole document sideways. That is how
+ * the Add Variants header escaped — the heading and its two mode buttons could not
+ * wrap, ran 40px off-screen, and every test passed.
+ */
+async function pastRightEdge(page) {
+  return page.evaluate(() => {
+    const vw = document.documentElement.clientWidth;
+    const out = [];
+    for (const el of document.querySelectorAll('body *')) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 20 || r.height < 5) continue;
+      // Inside something that legitimately scrolls sideways, being out of view is
+      // not being lost — the chip rows and read-only tables are allowed it.
+      let scroller = false;
+      for (let a = el.parentElement; a; a = a.parentElement) {
+        const ox = getComputedStyle(a).overflowX;
+        if (ox === 'auto' || ox === 'scroll') { scroller = true; break; }
+      }
+      if (scroller) continue;
+      if (r.right > vw + 1) {
+        out.push(`<${el.tagName.toLowerCase()} class="${(el.className || '').toString().slice(0, 40)}"> "${(el.textContent || '').trim().slice(0, 30)}" runs ${Math.round(r.right - vw)}px past the edge`);
+      }
+    }
+    return out;
+  });
+}
+
+/** Visible text that is still a translation key — t() returns the key when it misses. */
+async function rawKeysOnScreen(page) {
+  return page.evaluate(() => {
+    const out = new Set();
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let n;
+    while ((n = walker.nextNode())) {
+      const txt = (n.textContent || '').trim();
+      if (!/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/.test(txt)) continue;
+      const el = n.parentElement;
+      if (el && el.getBoundingClientRect().width > 0) out.add(txt);
+    }
+    return [...out];
+  });
+}
+
 /** Controls below the 44px both Apple and Google publish as a reliable thumb target. */
 async function tinyTargets(page, within) {
   return page.evaluate((sel) => {
@@ -334,4 +382,74 @@ test('M8 · a number already typed is never hidden by the shortlist', async ({ p
 
   await shot(page, 'phone-shortlist-keeps-entry');
   await api(page, 'DELETE', `/stock-intakes/${sheetId}`).catch(() => {});
+});
+
+test('M9 · the add-variants panel fits every phone width, controls and all', async ({ page }) => {
+  // The panel is more than the size list: a heading, two mode buttons, select/clear,
+  // and a start-end size range. M3 only ever checked the picker itself, so the header
+  // was free to run off the side — which it did, 40px, dragging the page with it.
+  //
+  // Swept rather than checked at one width. A single 360px pass proves nothing about
+  // 390 or 412, and "it fits on MY phone" is exactly the bug being fixed: the row has
+  // to wrap at whatever width it is given, not at one that was convenient to test.
+  const WIDTHS = [320, 360, 390, 412, 480, 600, 768];
+
+  await page.goto(`/products/${ctx.multiId || ctx.productId}`);
+  await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /size variants/i }).first().click();
+  await page.getByRole('button', { name: /add variants/i }).first().click();
+  await expect(page.getByTestId('phone-size-picker')).toBeVisible({ timeout: 20_000 });
+
+  for (const width of WIDTHS) {
+    await page.setViewportSize({ width, height: 740 });
+    // Let the resize settle: useIsNarrow switches layout on a matchMedia event.
+    await expect(page.getByTestId('phone-size-picker')).toBeVisible({ timeout: 10_000 });
+    await page.waitForTimeout(150);
+
+    const off = await pastRightEdge(page);
+    expect(off, `at ${width}px content runs off the side of the screen:\n  ${off.join('\n  ')}`)
+      .toEqual([]);
+
+    const doc = await page.evaluate(() => ({
+      scroll: document.documentElement.scrollWidth,
+      client: document.documentElement.clientWidth,
+    }));
+    expect(doc.scroll, `at ${width}px the page scrolls sideways: ${doc.scroll}px of content in ${doc.client}px`)
+      .toBeLessThanOrEqual(doc.client + 1);
+
+    // The two mode buttons are the pair that overflowed. Both must be fully on screen,
+    // not merely present: a button clipped at the edge is still "visible" to Playwright.
+    const modes = page.getByRole('button', { name: /colours x sizes|single variant|size matrix/i });
+    for (let i = 0; i < await modes.count(); i++) {
+      const box = await modes.nth(i).boundingBox();
+      if (!box) continue;
+      const label = (await modes.nth(i).textContent() || '').trim();
+      expect(Math.round(box.x + box.width), `at ${width}px "${label}" is cut off at the edge`)
+        .toBeLessThanOrEqual(width + 1);
+    }
+  }
+
+  await page.setViewportSize({ width: 360, height: 740 });
+  await shot(page, 'phone-add-variants-fits');
+});
+
+test('M10 · no screen in the entry flow shows a raw translation key', async ({ page }) => {
+  // t() returns the key itself when a lookup fails, so a missing translation is
+  // silent everywhere except the screen: `products.select_all_sizes` sat in the
+  // middle of this panel while en/ar parity reported 1759/1759, because the key was
+  // absent from BOTH files. check:i18n guards the static side; this guards what is
+  // actually painted, including keys built at runtime.
+  await page.goto(`/products/${ctx.multiId || ctx.productId}`);
+  await expect(page.getByRole('heading').first()).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: /size variants/i }).first().click();
+  await page.getByRole('button', { name: /add variants/i }).first().click();
+  await expect(page.getByTestId('phone-size-picker')).toBeVisible({ timeout: 20_000 });
+
+  let raw = await rawKeysOnScreen(page);
+  expect(raw, `untranslated keys on the variant screen: ${raw.join(', ')}`).toEqual([]);
+
+  await page.goto('/stock-intakes');
+  await expect(page.getByTestId('intake-tab-sheets')).toBeVisible({ timeout: 30_000 });
+  raw = await rawKeysOnScreen(page);
+  expect(raw, `untranslated keys on the stock sheet list: ${raw.join(', ')}`).toEqual([]);
 });

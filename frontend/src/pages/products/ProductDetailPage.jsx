@@ -653,9 +653,13 @@ export default function ProductDetailPage() {
                 <button className="btn btn-primary" onClick={() => setShowVariantForm(true)}>+ {t('products.add_variants')}</button>
               ) : (
                 <div className="card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
+                  {/* Wraps, because at phone width the heading and the two mode
+                      buttons do not fit on one line: they ran 40px past the screen
+                      and took the whole page sideways with them. Above that width
+                      they still fit, so nothing moves. */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--spacing-sm)', flexWrap: 'wrap', marginBottom: 'var(--spacing-md)' }}>
                     <h3 style={{ margin: 0 }}>{t('products.add_variants')}</h3>
-                    <div style={{ display: 'flex', gap: 10 }}>
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                       <button className={`btn btn-sm ${generatorMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setGeneratorMode(true)}>⚡ {t('products.size_matrix')}</button>
                       <button className={`btn btn-sm ${!generatorMode ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setGeneratorMode(false)}>📝 {t('products.single_variant')}</button>
                     </div>

@@ -137,6 +137,13 @@ export default function VariantMatrix({ product, onCreate, creating }) {
     return <p style={{ color: 'var(--color-danger)' }}>{t('products.add_colors_first')}</p>;
   }
 
+  /**
+   * The from/to boxes on a phone. They share the row equally, and the side padding is
+   * trimmed because at the default the longer of the two placeholders — "Start Size
+   * (EU)" — loses its last character, which looks like a bug rather than a label.
+   */
+  const narrowBox = { flex: '1 1 96px', minWidth: 0, paddingInline: '.4rem' };
+
   const cellStyle = (state) => ({
     minWidth: 54, padding: '.4rem .5rem', textAlign: 'center', cursor: state === 'exists' ? 'default' : 'pointer',
     borderRadius: 'var(--radius-sm)', userSelect: 'none',
@@ -167,14 +174,26 @@ export default function VariantMatrix({ product, onCreate, creating }) {
           {t('products.clear_selection')}
         </button>
 
-        {/* The from/to shortcut only means anything on a numeric list. */}
+        {/* The from/to shortcut only means anything on a numeric list.
+
+            On a phone the fixed 78px boxes clipped their own placeholders to
+            "Start" and "End S", so the pair read as two unlabelled fields. Given
+            the row to themselves they can say what they are. */}
         {hasSizes && isNumeric && (
-          <span style={{ display: 'inline-flex', gap: '.3rem', alignItems: 'center', marginInlineStart: '.5rem' }}>
-            <input className="form-input" style={{ width: 78 }} type="number" step="0.5"
+          <span style={{
+            display: narrow ? 'flex' : 'inline-flex',
+            gap: '.3rem',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            ...(narrow ? { flex: '1 1 100%' } : { marginInlineStart: '.5rem' }),
+          }}>
+            <input className="form-input" style={narrow ? narrowBox : { width: 78 }}
+              type="number" step="0.5"
               placeholder={t('products.start_size')} value={rangeFrom}
               onChange={(e) => setRangeFrom(e.target.value)} />
             <span>–</span>
-            <input className="form-input" style={{ width: 78 }} type="number" step="0.5"
+            <input className="form-input" style={narrow ? narrowBox : { width: 78 }}
+              type="number" step="0.5"
               placeholder={t('products.end_size')} value={rangeTo}
               onChange={(e) => setRangeTo(e.target.value)} />
             <button type="button" className="btn btn-secondary btn-sm" onClick={applyRange}>

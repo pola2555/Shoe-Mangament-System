@@ -94,7 +94,10 @@
     "discount": "الخصم",
     "reason": "السبب",
     "showing_range": "عرض {from}-{to} من {total}",
-    "per_page": "{n} / صفحة"
+    "per_page": "{n} / صفحة",
+    "returned": "مرتجع",
+    "updated": "تم التحديث",
+    "created": "تم الإنشاء"
   },
   "sidebar": {
     "app_name": "Bavly Shoes",
@@ -276,7 +279,8 @@
     "ask_for_discount": "طلب خصم",
     "approved_discount": "خصم معتمد ({number})",
     "selling_code": "كود البيع الخاص بك",
-    "selling_code_hint": "هذا الفرع يسأل عن من قام بالبيع."
+    "selling_code_hint": "هذا الفرع يسأل عن من قام بالبيع.",
+    "failed_to_load_variants": "تعذر تحميل متغيرات هذا المنتج"
   },
   "sales": {
     "title": "سجل المبيعات",
@@ -316,7 +320,8 @@
     "voided_by": "ألغاها",
     "show_voided": "إظهار الملغاة",
     "sale_voided": "تم إلغاء العملية — رجع المخزون",
-    "image": "صورة"
+    "image": "صورة",
+    "payment_method": "طريقة الدفع"
   },
   "products": {
     "title": "المنتجات",
@@ -446,7 +451,8 @@
     "select_size": "اختر مقاسًا",
     "size_generic": "المقاس",
     "already_exists": "موجود بالفعل",
-    "select_all_sizes": "اختيار كل المقاسات"
+    "select_all_sizes": "اختيار كل المقاسات",
+    "no_image": "لا توجد صورة"
   },
   "inventory": {
     "title": "المخزون",
