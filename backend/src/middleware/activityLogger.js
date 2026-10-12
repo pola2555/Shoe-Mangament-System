@@ -204,6 +204,9 @@ function resolveActivityInfo(req) {
     // Stock removed as never having existed. The rows are really gone, so this entry
     // is the only remaining record that they were ever there.
     else if (path.includes('/remove')) { result.action = 'remove_stock'; }
+    // A miscount put right. Its own name because it is the one action that can go
+    // either way — the log entry says what it went from and to.
+    else if (path.includes('/quantity')) { result.action = 'set_quantity'; }
   }
   if (base === 'sales') {
     if (path.includes('/void')) { result.action = 'void'; }

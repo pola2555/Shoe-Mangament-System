@@ -5,7 +5,7 @@ const auth = require('../../middleware/auth');
 const permission = require('../../middleware/permission');
 const {
   inventoryQuerySchema, manualEntrySchema, markDamagedSchema, reassignSchema,
-  removeStockSchema,
+  removeStockSchema, setQuantitySchema,
 } = require('./inventory.validation');
 
 const router = Router();
@@ -21,6 +21,9 @@ router.post('/reassign', permission('inventory', 'write'), validate(reassignSche
 // A POST rather than a DELETE because it removes a COUNT of interchangeable pairs at
 // one branch, not one addressable row — the same shape as /print-queue/clear.
 router.post('/remove', permission('inventory', 'write'), validate(removeStockSchema), controller.removeStock);
+// Correcting a miscount: the quantity sent is what there should BE. Same write
+// permission as the other two — it both creates and destroys pairs.
+router.post('/quantity', permission('inventory', 'write'), validate(setQuantitySchema), controller.setQuantity);
 router.put('/:id/damaged', permission('inventory', 'write'), validate(markDamagedSchema), controller.markDamaged);
 
 module.exports = router;

@@ -713,6 +713,45 @@ class InventoryService {
    * record of what happened, so the pair is in stock AND still referenced. That must
    * read as a sentence, not as a foreign key violation.
    */
+  /**
+   * Refuse to delete pairs that anything else already refers to.
+   *
+   * Shared by `removeStock` and `setQuantity`, because both destroy rows and the rule
+   * is the same for either: a pair with history is not a mistaken entry, it is a real
+   * pair that was really handled.
+   *
+   * `sale_items`, `transfer_items` and `supplier_return_items` all reference a pair
+   * with ON DELETE RESTRICT, so Postgres would stop it anyway — but as a constraint
+   * error with a constraint's name in it. The case that actually turns up is a VOIDED
+   * sale: voiding returns the pair to stock and deliberately keeps the sale line as
+   * the record of what happened, so the pair is in stock AND still referenced. That
+   * has to read as a sentence, not as a foreign key violation.
+   */
+  async _assertNoHistory(trx, ids) {
+    if (!ids.length) return;
+    // Sequential, NOT Promise.all. A knex transaction is one connection, and firing
+    // three queries at it concurrently is "client.query() when the client is already
+    // executing a query" — deprecated in pg 8 and an error in pg 9. Parallelism is
+    // free outside a transaction and unavailable inside one.
+    const onSales = await trx('sale_items').whereIn('inventory_item_id', ids).count('id as c').first();
+    const onTransfers = await trx('transfer_items').whereIn('inventory_item_id', ids).count('id as c').first();
+    const onReturns = await trx('supplier_return_items').whereIn('inventory_item_id', ids).count('id as c').first();
+    const held = [
+      Number(onSales.c) ? `${onSales.c} on a sale (a voided sale keeps its line)` : null,
+      Number(onTransfers.c) ? `${onTransfers.c} on a transfer` : null,
+      Number(onReturns.c) ? `${onReturns.c} on a supplier return` : null,
+    ].filter(Boolean);
+
+    if (held.length) {
+      throw new AppError(
+        `These pairs cannot be removed because they have history — ${held.join(', ')}. `
+        + 'Removing is only for stock that was recorded by mistake. Mark them damaged '
+        + 'or lost instead, which keeps what happened to them.',
+        400,
+      );
+    }
+  }
+
   async removeStock({ variant_id, store_id, quantity, reason }) {
     return db.transaction(async (trx) => {
       const variant = await trx('product_variants').where('id', variant_id).first();
@@ -735,30 +774,7 @@ class InventoryService {
       }
 
       const ids = items.map((i) => i.id);
-
-      // Anything that has happened to these pairs. A pair with history is not a
-      // mistaken entry — it is a real pair that was really handled.
-      // Sequential, NOT Promise.all. A knex transaction is one connection, and firing
-      // three queries at it concurrently is "client.query() when the client is already
-      // executing a query" — deprecated in pg 8 and an error in pg 9. Parallelism is
-      // free outside a transaction and unavailable inside one.
-      const onSales = await trx('sale_items').whereIn('inventory_item_id', ids).count('id as c').first();
-      const onTransfers = await trx('transfer_items').whereIn('inventory_item_id', ids).count('id as c').first();
-      const onReturns = await trx('supplier_return_items').whereIn('inventory_item_id', ids).count('id as c').first();
-      const held = [
-        Number(onSales.c) ? `${onSales.c} on a sale (a voided sale keeps its line)` : null,
-        Number(onTransfers.c) ? `${onTransfers.c} on a transfer` : null,
-        Number(onReturns.c) ? `${onReturns.c} on a supplier return` : null,
-      ].filter(Boolean);
-
-      if (held.length) {
-        throw new AppError(
-          `These pairs cannot be removed because they have history — ${held.join(', ')}. `
-          + 'Removing is only for stock that was recorded by mistake. Mark them damaged '
-          + 'or lost instead, which keeps what happened to them.',
-          400,
-        );
-      }
+      await this._assertNoHistory(trx, ids);
 
       const value = items.reduce((s, i) => s + (parseFloat(i.cost) || 0), 0);
       const fromPurchase = items.filter((i) => i.invoice_box_id).length;
@@ -775,6 +791,129 @@ class InventoryService {
         // somebody to notice the two no longer agree.
         from_purchase: fromPurchase,
         variant_id, store_id, sku: variant.sku, reason: reason || null,
+      };
+    });
+  }
+
+  /**
+   * Set how many pairs of one variant are in stock at one branch.
+   *
+   * The count gets typed wrong — a box of twelve entered as twenty-one, a size run
+   * keyed one short. Until now the screen could move stock to another colour or size
+   * and it could delete stock, but it could not say "there are six of these, not
+   * eight", which is the correction people actually reach for.
+   *
+   * It is a correction of a COUNT, not a receipt and not a write-off. Which way the
+   * number moves decides what has to happen to keep the books honest:
+   *
+   * FEWER — the surplus never existed, so those rows are deleted outright, newest
+   * first, under the same history guard as `removeStock`: a pair that has been sold,
+   * transferred or returned to a supplier is a real pair and cannot be un-counted.
+   *
+   * MORE — the missing pairs did exist and were simply not keyed, so they are created
+   * AT THE COST OF THE PAIRS ALREADY THERE (the newest, matching the newest-first rule
+   * the other direction uses). This is the only defensible cost: they came out of the
+   * same box as their siblings, and inventing a number would put a guess into the cost
+   * basis. If the pairs are genuinely new stock at a different price, that is a
+   * purchase or a manual entry with its own cost, not a count correction — which is
+   * why this refuses to run when there is nothing to copy a cost from.
+   *
+   * Two things deliberately NOT copied onto the new pairs:
+   *   - `invoice_box_id` stays null. A purchase invoice records what was ordered and
+   *     paid for; adding pairs to it would make it describe a delivery that never
+   *     happened. `source` is 'manual' for the same reason.
+   *   - nothing is relabelled. The pairs stay on the same variant, so the existing
+   *     barcode still describes them — unlike `reassign`, this needs no reprint.
+   *
+   * `cost_is_estimated` IS copied, so pairs added to a guessed box stay guessed and
+   * heal with the rest of it when a real invoice arrives.
+   */
+  async setQuantity({ variant_id, store_id, quantity, reason }) {
+    return db.transaction(async (trx) => {
+      const variant = await trx('product_variants').where('id', variant_id).first();
+      if (!variant) throw new AppError('Product variant not found', 404);
+
+      // Newest first, and locked: the count that is read is the count that is changed.
+      const current = await trx('inventory_items')
+        .where({ variant_id, store_id, status: 'in_stock' })
+        .orderBy([{ column: 'created_at', order: 'desc' }, { column: 'id', order: 'desc' }])
+        .forUpdate();
+
+      const from = current.length;
+      const to = Number(quantity);
+
+      if (!Number.isInteger(to) || to < 0) {
+        throw new AppError('The new quantity has to be a whole number, zero or more.', 400);
+      }
+      if (to === from) {
+        throw new AppError(`There are already ${from} pair(s) of that in stock here.`, 400);
+      }
+
+      if (to < from) {
+        const items = current.slice(0, from - to);
+        const ids = items.map((i) => i.id);
+        await this._assertNoHistory(trx, ids);
+
+        const value = items.reduce((s, i) => s + (parseFloat(i.cost) || 0), 0);
+        const fromPurchase = items.filter((i) => i.invoice_box_id).length;
+        await trx('inventory_items').whereIn('id', ids).del();
+
+        return {
+          from,
+          to,
+          removed: items.length,
+          added: 0,
+          // The money leaving the stock valuation, so the log says what it was worth
+          // rather than only how many there were.
+          removed_value: Math.round(value * 100) / 100,
+          from_purchase: fromPurchase,
+          variant_id,
+          store_id,
+          sku: variant.sku,
+          reason: reason || null,
+        };
+      }
+
+      // More than there were: the pairs existed and were never keyed.
+      const template = current[0];
+      if (!template) {
+        throw new AppError(
+          'There are no pairs of that in stock here to take a cost from, so adding more '
+          + 'would be inventing one. Use Manual Entry, which asks what they cost.',
+          400,
+        );
+      }
+
+      const add = to - from;
+      const rows = [];
+      for (let i = 0; i < add; i += 1) {
+        rows.push({
+          id: generateUUID(),
+          variant_id,
+          store_id,
+          cost: template.cost,
+          cost_is_estimated: template.cost_is_estimated,
+          source: 'manual',
+          status: 'in_stock',
+          barcode: template.barcode || null,
+          notes: reason ? `Count corrected: ${reason}` : 'Count corrected',
+        });
+      }
+      await trx('inventory_items').insert(rows);
+
+      return {
+        from,
+        to,
+        added: add,
+        removed: 0,
+        // Said back, because it is the one thing the screen could not have known.
+        cost_each: template.cost === null || template.cost === undefined
+          ? null : Math.round(parseFloat(template.cost) * 100) / 100,
+        cost_is_estimated: !!template.cost_is_estimated,
+        variant_id,
+        store_id,
+        sku: variant.sku,
+        reason: reason || null,
       };
     });
   }

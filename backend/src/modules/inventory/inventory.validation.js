@@ -83,7 +83,23 @@ const removeStockSchema = Joi.object({
   reason: Joi.string().trim().min(3).max(500).required(),
 });
 
+/**
+ * Correcting a miscount. `quantity` is the number there should BE, not a delta, so
+ * zero is legal — "none of these are here" is a correction like any other — and the
+ * service decides from the current count whether that means adding or removing.
+ *
+ * A reason is required when removing but not when adding, and the service cannot ask
+ * for one conditionally through Joi without knowing the current count, so it is
+ * optional here and the screen insists where it matters.
+ */
+const setQuantitySchema = Joi.object({
+  variant_id: Joi.string().uuid().required(),
+  store_id: Joi.string().uuid().required(),
+  quantity: Joi.number().integer().min(0).max(100000).required(),
+  reason: Joi.string().trim().min(3).max(500).allow('', null),
+});
+
 module.exports = {
   inventoryQuerySchema, manualEntrySchema, markDamagedSchema, reassignSchema,
-  removeStockSchema,
+  removeStockSchema, setQuantitySchema,
 };

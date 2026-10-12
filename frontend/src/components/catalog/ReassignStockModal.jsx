@@ -8,21 +8,24 @@ import SizeValueInput from './SizeValueInput';
 import ColorThumb from './ColorThumb';
 
 /**
- * Correcting the colour or size that stock was booked under.
+ * Editing one row of stock: where it is booked, and how much of it there is.
  *
- * Stock gets entered wrong — a box of Navy booked in as Black, a size run typed one
- * row out. The only remedies used to be writing it off and re-entering it, which loses
- * the cost and the history, or leaving it wrong. This moves the physical pairs onto
- * the right variant and keeps everything else about them.
+ * Stock gets entered wrong in two different ways and this screen now answers both.
  *
- * Two things this screen has to say out loud, because neither is recoverable from the
- * result on its own:
+ *   WRONG VARIANT — a box of Navy booked in as Black, a size run typed one row out.
+ *   The physical pairs move onto the right variant and keep their cost, their invoice
+ *   box and their history. Only pairs IN STOCK move: a sold pair's sale line
+ *   photocopied its cost, so moving it would restate what was sold.
  *
- *   - only pairs IN STOCK move. A sold pair's sale line photocopied its cost, so
- *     moving it would restate what was sold. The count shown is the movable count.
- *   - every moved pair is still wearing a label for what it used to be. The barcode
- *     encodes colour and size, so until it is relabelled it scans as the old variant.
- *     Offered as a reprint the moment the move succeeds.
+ *   WRONG COUNT — twelve entered as twenty-one. Nothing moves; the count is corrected
+ *   where it stands. Fewer deletes the surplus, more creates the shortfall at the cost
+ *   of the pairs already there.
+ *
+ * ONE QUANTITY BOX, TWO MEANINGS, and that is the whole risk in this screen. When the
+ * colour or size has been changed it means "how many of them move"; when neither has,
+ * it means "how many there should be". Rather than leave anyone to infer which, the
+ * form states the consequence in a sentence before it will submit — so the thing being
+ * agreed to is read, not deduced. The button changes name for the same reason.
  */
 export default function ReassignStockModal({ row, onClose, onDone, onPrintLabels }) {
   const { t, locale } = useTranslation();
@@ -37,19 +40,81 @@ export default function ReassignStockModal({ row, onClose, onDone, onPrintLabels
   if (!row) return null;
 
   const available = Number(row.quantity) || 0;
-  const changed = (colorId && colorId !== row.product_color_id)
+  const movingVariant = (colorId && colorId !== row.product_color_id)
     || (size && String(size) !== String(row.size_eu));
+
+  const n = parseInt(qty, 10);
+  const hasNumber = Number.isFinite(n) && n >= 0;
+  const delta = hasNumber ? n - available : 0;
+
+  // Deleting pairs is the one branch with nothing to fall back on afterwards, so it is
+  // the one that insists on a reason — the same rule the Remove screen applies.
+  const deleting = !movingVariant && hasNumber && delta < 0;
+  const reasonOk = !deleting || reason.trim().length >= 3;
+
+  const valid = movingVariant
+    ? (hasNumber && n >= 1 && n <= available)
+    : (hasNumber && delta !== 0 && reasonOk);
+
+  /** What is about to happen, in words, before it happens. */
+  const preview = () => {
+    if (!hasNumber) return null;
+    if (movingVariant) {
+      if (n < 1 || n > available) return null;
+      const target = [
+        colorId ? (cat.colors || []).find((c) => c.id === colorId)?.color_name : null,
+        size && String(size) !== String(row.size_eu) ? String(size) : null,
+      ].filter(Boolean).join(' · ') || t('inventory.reassign');
+      const lines = [t('inventory.qty_preview_move', { count: n, target })];
+      if (n < available) lines.push(t('inventory.qty_preview_stay', { count: available - n }));
+      return lines.join(' ');
+    }
+    if (delta > 0) return t('inventory.qty_preview_add', { count: delta });
+    if (delta < 0) return t('inventory.qty_preview_remove', { count: -delta });
+    return null;
+  };
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!changed) { toast.error(t('inventory.reassign_nothing_changed')); return; }
-    const n = parseInt(qty, 10);
-    if (!Number.isFinite(n) || n < 1 || n > available) {
-      toast.error(t('inventory.reassign_bad_quantity', { max: available }));
+    if (!hasNumber) { toast.error(t('inventory.reassign_bad_quantity', { max: available })); return; }
+
+    if (movingVariant) {
+      if (n < 1 || n > available) {
+        toast.error(t('inventory.reassign_bad_quantity', { max: available }));
+        return;
+      }
+    } else if (delta === 0) {
+      toast.error(t('inventory.qty_nothing_changed'));
+      return;
+    } else if (!reasonOk) {
+      toast.error(t('inventory.qty_reason_required'));
       return;
     }
+
     try {
       setSaving(true);
+
+      if (!movingVariant) {
+        // A correction of the count where it stands. Nothing is relabelled, because
+        // the pairs stay on the variant their barcode already describes.
+        const { data } = await inventoryAPI.setQuantity({
+          variant_id: row.variant_id,
+          store_id: row.store_id,
+          quantity: n,
+          reason: reason || null,
+        });
+        const res = data.data;
+        toast.success(res.added
+          ? t('inventory.qty_done_added', { count: res.added, total: res.to })
+          : t('inventory.qty_done_removed', { count: res.removed, total: res.to }));
+        if (res.from_purchase) {
+          toast(t('inventory.remove_invoice_note', { count: res.from_purchase }), { duration: 8000 });
+        }
+        onDone?.(res);
+        onClose();
+        return;
+      }
+
       const body = {
         variant_id: row.variant_id,
         store_id: row.store_id,
@@ -78,10 +143,12 @@ export default function ReassignStockModal({ row, onClose, onDone, onPrintLabels
     ...(cat.colors || []).map((c) => ({ value: c.id, label: c.color_name, color: c })),
   ];
 
+  const previewText = preview();
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content card" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ marginBottom: 'var(--spacing-xs)' }}>{t('inventory.reassign_title')}</h2>
+        <h2 style={{ marginBottom: 'var(--spacing-xs)' }}>{t('inventory.edit_stock_title')}</h2>
         <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--spacing-lg)', fontSize: '0.9em' }}>
           {row.product_name} · {row.sku} · {row.store_name}
         </p>
@@ -128,35 +195,64 @@ export default function ReassignStockModal({ row, onClose, onDone, onPrintLabels
 
           <div className="form-group">
             <label className="form-label">
-              {t('inventory.reassign_how_many', { max: available })}
+              {movingVariant
+                ? t('inventory.reassign_how_many', { max: available })
+                : t('inventory.qty_label_count', { max: available })}
             </label>
-            <input className="form-input" type="number" min="1" max={available} required
+            <input className="form-input" type="number" min={movingVariant ? 1 : 0}
+              max={movingVariant ? available : undefined} required
               data-testid="reassign-quantity"
               value={qty} onChange={(e) => setQty(e.target.value)} />
-            {/* Said plainly: this count is what CAN move, not what exists. */}
-            <div className="form-hint">{t('inventory.reassign_in_stock_only')}</div>
+            {/* Said plainly: when moving, this count is what CAN move, not what exists. */}
+            <div className="form-hint">
+              {movingVariant ? t('inventory.reassign_in_stock_only') : t('inventory.qty_count_hint')}
+            </div>
           </div>
 
+          {/* The consequence, before it is agreed to. */}
+          {previewText && (
+            <div className="form-hint" data-testid="reassign-preview"
+              style={{
+                background: 'var(--color-bg-secondary)',
+                borderInlineStart: '3px solid var(--color-primary)',
+                padding: 'var(--spacing-sm)',
+                marginBottom: 'var(--spacing-sm)',
+                color: 'var(--color-text)',
+              }}>
+              {previewText}
+            </div>
+          )}
+
           <div className="form-group">
-            <label className="form-label">{t('common.notes')}</label>
+            <label className="form-label">
+              {t('common.notes')}{deleting ? ' *' : ''}
+            </label>
             <input className="form-input" value={reason} data-testid="reassign-reason"
               onChange={(e) => setReason(e.target.value)}
               placeholder={t('inventory.reassign_reason_hint')} />
+            {deleting && (
+              <div className="form-hint">{t('inventory.remove_reason_why')}</div>
+            )}
           </div>
 
-          {/* The one consequence that leaves the screen and lands on a shelf. */}
-          <div className="form-hint" data-testid="reassign-label-warning"
-            style={{ color: 'var(--color-warning, var(--color-danger))', marginBottom: 'var(--spacing-sm)' }}>
-            {t('inventory.reassign_label_warning')}
-          </div>
+          {/* The one consequence that leaves the screen and lands on a shelf. Only a
+              MOVE invalidates a label: a count correction leaves the pairs on the
+              variant their barcode already describes. */}
+          {movingVariant && (
+            <div className="form-hint" data-testid="reassign-label-warning"
+              style={{ color: 'var(--color-warning, var(--color-danger))', marginBottom: 'var(--spacing-sm)' }}>
+              {t('inventory.reassign_label_warning')}
+            </div>
+          )}
 
           <div className="form-actions">
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               {t('common.cancel')}
             </button>
-            <button type="submit" className="btn btn-primary" disabled={saving || !changed}
-              data-testid="reassign-save">
-              {saving ? t('common.loading') : t('inventory.reassign_move')}
+            <button type="submit" className={`btn ${deleting ? 'btn-danger' : 'btn-primary'}`}
+              disabled={saving || !valid} data-testid="reassign-save">
+              {saving ? t('common.loading')
+                : movingVariant ? t('inventory.reassign_move') : t('inventory.qty_save')}
             </button>
           </div>
         </form>

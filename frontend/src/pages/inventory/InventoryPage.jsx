@@ -35,7 +35,7 @@ const InventoryTreeSizeRow = ({ sizeRow, onReassign, onRemove }) => {
       <span style={{ display: 'inline-flex', gap: 6 }}>
         {onReassign && (
           <button className="btn btn-sm btn-secondary" style={{ padding: '0 6px' }}
-            title={t('inventory.reassign')} data-testid={`inv-reassign-${sizeRow.variant_id}`}
+            title={t('inventory.edit_stock')} data-testid={`inv-reassign-${sizeRow.variant_id}`}
             onClick={(e) => { e.stopPropagation(); onReassign(sizeRow); }}>
             ✎
           </button>

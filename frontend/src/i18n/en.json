@@ -500,7 +500,20 @@
     "remove_warning": "This deletes the pairs outright and cannot be undone. Use it only for stock that was never really there. If the pairs existed and have gone missing or been damaged, write them off instead — that keeps what happened to them.",
     "remove_confirm": "Remove {count} pair(s)",
     "remove_done": "Removed {count} pair(s)",
-    "remove_invoice_note": "{count} of those were received on a purchase invoice. That invoice still records what was ordered and paid for — it has not been changed."
+    "remove_invoice_note": "{count} of those were received on a purchase invoice. That invoice still records what was ordered and paid for — it has not been changed.",
+    "edit_stock": "Edit stock",
+    "edit_stock_title": "Edit this stock",
+    "qty_label_count": "Quantity ({max} here now)",
+    "qty_count_hint": "The number there should be. Counts only pairs in stock — sold, damaged and lost pairs are not included and are not touched.",
+    "qty_preview_move": "{count} pair(s) will move to {target}.",
+    "qty_preview_stay": "{count} will stay where they are.",
+    "qty_preview_add": "{count} pair(s) will be added here, costed the same as the pairs already here.",
+    "qty_preview_remove": "{count} pair(s) will be deleted. This cannot be undone.",
+    "qty_save": "Save quantity",
+    "qty_nothing_changed": "Change the colour, the size, or the quantity first",
+    "qty_reason_required": "Say why, since pairs are being deleted",
+    "qty_done_added": "Added {count} pair(s) — {total} here now",
+    "qty_done_removed": "Removed {count} pair(s) — {total} here now"
   },
   "transfers": {
     "title": "Transfers",

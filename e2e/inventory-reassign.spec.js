@@ -125,11 +125,6 @@ test('R1 · stock booked under the wrong colour can be corrected from the tree',
   await shot(page, 'inventory-before-fix');
   await edit.click();
 
-  // The dialog says the two things that are not recoverable from the result: that only
-  // in-stock pairs move, and that the printed labels are now wrong.
-  await expect(page.getByTestId('reassign-label-warning')).toBeVisible();
-  await expect(page.getByTestId('reassign-label-warning')).toContainText(/scan|reprint/i);
-
   // Pick the colour it should have been.
   //
   // Scoped to the dialog: the inventory page carries its own store and category
@@ -140,6 +135,13 @@ test('R1 · stock booked under the wrong colour can be corrected from the tree',
   const control = page.locator('.modal-content .react-select__control').first();
   await control.click();
   await page.locator('.react-select__option').filter({ hasText: 'Fix Navy' }).first().click();
+
+  // Now that a MOVE is pending, the dialog says the thing that is not recoverable from
+  // the result: the printed labels encode the old colour. It is raised here rather than
+  // on open because the same dialog also corrects a miscount, which moves nothing and
+  // invalidates no label — warning about it unconditionally would be crying wolf.
+  await expect(page.getByTestId('reassign-label-warning')).toBeVisible();
+  await expect(page.getByTestId('reassign-label-warning')).toContainText(/scan|reprint/i);
 
   await page.getByTestId('reassign-quantity').fill('2');
   await page.getByTestId('reassign-reason').fill('booked in as Black by mistake');
@@ -319,4 +321,95 @@ test('R6 · a pair with history is refused in words, not as a database error', a
     params: { store_id: ctx.storeId, variant_id: ctx.variantId, status: 'in_stock', limit: '50' },
   });
   expect((after.body.data || []).length).toBe((all.body.data || []).length);
+});
+
+test('R7 · the quantity alone can be corrected, without touching the colour or size', async ({ page }) => {
+  // THE COMPLAINT THIS EXISTS FOR: the edit dialog would not save a quantity change
+  // unless the colour or the size was changed too, so "there are six of these, not
+  // eight" — the correction people actually reach for — could not be made at all.
+  await page.goto('/');
+  const before = await countsByColor(page);
+  const startBlack = before['Fix Black'] || 0;
+  test.skip(startBlack < 1, 'no Fix Black stock left to correct');
+
+  await openTree(page);
+  await page.getByText('Fix Black', { exact: true }).first().click();
+  const edit = page.getByTestId(`inv-reassign-${ctx.variantId}`);
+  await expect(edit).toBeVisible({ timeout: 15_000 });
+  await edit.click();
+
+  const qty = page.getByTestId('reassign-quantity');
+  const current = parseInt(await qty.inputValue(), 10);
+  expect(current, 'the box should open showing what is there now').toBeGreaterThan(0);
+
+  // Add one, changing NOTHING else.
+  await qty.fill(String(current + 1));
+
+  // The dialog states what it is about to do rather than leaving it to be inferred —
+  // the quantity box means something different when the colour or size has changed.
+  const preview = page.getByTestId('reassign-preview');
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText(/added/i);
+
+  // No label warning: the pairs stay on the variant their barcode already describes.
+  await expect(page.getByTestId('reassign-label-warning')).toHaveCount(0);
+
+  const save = page.getByTestId('reassign-save');
+  await expect(save, 'a quantity-only change must be savable').toBeEnabled();
+  await save.click();
+
+  await expect.poll(
+    async () => (await countsByColor(page))['Fix Black'] || 0,
+    { timeout: 20_000, message: 'the added pair never appeared' },
+  ).toBe(startBlack + 1);
+});
+
+test('R8 · taking the quantity down insists on a reason, then deletes', async ({ page }) => {
+  // Going down destroys rows, so it asks why — the same rule the Remove dialog
+  // applies, since afterwards the activity log is the only record they were here.
+  await page.goto('/');
+  const before = await countsByColor(page);
+  const startBlack = before['Fix Black'] || 0;
+  test.skip(startBlack < 2, 'need at least two Fix Black pairs to take one away');
+
+  await openTree(page);
+  await page.getByText('Fix Black', { exact: true }).first().click();
+  await page.getByTestId(`inv-reassign-${ctx.variantId}`).click();
+
+  const qty = page.getByTestId('reassign-quantity');
+  const current = parseInt(await qty.inputValue(), 10);
+  await qty.fill(String(current - 1));
+
+  const preview = page.getByTestId('reassign-preview');
+  await expect(preview).toBeVisible();
+  await expect(preview, 'it must say the pairs are deleted, not moved')
+    .toContainText(/delete|cannot be undone/i);
+
+  const save = page.getByTestId('reassign-save');
+  await expect(save, 'deleting without saying why should be blocked').toBeDisabled();
+  await page.getByTestId('reassign-reason').fill('counted twice on intake');
+  await expect(save).toBeEnabled();
+  await save.click();
+
+  await expect.poll(
+    async () => (await countsByColor(page))['Fix Black'] || 0,
+    { timeout: 20_000, message: 'the pair was never removed' },
+  ).toBe(startBlack - 1);
+});
+
+test('R9 · changing nothing still cannot be saved', async ({ page }) => {
+  // The dialog opens pre-filled with the current quantity, so "no change" is its
+  // resting state and must not be a submittable one.
+  await page.goto('/');
+  const before = await countsByColor(page);
+  test.skip((before['Fix Black'] || 0) < 1, 'no Fix Black stock left');
+
+  await openTree(page);
+  await page.getByText('Fix Black', { exact: true }).first().click();
+  await page.getByTestId(`inv-reassign-${ctx.variantId}`).click();
+
+  await expect(page.getByTestId('reassign-save'),
+    'an untouched dialog should have nothing to save').toBeDisabled();
+  await expect(page.getByTestId('reassign-preview'),
+    'and nothing to announce').toHaveCount(0);
 });

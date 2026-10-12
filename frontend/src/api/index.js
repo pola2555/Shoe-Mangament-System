@@ -171,6 +171,10 @@ export const inventoryAPI = {
   // it removes a COUNT of interchangeable pairs at one branch rather than one
   // addressable row.
   remove: (data) => api.post('/inventory/remove', data),
+  // Correct a miscount. `quantity` is what there should BE, not a delta: the server
+  // compares it with the current count and either deletes the surplus or creates the
+  // shortfall at the cost of the pairs already there.
+  setQuantity: (data) => api.post('/inventory/quantity', data),
 };
 
 // Stock entered without a purchase invoice: opening stock, counts, write-offs.

@@ -467,6 +467,167 @@ async function stockOf(variantId, storeId) {
     return 'flagged as invoiced stock; the invoice stands';
   });
 
+  console.log('');
+  console.log('correcting a miscount (the quantity sent is what there should BE):');
+
+  await check('fewer deletes the surplus, newest first, and lands on the number', async () => {
+    const w = await world(store.id, { qty: 5 });
+    const res = await inventory.setQuantity({
+      variant_id: w.variants['40'].id, store_id: store.id, quantity: 2, reason: 'counted twice',
+    });
+    if (res.from !== 5 || res.to !== 2) throw new Error(`said ${res.from} -> ${res.to}`);
+    if (res.removed !== 3) throw new Error(`removed ${res.removed}`);
+    if (await stockOf(w.variants['40'].id, store.id) !== 2) throw new Error('the count is not 2');
+
+    // world() spaces created_at a day apart, so "newest first" is checkable: the two
+    // survivors must be the two OLDEST.
+    const left = await knex('inventory_items')
+      .where({ variant_id: w.variants['40'].id, store_id: store.id, status: 'in_stock' })
+      .orderBy('created_at');
+    const keptIds = left.map((r) => r.id).sort().join(',');
+    const oldestTwo = w.items.slice(0, 2).map((i) => i.id).sort().join(',');
+    if (keptIds !== oldestTwo) throw new Error('it did not take the newest');
+    return '5 -> 2, the three newest went';
+  });
+
+  await check('more creates the shortfall at the cost of the pairs already there', async () => {
+    const w = await world(store.id, { qty: 2, cost: 137.5 });
+    const res = await inventory.setQuantity({
+      variant_id: w.variants['40'].id, store_id: store.id, quantity: 6, reason: 'box of six, keyed two',
+    });
+    if (res.added !== 4) throw new Error(`added ${res.added}`);
+    if (res.to !== 6) throw new Error(`to ${res.to}`);
+    if (await stockOf(w.variants['40'].id, store.id) !== 6) throw new Error('the count is not 6');
+
+    const rows = await knex('inventory_items')
+      .where({ variant_id: w.variants['40'].id, store_id: store.id, status: 'in_stock' });
+    for (const r of rows) made.items.push(r.id);
+    // THE POINT: a guess never enters the cost basis. Every pair carries the same
+    // cost as the ones that were already counted.
+    if (!rows.every((r) => Number(r.cost) === 137.5)) {
+      throw new Error('the new pairs were costed differently: ' + rows.map((r) => r.cost).join(','));
+    }
+    if (Number(res.cost_each) !== 137.5) throw new Error('it did not say what it costed them at');
+    return '2 -> 6, all at 137.50';
+  });
+
+  await check('pairs added by a correction are NOT put on a purchase invoice', async () => {
+    const w = await world(store.id, { qty: 1 });
+    const box = await knex('purchase_invoice_boxes').first('id');
+    if (!box) return 'no purchase box in this database — skipped';
+    await knex('inventory_items').where('id', w.items[0].id).update({ invoice_box_id: box.id });
+
+    await inventory.setQuantity({
+      variant_id: w.variants['40'].id, store_id: store.id, quantity: 3, reason: 'under-counted',
+    });
+    const rows = await knex('inventory_items')
+      .where({ variant_id: w.variants['40'].id, store_id: store.id, status: 'in_stock' });
+    for (const r of rows) made.items.push(r.id);
+    const added = rows.filter((r) => !w.items.some((i) => i.id === r.id));
+    if (added.length !== 2) throw new Error(`expected 2 new rows, got ${added.length}`);
+    // An invoice records what was ordered and paid for. Adding to it would make it
+    // describe a delivery that never happened.
+    if (added.some((r) => r.invoice_box_id)) throw new Error('it attached them to the invoice');
+    if (!added.every((r) => r.source === 'manual')) throw new Error('they are not marked manual');
+    return 'the invoice still describes only what arrived';
+  });
+
+  await check('a guessed cost stays guessed on the pairs added beside it', async () => {
+    const w = await world(store.id, { qty: 1 });
+    await knex('inventory_items').where('id', w.items[0].id).update({ cost_is_estimated: true });
+    await inventory.setQuantity({
+      variant_id: w.variants['40'].id, store_id: store.id, quantity: 3, reason: 'miscount',
+    });
+    const rows = await knex('inventory_items')
+      .where({ variant_id: w.variants['40'].id, store_id: store.id, status: 'in_stock' });
+    for (const r of rows) made.items.push(r.id);
+    // Otherwise the next real invoice would heal some of the box and not the rest.
+    if (!rows.every((r) => r.cost_is_estimated)) throw new Error('the new pairs claim a known cost');
+    return 'all 3 still marked estimated';
+  });
+
+  await check('zero is a legal correction and clears the row', async () => {
+    const w = await world(store.id, { qty: 2 });
+    const res = await inventory.setQuantity({
+      variant_id: w.variants['40'].id, store_id: store.id, quantity: 0, reason: 'never arrived',
+    });
+    if (res.removed !== 2 || res.to !== 0) throw new Error(`${res.removed} removed, to ${res.to}`);
+    if (await stockOf(w.variants['40'].id, store.id) !== 0) throw new Error('stock remains');
+    return 'none of these are here';
+  });
+
+  await check('the same number is refused rather than logged as a change', async () => {
+    const w = await world(store.id, { qty: 3 });
+    let msg = null;
+    try {
+      await inventory.setQuantity({
+        variant_id: w.variants['40'].id, store_id: store.id, quantity: 3, reason: 'x',
+      });
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('it accepted a no-op');
+    if (!/already/i.test(msg)) throw new Error('unhelpful message: ' + msg);
+    if (await stockOf(w.variants['40'].id, store.id) !== 3) throw new Error('it changed something');
+    return msg.slice(0, 50);
+  });
+
+  await check('a pair with history cannot be un-counted', async () => {
+    // Same trap as removing: a VOIDED sale returns the pair to stock and keeps the
+    // sale line, so the pair is in stock AND still referenced.
+    const w = await world(store.id, { qty: 1 });
+    const sale = await sales.create({
+      store_id: store.id,
+      items: [{ id: w.items[0].id, sale_price: 500 }],
+      payments: [{ amount: 500, payment_method: 'cash' }],
+    }, admin);
+    made.sales.push(sale.id);
+    await sales.voidSale(sale.id, { reason: 'test' }, admin);
+
+    let msg = null;
+    try {
+      await inventory.setQuantity({
+        variant_id: w.variants['40'].id, store_id: store.id, quantity: 0, reason: 'oops',
+      });
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('a pair with a sale behind it was deleted by a count correction');
+    if (/constraint|violates|foreign key/i.test(msg)) throw new Error('it leaked a database error: ' + msg);
+    if (!/history/i.test(msg)) throw new Error('the message does not explain why: ' + msg);
+    if (await stockOf(w.variants['40'].id, store.id) !== 1) throw new Error('it deleted it anyway');
+    return 'refused, in words';
+  });
+
+  await check('adding onto nothing is refused rather than invented', async () => {
+    const w = await world(store.id, { qty: 1 });
+    // Empty the row, so there is no sibling to take a cost from.
+    await knex('inventory_items').where('id', w.items[0].id).del();
+    let msg = null;
+    try {
+      await inventory.setQuantity({
+        variant_id: w.variants['40'].id, store_id: store.id, quantity: 4, reason: 'found some',
+      });
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('it invented a cost out of nothing');
+    if (!/cost/i.test(msg)) throw new Error('the message does not say why: ' + msg);
+    if (await stockOf(w.variants['40'].id, store.id) !== 0) throw new Error('it created pairs anyway');
+    return msg.slice(0, 55) + '...';
+  });
+
+  await check('a correction never touches another branch or another size', async () => {
+    const w = await world(store.id, { qty: 2, sizes: ['40', '41'] });
+    // Give size 41 stock of its own.
+    for (let i = 0; i < 3; i++) {
+      const [row] = await knex('inventory_items').insert({
+        id: generateUUID(), variant_id: w.variants['41'].id, store_id: store.id,
+        cost: 100, source: 'manual', status: 'in_stock',
+      }).returning('*');
+      made.items.push(row.id);
+    }
+    await inventory.setQuantity({
+      variant_id: w.variants['40'].id, store_id: store.id, quantity: 1, reason: 'miscount',
+    });
+    if (await stockOf(w.variants['41'].id, store.id) !== 3) throw new Error('it took from the other size');
+    return 'size 41 untouched at 3';
+  });
+
   // ---------------------------------------------------------------- cleanup
   for (const id of made.sales) {
     await knex('sale_payments').where('sale_id', id).del();
