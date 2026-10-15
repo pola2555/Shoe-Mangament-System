@@ -576,7 +576,10 @@
     "duplicate_box": "Duplicate",
     "box_duplicated": "Box duplicated",
     "suggestion_applied": "Filled from the last box — edit anything you need to",
-    "delete_title": "Delete this invoice?"
+    "delete_title": "Delete this invoice?",
+    "box_cost": "Box price",
+    "per_item_derived": "Each (calculated)",
+    "each": "each"
   },
   "suppliers": {
     "title": "Suppliers",

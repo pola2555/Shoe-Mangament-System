@@ -10,11 +10,15 @@ const createPurchaseInvoiceSchema = Joi.object({
     Joi.object({
       product_id: Joi.string().uuid().allow(null),
       box_template_id: Joi.string().uuid().allow(null),
-      cost_per_item: Joi.number().precision(2).min(0).required(),
+      // A box is bought as a box, so `box_cost` is what gets typed and `cost_per_item`
+      // is derived from it. Either may arrive — older callers still send the unit cost —
+      // but ONE of them must, or the box records no money at all.
+      box_cost: Joi.number().precision(2).min(0).max(999999999),
+      cost_per_item: Joi.number().precision(4).min(0),
       total_items: Joi.number().integer().min(1).required(),
       destination_store_id: Joi.string().uuid().allow(null),
       notes: Joi.string().max(500).allow('', null),
-    })
+    }).or('box_cost', 'cost_per_item')
   ).min(0),
 });
 
@@ -28,16 +32,19 @@ const updatePurchaseInvoiceSchema = Joi.object({
 const addBoxSchema = Joi.object({
   product_id: Joi.string().uuid().allow(null),
   box_template_id: Joi.string().uuid().allow(null),
-  cost_per_item: Joi.number().precision(2).min(0).required(),
+  // See the note on the create-invoice boxes above: one of the two is required.
+  box_cost: Joi.number().precision(2).min(0).max(999999999),
+  cost_per_item: Joi.number().precision(4).min(0),
   total_items: Joi.number().integer().min(1).required(),
   destination_store_id: Joi.string().uuid().allow(null),
   notes: Joi.string().max(500).allow('', null),
-});
+}).or('box_cost', 'cost_per_item');
 
 const updateBoxSchema = Joi.object({
   product_id: Joi.string().uuid().allow(null),
   destination_store_id: Joi.string().uuid().allow(null),
-  cost_per_item: Joi.number().precision(2).min(0),
+  box_cost: Joi.number().precision(2).min(0).max(999999999),
+  cost_per_item: Joi.number().precision(4).min(0),
   total_items: Joi.number().integer().min(1),
   notes: Joi.string().max(500).allow('', null),
 }).min(1);

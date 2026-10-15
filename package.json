@@ -22,7 +22,8 @@
     "check:money": "node backend/scripts/check-expenses-loans.js",
     "check:http": "node backend/scripts/check-expenses-loans-http.js",
     "check:sales": "node backend/scripts/check-sales.js",
-    "check:i18n": "node frontend/scripts/check-i18n.js"
+    "check:i18n": "node frontend/scripts/check-i18n.js",
+    "check:box-cost": "node backend/scripts/check-box-cost.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

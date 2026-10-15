@@ -576,7 +576,10 @@
     "duplicate_box": "نسخ",
     "box_duplicated": "تم نسخ الصندوق",
     "suggestion_applied": "تم التعبئة من آخر صندوق — عدّل ما تشاء",
-    "delete_title": "حذف هذه الفاتورة؟"
+    "delete_title": "حذف هذه الفاتورة؟",
+    "box_cost": "سعر الصندوق",
+    "per_item_derived": "سعر القطعة (محسوب)",
+    "each": "للقطعة"
   },
   "suppliers": {
     "title": "الموردين",

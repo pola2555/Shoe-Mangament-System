@@ -133,7 +133,7 @@ const DELETE_TARGETS = [
   {
     match: /^\/api\/purchases\/boxes\/([^/]+)$/,
     table: 'purchase_invoice_boxes',
-    columns: ['id', 'invoice_id', 'product_id', 'cost_per_item', 'total_items',
+    columns: ['id', 'invoice_id', 'product_id', 'box_cost', 'cost_per_item', 'total_items',
       'destination_store_id', 'detail_status'],
     where: (m) => ({ id: m[1] }),
     entityType: 'box',

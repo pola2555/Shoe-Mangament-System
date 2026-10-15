@@ -8,6 +8,65 @@ const {
   categoryOfProduct, ensurePlaceholderColor, resolveVariantTarget, generateSku,
 } = require('../../utils/variantIdentity');
 const { healEstimatedCosts } = require('../../utils/costCorrection');
+const { splitEvenly } = require('../../utils/splitMoney');
+
+/**
+ * WHAT A BOX COST — one definition, used by everything that adds box money up.
+ *
+ * A box is bought as a box ("twelve pairs, 1000 EGP"), so `box_cost` is the figure of
+ * record and `cost_per_item` is derived from it. Boxes entered before that was true
+ * have no `box_cost`, and for them the old shape — items x unit cost — IS what the
+ * invoice said, so it stays the answer. Every total in this file goes through here,
+ * because two ways of adding up a box is how an invoice and its boxes start to
+ * disagree by piastres nobody can account for.
+ */
+function boxCostOf(box) {
+  if (box.box_cost !== null && box.box_cost !== undefined && box.box_cost !== '') {
+    return Number(box.box_cost) || 0;
+  }
+  return (Number(box.total_items) || 0) * (Number(box.cost_per_item) || 0);
+}
+
+/**
+ * The two figures a box carries, from whichever one was supplied.
+ *
+ * The screen sends `box_cost` (what was paid) and `total_items` (how many came). The
+ * unit cost is then arithmetic, kept to four places so 83.3333 is not immediately
+ * rounded into a lie. Older callers that send `cost_per_item` still work, and get a
+ * `box_cost` computed the other way round.
+ */
+function boxFigures(data, fallback = {}) {
+  const items = Number(
+    data.total_items !== undefined ? data.total_items : fallback.total_items,
+  ) || 0;
+
+  const given = (v) => v !== undefined && v !== null && v !== '';
+
+  // WHICH FIGURE WINS. A box price sent now is the answer. Failing that, a unit cost
+  // sent now is. Only if this edit names neither does the STORED box price hold — and
+  // it must, because "the box cost 1000, and there turned out to be 20 pairs in it"
+  // means 50 each, not a box that silently became worth 2000.
+  const cost = given(data.box_cost) ? Number(data.box_cost) || 0
+    : (given(data.cost_per_item) ? null
+      : (given(fallback.box_cost) ? Number(fallback.box_cost) || 0 : null));
+
+  if (cost !== null) {
+    return {
+      box_cost: Math.round(cost * 100) / 100,
+      cost_per_item: items > 0 ? Math.round((cost / items) * 10000) / 10000 : 0,
+      total_items: items,
+    };
+  }
+
+  const unit = Number(
+    given(data.cost_per_item) ? data.cost_per_item : fallback.cost_per_item,
+  ) || 0;
+  return {
+    box_cost: Math.round(items * unit * 100) / 100,
+    cost_per_item: unit,
+    total_items: items,
+  };
+}
 
 /**
  * Purchases service — Purchase invoices, boxes, box items, supplier payments.
@@ -131,13 +190,15 @@ class PurchasesService {
 
       if (boxes && boxes.length > 0) {
         for (const box of boxes) {
+          const figures = boxFigures(box);
           await trx('purchase_invoice_boxes').insert({
             id: generateUUID(),
             invoice_id: invoiceId,
             product_id: box.product_id || null,
             box_template_id: box.box_template_id || null,
-            cost_per_item: box.cost_per_item,
-            total_items: box.total_items,
+            box_cost: figures.box_cost,
+            cost_per_item: figures.cost_per_item,
+            total_items: figures.total_items,
             destination_store_id: box.destination_store_id || null,
             notes: box.notes || null,
             detail_status: box.product_id ? 'partial' : 'pending',
@@ -306,9 +367,11 @@ class PurchasesService {
     if (!invoice) throw new AppError('Invoice not found', 404);
 
     // Validate box total doesn't exceed invoice net limit
-    const newBoxCost = (Number(data.total_items) || 0) * (Number(data.cost_per_item) || 0);
-    const existingBoxes = await db('purchase_invoice_boxes').where('invoice_id', invoiceId).select('total_items', 'cost_per_item');
-    const existingTotal = existingBoxes.reduce((sum, b) => sum + ((Number(b.total_items) || 0) * (Number(b.cost_per_item) || 0)), 0);
+    const figures = boxFigures(data);
+    const newBoxCost = figures.box_cost;
+    const existingBoxes = await db('purchase_invoice_boxes').where('invoice_id', invoiceId)
+      .select('total_items', 'cost_per_item', 'box_cost');
+    const existingTotal = existingBoxes.reduce((sum, b) => sum + boxCostOf(b), 0);
 
     const invoiceGross = Number(invoice.total_amount);
     if (existingTotal + newBoxCost > invoiceGross) {
@@ -321,8 +384,9 @@ class PurchasesService {
         invoice_id: invoiceId,
         product_id: data.product_id || null,
         box_template_id: data.box_template_id || null,
-        cost_per_item: data.cost_per_item,
-        total_items: data.total_items,
+        box_cost: figures.box_cost,
+        cost_per_item: figures.cost_per_item,
+        total_items: figures.total_items,
         destination_store_id: data.destination_store_id || null,
         notes: data.notes || null,
         detail_status: data.product_id ? 'partial' : 'pending',
@@ -340,21 +404,25 @@ class PurchasesService {
     }
 
     // Validate box total doesn't exceed invoice limit
-    if (data.total_items !== undefined || data.cost_per_item !== undefined) {
+    const touchesMoney = data.total_items !== undefined
+      || data.cost_per_item !== undefined
+      || data.box_cost !== undefined;
+    // Recomputed from whichever figure was sent, merged over what is stored: an edit
+    // may send only the quantity, and the unit cost then has to follow the box price.
+    const figures = boxFigures(data, existing);
+
+    if (touchesMoney) {
       const invoice = await db('purchase_invoices').where('id', existing.invoice_id).first();
-      
-      const newTotalItems = data.total_items !== undefined ? Number(data.total_items) || 0 : Number(existing.total_items) || 0;
-      const newCostPerItem = data.cost_per_item !== undefined ? Number(data.cost_per_item) || 0 : Number(existing.cost_per_item) || 0;
-      const newBoxCost = newTotalItems * newCostPerItem;
-      const oldBoxCost = (Number(existing.total_items) || 0) * (Number(existing.cost_per_item) || 0);
+
+      const newBoxCost = figures.box_cost;
+      const oldBoxCost = boxCostOf(existing);
 
       if (newBoxCost > oldBoxCost) {
-        const allBoxes = await db('purchase_invoice_boxes').where('invoice_id', existing.invoice_id).select('id', 'total_items', 'cost_per_item');
+        const allBoxes = await db('purchase_invoice_boxes').where('invoice_id', existing.invoice_id)
+          .select('id', 'total_items', 'cost_per_item', 'box_cost');
         let existingTotal = 0;
         for (const b of allBoxes) {
-          if (b.id !== boxId) {
-            existingTotal += (Number(b.total_items) || 0) * (Number(b.cost_per_item) || 0);
-          }
+          if (b.id !== boxId) existingTotal += boxCostOf(b);
         }
         const invoiceGross = Number(invoice.total_amount);
         if (existingTotal + newBoxCost > invoiceGross) {
@@ -366,8 +434,13 @@ class PurchasesService {
     const safeBoxData = { updated_at: new Date() };
     if (data.product_id !== undefined) safeBoxData.product_id = data.product_id;
     if (data.destination_store_id !== undefined) safeBoxData.destination_store_id = data.destination_store_id;
-    if (data.total_items !== undefined) safeBoxData.total_items = data.total_items;
-    if (data.cost_per_item !== undefined) safeBoxData.cost_per_item = data.cost_per_item;
+    // The pair moves together or not at all: a quantity change with the box price held
+    // must restate the unit cost, or the box would claim a total it no longer has.
+    if (touchesMoney) {
+      safeBoxData.total_items = figures.total_items;
+      safeBoxData.cost_per_item = figures.cost_per_item;
+      safeBoxData.box_cost = figures.box_cost;
+    }
     if (data.color_id !== undefined) safeBoxData.color_id = data.color_id;
     if (data.label !== undefined) safeBoxData.label = data.label;
     if (data.detail_status !== undefined) safeBoxData.detail_status = data.detail_status;
@@ -414,11 +487,9 @@ class PurchasesService {
       const invoice = await trx('purchase_invoices').where('id', box.invoice_id).forUpdate().first();
       const boxes = await trx('purchase_invoice_boxes')
         .where('invoice_id', box.invoice_id)
-        .select('total_items', 'cost_per_item');
-      const existingTotal = boxes.reduce(
-        (sum, b) => sum + ((Number(b.total_items) || 0) * (Number(b.cost_per_item) || 0)), 0
-      );
-      const copyCost = (Number(box.total_items) || 0) * (Number(box.cost_per_item) || 0);
+        .select('total_items', 'cost_per_item', 'box_cost');
+      const existingTotal = boxes.reduce((sum, b) => sum + boxCostOf(b), 0);
+      const copyCost = boxCostOf(box);
       if (existingTotal + copyCost > Number(invoice.total_amount)) {
         throw new AppError(
           `Duplicating this box would take the invoice to ${existingTotal + copyCost}, over its total of ${invoice.total_amount}.`,
@@ -433,6 +504,7 @@ class PurchasesService {
           product_id: box.product_id,
           box_template_id: box.box_template_id,
           cost_per_item: box.cost_per_item,
+          box_cost: box.box_cost,
           total_items: box.total_items,
           destination_store_id: box.destination_store_id,
           notes: box.notes,
@@ -478,7 +550,7 @@ class PurchasesService {
       .leftJoin('stores', 'stores.id', 'b.destination_store_id')
       .where('b.product_id', productId)
       .select(
-        'b.id', 'b.cost_per_item', 'b.total_items', 'b.destination_store_id',
+        'b.id', 'b.cost_per_item', 'b.box_cost', 'b.total_items', 'b.destination_store_id',
         'b.notes', 'b.created_at',
         'inv.invoice_number', 'inv.invoice_date',
         'stores.name as destination_store_name'
@@ -637,19 +709,30 @@ class PurchasesService {
         // barcodes must pick one up too. assignForVariant is idempotent.
         await barcodesService.assignForVariant(variant.id, trx);
 
-        // Queue N inventory rows for this size — one row per physical shoe.
+        // Queue N inventory rows for this size — one row per physical shoe. The cost
+        // is filled in below, once the whole box is known: it is a share of what the
+        // box cost, not a figure each pair carries independently.
         for (let i = 0; i < item.quantity; i++) {
           inventoryRows.push({
             id: generateUUID(),
             variant_id: variant.id,
             store_id: box.destination_store_id,
-            cost: box.cost_per_item,
             invoice_box_id: box.id,
             source: 'purchase',
             status: 'in_stock',
           });
         }
       }
+
+      // WHAT EACH PAIR COST — a share of the box, not the box price divided and
+      // rounded. Twelve pairs for 1000 EGP is 83.333... each, and twelve times 83.33
+      // is 999.96: four piastres that were really spent would be missing from the
+      // stock valuation for as long as those pairs sat on the shelf. Distributing to
+      // the cent gives eight pairs at 83.33 and four at 83.34, which is exactly what
+      // was paid. `totalQty` is already asserted to equal `box.total_items` above, so
+      // the shares and the pairs always line up.
+      const shares = splitEvenly(boxCostOf(box), inventoryRows.length || 1);
+      inventoryRows.forEach((r, i) => { r.cost = shares[i]; });
 
       // Batched insert. Chunked because Postgres caps bind parameters at 65535 and
       // each row here carries 8 of them.
@@ -664,7 +747,9 @@ class PurchasesService {
       const invoice = await trx('purchase_invoices')
         .where('id', box.invoice_id)
         .first('invoice_number');
-      const unitCost = Number(box.cost_per_item) || 0;
+      // `net_price` is a 2dp display reference for setting selling prices, so the
+      // derived unit cost is rounded here rather than left for Postgres to truncate.
+      const unitCost = Math.round((Number(box.cost_per_item) || 0) * 100) / 100;
       const currentNetPrice = Number(productRecord.net_price) || 0;
 
       if (unitCost > 0 && unitCost !== currentNetPrice) {

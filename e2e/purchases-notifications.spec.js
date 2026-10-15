@@ -470,3 +470,53 @@ test('typing still filters the list now that options are pictures', async ({ pag
   expect(await filtered.count()).toBeLessThan(all);
   await expect(filtered.first()).toContainText(/crimson/i);
 });
+
+test('a box is priced as a box, and the per-pair cost is worked out for you', async ({ page }) => {
+  // THE COMPLAINT: the form asked for the price of one pair. A box of twelve for 1000
+  // is 83.333... each, so the only way to enter it was to round — and 83.33 x 12 is
+  // 999.96, four piastres that were really spent appearing on no total anywhere.
+  test.skip(!ctx.invoiceId, 'no supplier to raise an invoice against');
+
+  await page.goto(`/purchases/${ctx.invoiceId}`);
+  await page.getByRole('button', { name: /add box/i }).first().click();
+
+  const cost = page.getByTestId('box-cost');
+  await expect(cost, 'the form should ask for the box price').toBeVisible({ timeout: 20_000 });
+
+  await cost.fill('1000');
+  await page.getByTestId('box-quantity').fill('12');
+
+  // Worked out on screen, to enough places to be true. 83.33 here would be the very
+  // rounding this change exists to remove.
+  await expect(page.getByTestId('box-per-item')).toContainText('83.3333');
+  await shot(page, 'purchase-box-priced-as-a-box');
+
+  // And it follows the quantity, so the two figures can never disagree.
+  await page.getByTestId('box-quantity').fill('20');
+  await expect(page.getByTestId('box-per-item')).toContainText('50');
+});
+
+test('what the box cost is what the invoice counts', async ({ page }) => {
+  test.skip(!ctx.invoiceId, 'no supplier to raise an invoice against');
+  await page.goto('/');
+
+  // Entered the way the screen now enters it.
+  const box = await api(page, 'POST', `/purchases/invoices/${ctx.invoiceId}/boxes`, {
+    body: {
+      product_id: ctx.sockProductId, box_cost: 1000, total_items: 12,
+      destination_store_id: ctx.storeId,
+    },
+  });
+  expect(box.status, JSON.stringify(box.body)).toBe(201);
+  expect(Number(box.body.data.box_cost)).toBe(1000);
+  // Four places kept, so the derived figure is not immediately a lie.
+  expect(Number(box.body.data.cost_per_item)).toBeCloseTo(83.3333, 4);
+
+  await page.goto(`/purchases/${ctx.invoiceId}`);
+  const summary = page.getByTestId(`box-summary-${box.body.data.id}`);
+  await expect(summary).toBeVisible({ timeout: 20_000 });
+  // The box price leads, because that is the figure on the supplier's invoice.
+  await expect(summary).toContainText('1,000.00');
+
+  await api(page, 'DELETE', `/purchases/boxes/${box.body.data.id}`).catch(() => {});
+});

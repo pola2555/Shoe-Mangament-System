@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { purchasesAPI, productsAPI, storesAPI, suppliersAPI, boxTemplatesAPI } from '../../api';
 import { useAuth } from '../../context/AuthContext';
@@ -35,8 +35,9 @@ export default function PurchaseDetailPage() {
   // Box form
   const [showBoxForm, setShowBoxForm] = useState(false);
   const [boxForm, setBoxForm] = useState({
-    product_id: '', product_color_id: '', cost_per_item: '', total_items: '', destination_store_id: '', notes: '',
+    product_id: '', product_color_id: '', box_cost: '', total_items: '', destination_store_id: '', notes: '',
   });
+
 
   // Box items form
   const [editingBoxId, setEditingBoxId] = useState(null);
@@ -177,7 +178,9 @@ export default function PurchaseDetailPage() {
         ...boxForm,
         product_id: boxForm.product_id || null,
         destination_store_id: boxForm.destination_store_id || null,
-        cost_per_item: parseFloat(boxForm.cost_per_item),
+        // The box price is what was typed. `cost_per_item` is the server's to
+        // derive, so that one definition of it exists rather than two that drift.
+        box_cost: parseFloat(boxForm.box_cost),
         total_items: totalItemsEntered > 0 ? totalItemsEntered : parseInt(boxForm.total_items),
       };
 
@@ -204,7 +207,7 @@ export default function PurchaseDetailPage() {
 
       toast.success(t('common.success'));
       setShowBoxForm(false);
-      setBoxForm({ product_id: '', cost_per_item: '', total_items: '', destination_store_id: '', notes: '' });
+      setBoxForm({ product_id: '', box_cost: '', total_items: '', destination_store_id: '', notes: '' });
       setColorGroups([{ color_id: '', sizes: [{ size_eu: '', size_us: '', size_uk: '', size_cm: '', quantity: '' }] }]);
       fetchAll();
     } catch (err) {
@@ -227,6 +230,31 @@ export default function PurchaseDetailPage() {
   // --- Set Box Items & Details ---
   const [editBoxDetails, setEditBoxDetails] = useState({ product_id: '', destination_store_id: '' });
   const [colorGroups, setColorGroups] = useState([]);
+
+  /**
+   * What one pair comes to, shown while the box price is being typed.
+   *
+   * Four decimal places, because the point of entering the box price is that the
+   * division is usually not exact — 1000 across twelve is 83.3333, and showing 83.33
+   * here would be the very rounding this screen exists to avoid. The pairs themselves
+   * are costed by the server, which spreads the box price to the piastre so they add
+   * back up to what was paid.
+   *
+   * Null rather than zero when either figure is missing: "—" says nothing is known
+   * yet, where "0.00" would look like an answer.
+   */
+  const perItemPreview = useMemo(() => {
+    const cost = parseFloat(boxForm.box_cost);
+    const typed = colorGroups.reduce((acc, g) => (
+      acc + g.sizes.reduce((sum, sz) => sum + (parseInt(sz.quantity, 10) || 0), 0)
+    ), 0);
+    const qty = typed > 0 ? typed : parseInt(boxForm.total_items, 10);
+    if (!Number.isFinite(cost) || !Number.isFinite(qty) || qty <= 0) return null;
+    const per = cost / qty;
+    // Trailing zeros dropped: 50 reads better than 50.0000, and 83.3333 still shows
+    // every place that matters.
+    return String(Number(per.toFixed(4)));
+  }, [boxForm.box_cost, boxForm.total_items, colorGroups]);
 
   // Which colour the size-run picker is adding to.
   const [boxGenColor, setBoxGenColor] = useState('');
@@ -289,7 +317,8 @@ export default function PurchaseDetailPage() {
       if (prefillForm) {
         setBoxForm((f) => ({
           ...f,
-          cost_per_item: f.cost_per_item || String(parseFloat(last.cost_per_item)),
+          // The previous box's PRICE, not its unit cost — same figure the form asks for.
+          box_cost: f.box_cost || String(Number(last.box_cost ?? (Number(last.total_items || 0) * Number(last.cost_per_item || 0)))),
           total_items: f.total_items || String(last.total_items),
         }));
       }
@@ -552,7 +581,12 @@ export default function PurchaseDetailPage() {
   const boxStatusColors = { pending: 'badge-warning', partial: 'badge-info', complete: 'badge-success' };
   const owed = parseFloat(invoice.total_amount) - (parseFloat(invoice.discount_amount) || 0) - parseFloat(invoice.paid_amount);
   const invoiceGross = parseFloat(invoice.total_amount) || 0;
-  const boxesTotal = (invoice.boxes || []).reduce((sum, b) => sum + ((Number(b.total_items) || 0) * (Number(b.cost_per_item) || 0)), 0);
+  // One definition of what a box cost, matching the server's: the figure that was
+  // typed, falling back to the old shape for boxes entered before it existed.
+  const boxCostOf = (b) => (b.box_cost !== null && b.box_cost !== undefined && b.box_cost !== ''
+    ? Number(b.box_cost) || 0
+    : (Number(b.total_items) || 0) * (Number(b.cost_per_item) || 0));
+  const boxesTotal = (invoice.boxes || []).reduce((sum, b) => sum + boxCostOf(b), 0);
   const boxesFullyDocumented = invoiceGross > 0 && Math.abs(boxesTotal - invoiceGross) < 0.01;
 
   return (
@@ -724,18 +758,33 @@ export default function PurchaseDetailPage() {
                   </div>
                 </div>
                 <div className="form-row">
+                  {/* A box is bought as a box — "twelve pairs, 1000 EGP" — so that is
+                      what gets typed. The unit cost is arithmetic, and the screen does
+                      it rather than making somebody divide at the counter and round. */}
                   <div className="form-group">
-                    <label className="form-label">{t('products.cost_price')} ({t('common.currency')}) *</label>
-                    <input className="form-input" type="number" step="0.01" required value={boxForm.cost_per_item}
-                      onChange={(e) => setBoxForm({ ...boxForm, cost_per_item: e.target.value })} />
+                    <label className="form-label">{t('purchases.box_cost')} ({t('common.currency')}) *</label>
+                    <input className="form-input" type="number" step="0.01" min="0" required
+                      data-testid="box-cost" value={boxForm.box_cost}
+                      onChange={(e) => setBoxForm({ ...boxForm, box_cost: e.target.value })} />
                   </div>
                   <div className="form-group">
                     <label className="form-label">{t('common.quantity')} *</label>
-                    <input className="form-input" type="number" required value={boxForm.total_items}
+                    <input className="form-input" type="number" min="1" required
+                      data-testid="box-quantity" value={boxForm.total_items}
                       onChange={(e) => setBoxForm({ ...boxForm, total_items: e.target.value })} />
                   </div>
                   <div className="form-group">
-                    {/* Empty to align to grid */}
+                    <label className="form-label">{t('purchases.per_item_derived')}</label>
+                    {/* Read-only on purpose: it is the consequence of the two figures
+                        beside it, and a third editable box would invite them to
+                        disagree. Shown to four places because 83.3333 rounded to 83.33
+                        is the error this whole change exists to stop. */}
+                    <div className="form-input" data-testid="box-per-item"
+                      style={{ display: 'flex', alignItems: 'center', background: 'var(--color-bg-secondary)' }}>
+                      {perItemPreview === null
+                        ? <span style={{ color: 'var(--color-text-secondary)' }}>—</span>
+                        : <strong>{perItemPreview} {t('common.currency')}</strong>}
+                    </div>
                   </div>
                 </div>
                 <div className="form-actions">
@@ -761,7 +810,18 @@ export default function PurchaseDetailPage() {
                   </div>
                   <div style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-sm)', display: 'grid', gap: 4 }}>
                     <div>{t('products.title')}: <strong>{box.product_name ? `${box.product_code} — ${box.product_name}` : t('common.none')}</strong></div>
-                    <div>{t('common.items')}: <strong>{box.total_items}</strong> × {parseFloat(box.cost_per_item).toLocaleString()} {t('common.currency')}</div>
+                    {/* The box price leads, because that is the figure on the supplier's
+                        invoice and the one somebody will check against it. The unit cost
+                        follows as the derived detail it now is. */}
+                    <div data-testid={`box-summary-${box.id}`}>
+                      <strong>{boxCostOf(box).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {t('common.currency')}</strong>
+                      {' · '}{box.total_items} {t('common.items')}
+                      {Number(box.total_items) > 0 && (
+                        <span style={{ color: 'var(--color-text-secondary)' }}>
+                          {' · '}{Number((boxCostOf(box) / Number(box.total_items)).toFixed(4))} {t('common.currency')}/{t('purchases.each')}
+                        </span>
+                      )}
+                    </div>
                     <div>{t('stores.title')}: <strong>{box.store_name || t('common.none')}</strong></div>
                   </div>
 

@@ -29,7 +29,8 @@
     "backup:db": "node scripts/backup-db.js",
     "check:backup": "node scripts/check-backup.js",
     "check:dealers": "node scripts/check-dealers.js",
-    "check:reassign": "node scripts/check-reassign.js"
+    "check:reassign": "node scripts/check-reassign.js",
+    "check:box-cost": "node scripts/check-box-cost.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1018.0",
