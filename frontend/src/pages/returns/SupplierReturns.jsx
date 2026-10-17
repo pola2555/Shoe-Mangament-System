@@ -5,6 +5,7 @@ import { suppliersAPI, inventoryAPI, returnsAPI } from '../../api';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import { useTranslation } from '../../i18n/i18nContext';
 import { HiOutlineMagnifyingGlass, HiOutlineArrowUturnLeft } from 'react-icons/hi2';
+import SecretCost from '../../components/common/SecretCost';
 
 export default function SupplierReturns() {
   const { t, locale } = useTranslation();
@@ -208,7 +209,7 @@ export default function SupplierReturns() {
                         {!item.color_is_placeholder && item.hex_code && <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
                         {formatColor(item) || '—'}</span></td>
                       <td>{formatSize(item, locale)}</td>
-                      <td>{parseFloat(item.cost).toLocaleString()} {t('common.currency')}</td>
+                      <td><SecretCost>{parseFloat(item.cost).toLocaleString()} {t('common.currency')}</SecretCost></td>
                       <td>{new Date(item.created_at).toLocaleDateString()}</td>
                     </tr>
                   ))}

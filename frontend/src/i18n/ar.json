@@ -452,7 +452,11 @@
     "size_generic": "المقاس",
     "already_exists": "موجود بالفعل",
     "select_all_sizes": "اختيار كل المقاسات",
-    "no_image": "لا توجد صورة"
+    "no_image": "لا توجد صورة",
+    "show_costs": "إظهار التكلفة",
+    "costs_shown": "التكلفة ظاهرة",
+    "costs_hidden": "التكلفة مخفية",
+    "hold_to_reveal": "اضغط مطولاً للإظهار"
   },
   "inventory": {
     "title": "المخزون",

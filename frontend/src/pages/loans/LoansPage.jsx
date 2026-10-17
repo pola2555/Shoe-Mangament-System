@@ -498,7 +498,7 @@ export default function LoansPage() {
                         {canWrite && (
                           <label className="btn btn-sm btn-secondary" style={{ marginInlineStart: 6, cursor: 'pointer' }}>
                             {uploadingFor === p.id ? '…' : '+'}
-                            <input type="file" accept="image/*" capture="environment" hidden
+                            <input type="file" accept="image/*" hidden
                               onChange={(e) => uploadProof(p.id, e.target.files?.[0])} />
                           </label>
                         )}

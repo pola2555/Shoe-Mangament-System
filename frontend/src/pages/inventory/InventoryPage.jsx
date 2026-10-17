@@ -9,6 +9,8 @@ import ReassignStockModal from '../../components/catalog/ReassignStockModal';
 import RemoveStockModal from '../../components/catalog/RemoveStockModal';
 import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
+import SecretCost from '../../components/common/SecretCost';
+import CostRevealToggle from '../../components/common/CostRevealToggle';
 
 const PrintLabelsModal = lazy(() => import('../../components/barcode/PrintLabelsModal'));
 
@@ -25,7 +27,7 @@ const InventoryTreeSizeRow = ({ sizeRow, onReassign, onRemove }) => {
     <td style={{ paddingInlineStart: '5.5rem', color: 'var(--color-text-secondary)' }}>{formatSize(sizeRow, locale)}</td>
     <td style={{ color: 'var(--color-text-muted)', fontSize: '0.9em' }}>{sizeRow.sku}</td>
     <td>{sizeRow.store_name}</td>
-    <td>{parseFloat(sizeRow.avg_cost).toFixed(2)} {t('common.currency')}</td>
+    <td><SecretCost data-testid={`inv-cost-${sizeRow.variant_id}`}>{parseFloat(sizeRow.avg_cost).toFixed(2)} {t('common.currency')}</SecretCost></td>
     <td><strong>{sizeRow.quantity}</strong></td>
     <td>
       {/* Correcting stock booked under the wrong colour or size. On the SIZE row
@@ -612,6 +614,7 @@ export default function InventoryPage() {
       <div className="page-header">
         <h1 className="page-title">{t('inventory.title')}</h1>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+          <CostRevealToggle />
           <button
             className="btn btn-secondary"
             onClick={() => openLabels(allShownVariantIds(), t('inventory.title'))}
@@ -783,7 +786,7 @@ export default function InventoryPage() {
                     <td>{formatColor(item) || '—'}</td>
                     <td>{formatSize(item, locale) || '—'}</td>
                     <td>{item.store_name}</td>
-                    <td>{parseFloat(item.cost).toFixed(2)} {t('common.currency')}</td>
+                    <td><SecretCost>{parseFloat(item.cost).toFixed(2)} {t('common.currency')}</SecretCost></td>
                     <td><span className={`badge ${item.source === 'purchase' ? 'badge-info' : 'badge-neutral'}`}>{item.source}</span></td>
                     <td><span className={`badge ${item.status === 'in_stock' ? 'badge-success' : item.status === 'sold' ? 'badge-neutral' : 'badge-danger'}`}>{item.status}</span></td>
                   </tr>

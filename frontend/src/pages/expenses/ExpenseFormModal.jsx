@@ -194,7 +194,7 @@ export default function ExpenseFormModal({ expense, categories, stores, onClose,
                   </span>
                 )}
               </div>
-              <input ref={fileRef} type="file" accept="image/*" capture="environment"
+              <input ref={fileRef} type="file" accept="image/*"
                 data-testid="expense-receipt-input" style={{ marginTop: 8 }}
                 disabled={uploading} onChange={(e) => upload(e.target.files?.[0])} />
             </div>

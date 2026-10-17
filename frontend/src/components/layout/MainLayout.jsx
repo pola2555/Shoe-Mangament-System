@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { HiOutlineBars3, HiOutlineXMark } from 'react-icons/hi2';
 import Sidebar from './Sidebar';
 import RouteErrorBoundary from '../common/RouteErrorBoundary';
+import { CostRevealProvider } from '../../context/CostRevealContext';
 import './MainLayout.css';
 
 export default function MainLayout() {
@@ -53,7 +54,11 @@ export default function MainLayout() {
         */}
         <RouteErrorBoundary key={location.pathname}>
           <Suspense fallback={<div className="loading-screen"><div className="spinner" /></div>}>
-            <Outlet />
+            {/* Inside the boundary, so a page that throws cannot leave costs
+                uncovered on whatever renders next. */}
+            <CostRevealProvider>
+              <Outlet />
+            </CostRevealProvider>
           </Suspense>
         </RouteErrorBoundary>
       </main>

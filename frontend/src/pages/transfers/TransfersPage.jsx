@@ -6,6 +6,8 @@ import { formatSize, formatColor } from '../../utils/variantFormat';
 import SearchableSelect from '../../components/common/SearchableSelect';
 import { useTranslation } from '../../i18n/i18nContext';
 import '../products/Products.css';
+import SecretCost from '../../components/common/SecretCost';
+import CostRevealToggle from '../../components/common/CostRevealToggle';
 
 export default function TransfersPage() {
   const [transfers, setTransfers] = useState([]);
@@ -154,6 +156,7 @@ export default function TransfersPage() {
     <div>
       <div className="page-header">
         <h1 className="page-title">{t('transfers.title')}</h1>
+        <CostRevealToggle />
         {canWrite && !showCreateForm && (
           <button className="btn btn-primary" onClick={() => setShowCreateForm(true)}>+ {t('transfers.create_transfer')}</button>
         )}
@@ -257,7 +260,7 @@ export default function TransfersPage() {
                               </span>
                             </td>
                             <td>{formatSize(item, locale)}</td>
-                            <td>{item.cost} {t('common.currency')}</td>
+                            <td><SecretCost>{item.cost} {t('common.currency')}</SecretCost></td>
                           </tr>
                         ))}
                       </tbody>

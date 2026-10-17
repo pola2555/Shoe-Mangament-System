@@ -9,6 +9,8 @@ import ClickableImage from '../../components/common/ClickableImage';
 import { useTranslation } from '../../i18n/i18nContext';
 import { localizedName } from '../../utils/variantFormat';
 import './Products.css';
+import SecretCost from '../../components/common/SecretCost';
+import CostRevealToggle from '../../components/common/CostRevealToggle';
 
 export default function ProductsListPage() {
   const [products, setProducts] = useState([]);
@@ -156,6 +158,7 @@ export default function ProductsListPage() {
       <div className="page-header">
         <h1 className="page-title">{t('products.title')}</h1>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
+          <CostRevealToggle />
           {/* Search */}
           <div className="search-box">
             <input className="form-input" placeholder={t('products.search_placeholder')} value={filters.search}
@@ -394,14 +397,16 @@ export default function ProductsListPage() {
                     <span className="product-card__price">{fmt(p.default_selling_price)} {t('common.currency')}</span>
                   )}
                   {p.net_price != null && (
-                    <span className="product-card__cost">{t('products.cost_price')}: {fmt(p.net_price)}</span>
+                    <span className="product-card__cost">{t('products.cost_price')}: <SecretCost data-testid={`product-cost-${p.id}`}>{fmt(p.net_price)}</SecretCost></span>
                   )}
                 </div>
 
                 {p.net_price != null && p.default_selling_price != null && parseFloat(p.default_selling_price) > 0 && (
                   <div className="product-card__margin">
                     {t('products.margin')}: <strong style={{ color: 'var(--color-success)' }}>
-                      {((parseFloat(p.default_selling_price) - parseFloat(p.net_price)) / parseFloat(p.default_selling_price) * 100).toFixed(0)}%
+                      {/* Covered with the cost: a margin beside the selling price
+                          gives the cost away just as surely as printing it. */}
+                      <SecretCost>{((parseFloat(p.default_selling_price) - parseFloat(p.net_price)) / parseFloat(p.default_selling_price) * 100).toFixed(0)}%</SecretCost>
                     </strong>
                   </div>
                 )}
@@ -446,7 +451,7 @@ export default function ProductsListPage() {
                   <td><strong>{p.product_code}</strong></td>
                   <td>{p.brand || '—'}</td>
                   <td>{p.model_name}</td>
-                  <td>{p.net_price != null ? `${fmt(p.net_price)} ${t('common.currency')}` : '—'}</td>
+                  <td><SecretCost data-testid={`product-cost-${p.id}`}>{p.net_price != null ? `${fmt(p.net_price)} ${t('common.currency')}` : '—'}</SecretCost></td>
                   <td>{p.default_selling_price != null ? `${fmt(p.default_selling_price)} ${t('common.currency')}` : '—'}</td>
                   <td>{p.min_selling_price != null ? fmt(p.min_selling_price) : '—'} / {p.max_selling_price != null ? fmt(p.max_selling_price) : '—'}</td>
                   <td><span className={`badge ${p.is_active ? 'badge-success' : 'badge-danger'}`}>{p.is_active ? t('common.active') : t('common.inactive')}</span></td>

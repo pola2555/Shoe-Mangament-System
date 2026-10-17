@@ -452,7 +452,11 @@
     "size_generic": "Size",
     "already_exists": "already there",
     "select_all_sizes": "Select all sizes",
-    "no_image": "No image"
+    "no_image": "No image",
+    "show_costs": "Show costs",
+    "costs_shown": "Costs shown",
+    "costs_hidden": "Costs hidden",
+    "hold_to_reveal": "Hold to reveal"
   },
   "inventory": {
     "title": "Inventory",

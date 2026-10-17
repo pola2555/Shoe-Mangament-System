@@ -9,6 +9,8 @@ import { useTranslation } from '../../i18n/i18nContext';
 import VariantMatrix from './VariantMatrix';
 import { formatSize, sizeValueLabel, localizedName } from '../../utils/variantFormat';
 import './Products.css';
+import SecretCost from '../../components/common/SecretCost';
+import CostRevealToggle from '../../components/common/CostRevealToggle';
 
 const PrintLabelsModal = lazy(() => import('../../components/barcode/PrintLabelsModal'));
 
@@ -60,8 +62,6 @@ export default function ProductDetailPage() {
   const [uploadColorId, setUploadColorId] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
-  const [revealNetPrice, setRevealNetPrice] = useState(false);
-  const netPriceTimerRef = useRef(null);
 
   // Edit Product Info
   const [showEditProduct, setShowEditProduct] = useState(false);
@@ -374,6 +374,7 @@ export default function ProductDetailPage() {
           >
             🏷 {t('barcode.print_labels')} — {t('common.all')}
           </button>
+          <span style={{ marginInlineStart: 8 }}><CostRevealToggle /></span>
           <p style={{ color: 'var(--color-text-secondary)' }}>{t('products.code')}: {product.product_code} &nbsp;•&nbsp;
             {t('products.sell')}: {product.default_selling_price ?? '—'} {t('common.currency')} &nbsp;•&nbsp;
             {canSeeBand
@@ -381,25 +382,11 @@ export default function ProductDetailPage() {
               : ''}
           </p>
           {product.net_price != null && (
-            <p
-              style={{
-                color: 'var(--color-text-secondary)',
-                userSelect: 'none',
-                WebkitUserSelect: 'none',
-                cursor: 'pointer',
-                display: 'inline-block',
-                marginTop: 4,
-              }}
-              onPointerDown={() => {
-                netPriceTimerRef.current = setTimeout(() => setRevealNetPrice(true), 1000);
-              }}
-              onPointerUp={() => { clearTimeout(netPriceTimerRef.current); setRevealNetPrice(false); }}
-              onPointerLeave={() => { clearTimeout(netPriceTimerRef.current); setRevealNetPrice(false); }}
-              onContextMenu={(e) => e.preventDefault()}
-            >
-              {t('products.net_price')}: <span style={{ filter: revealNetPrice ? 'none' : 'blur(8px)', transition: 'filter 0.2s' }}>
+            <p style={{ color: 'var(--color-text-secondary)', display: 'inline-block', marginTop: 4 }}>
+              {t('products.net_price')}:{' '}
+              <SecretCost data-testid="product-net-price">
                 {product.net_price} {t('common.currency')}
-              </span>
+              </SecretCost>
             </p>
           )}
         </div>
@@ -640,7 +627,7 @@ export default function ProductDetailPage() {
               ))}
             </div>
           )}
-          <input ref={fileInputRef} type="file" accept="image/*" capture="environment" hidden onChange={handleImageUpload} />
+          <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleImageUpload} />
         </div>
       )}
 
@@ -852,7 +839,7 @@ export default function ProductDetailPage() {
               {canWrite && <button className="btn btn-sm btn-secondary" onClick={handleEditProductClick}>✏️ {t('common.edit')}</button>}
             </div>
             <p style={{ color: 'var(--color-text-secondary)' }}>
-              {t('products.cost')}: <strong>{product.net_price ?? '—'} {t('common.currency')}</strong> &nbsp;|&nbsp;
+              {t('products.cost')}: <SecretCost data-testid="product-cost"><strong>{product.net_price ?? '—'} {t('common.currency')}</strong></SecretCost> &nbsp;|&nbsp;
               {t('products.sell')}: <strong>{product.default_selling_price ?? '—'} {t('common.currency')}</strong> &nbsp;|&nbsp;
               {canSeeBand && (
                 <>

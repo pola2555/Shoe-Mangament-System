@@ -9,6 +9,8 @@ import { useTranslation } from '../../i18n/i18nContext';
 import ReceiptModal from '../../components/sales/ReceiptModal';
 import Pagination from '../../components/common/Pagination';
 import '../products/Products.css';
+import SecretCost from '../../components/common/SecretCost';
+import CostRevealToggle from '../../components/common/CostRevealToggle';
 
 export default function SalesPage() {
   const [sales, setSales] = useState([]);
@@ -132,6 +134,7 @@ export default function SalesPage() {
       <div className="page-header">
         <h1 className="page-title">{t('sales.title')}</h1>
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center' }}>
+          <CostRevealToggle />
           <input className="form-input" data-testid="sales-search"
             placeholder={t('sales.search_placeholder')} value={filters.search}
             onChange={(e) => setFilter({ search: e.target.value })} style={{ width: 220 }} />
@@ -246,9 +249,11 @@ export default function SalesPage() {
                             <span className="color-swatch-sm" style={{ backgroundColor: item.hex_code }} />}
                           {formatColor(item) || '—'}</span></td>
                         <td>{formatSize(item, locale) || '—'}</td>
-                        <td>{fmt(item.cost_at_sale || item.cost)} {t('common.currency')}</td>
+                        <td><SecretCost>{fmt(item.cost_at_sale || item.cost)} {t('common.currency')}</SecretCost></td>
                         <td>{fmt(item.sale_price)} {t('common.currency')}</td>
-                        <td style={{ color: profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}>{fmt(profit)} {t('common.currency')}</td>
+                        {/* Covered with the cost: profit beside the unit price is
+                            the cost by subtraction. */}
+                        <td style={{ color: profit >= 0 ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 600 }}><SecretCost>{fmt(profit)} {t('common.currency')}</SecretCost></td>
                       </tr>
                     );
                   })}
