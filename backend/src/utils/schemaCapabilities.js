@@ -25,6 +25,7 @@ const OPTIONAL_COLUMNS = {
   'attached_images.thumb_url': 'attachedImageThumbs',
   'expense_recurring.anchor_day': 'recurringAnchorDay',
   'inventory_items.cost_is_estimated': 'estimatedCostTracking',
+  'sale_items.floor_waived': 'floorWaiverTracking',
 };
 
 async function probe() {

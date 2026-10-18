@@ -280,7 +280,11 @@
     "approved_discount": "خصم معتمد ({number})",
     "selling_code": "كود البيع الخاص بك",
     "selling_code_hint": "هذا الفرع يسأل عن من قام بالبيع.",
-    "failed_to_load_variants": "تعذر تحميل متغيرات هذا المنتج"
+    "failed_to_load_variants": "تعذر تحميل متغيرات هذا المنتج",
+    "below_floor_warning": "أقل من الحد الأدنى {min} {currency} بمقدار {under} {currency} — سيُطلب منك التأكيد.",
+    "below_floor_line": "{under} {currency} أقل من الحد الأدنى",
+    "below_floor_confirm": "هذه العملية أقل من الحد الأدنى للسعر في هذه البنود:",
+    "below_floor_recorded": "يُسجَّل البيع أقل من الحد الأدنى مع العملية. هل تريد المتابعة؟"
   },
   "sales": {
     "title": "سجل المبيعات",

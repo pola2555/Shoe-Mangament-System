@@ -280,7 +280,11 @@
     "approved_discount": "Approved discount ({number})",
     "selling_code": "Your selling code",
     "selling_code_hint": "This branch asks who made the sale.",
-    "failed_to_load_variants": "Could not load this product's variants"
+    "failed_to_load_variants": "Could not load this product's variants",
+    "below_floor_warning": "Below the {min} {currency} minimum by {under} {currency} — you will be asked to confirm.",
+    "below_floor_line": "{under} {currency} under the minimum",
+    "below_floor_confirm": "This sale goes below the minimum price on these lines:",
+    "below_floor_recorded": "Selling under the minimum is recorded against the sale. Continue?"
   },
   "sales": {
     "title": "Sales History",

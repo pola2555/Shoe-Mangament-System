@@ -133,6 +133,38 @@ test.beforeAll(async ({ browser }) => {
     const colours = (full.body?.data?.colors || []).filter((c) => !c.is_placeholder);
     if (colours.length >= 2) { ctx.multiId = r.id; ctx.multiCode = r.product_code; break; }
   }
+
+  // BUILD ONE RATHER THAN HOPE FOR ONE.
+  //
+  // This used to search the first 25 products and fail the run outright when none of
+  // them had two colours — which is a property of whatever happens to be in the
+  // database that day, not of the code under test. It duly broke on a database that
+  // had accumulated single-colour fixtures from other suites, reporting "no product
+  // has two colours" as though the app were at fault.
+  //
+  // Failing loudly was right (a test that silently skips is not a passing test); the
+  // mistake was depending on someone else's data at all.
+  if (!ctx.multiId) {
+    const cats = await api(page, 'GET', '/product-categories');
+    const shoes = (cats.body.data || []).find((c) => c.code === 'shoes');
+    const made = await api(page, 'POST', '/products', {
+      body: {
+        product_code: `E2E-MOBILE-${Date.now()}`,
+        model_name: 'mobile entry chips',
+        category_id: shoes.id,
+        default_selling_price: 300,
+      },
+    });
+    if (made.status === 201) {
+      const pid = made.body.data.id;
+      for (const name of ['Chip Black', 'Chip Navy']) {
+        await api(page, 'POST', `/products/${pid}/colors`, { body: { color_name: name } });
+      }
+      ctx.multiId = pid;
+      ctx.multiCode = made.body.data.product_code;
+    }
+  }
+
   await page.close();
 });
 

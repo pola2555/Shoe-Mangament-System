@@ -415,6 +415,19 @@ export default function POSPage() {
 
   const handleCheckout = async (paymentDetails) => {
     if (!selectedStore || cart.length === 0) return;
+
+    // ASKED ONCE, HERE, rather than per keystroke. Going under the floor is a
+    // deliberate decision about this sale, and the moment to confirm a decision is
+    // when it is about to become real — not while the number is still being typed,
+    // which would fire on every digit of "2" then "25" then "250".
+    if (linesBelowFloor.length) {
+      const lines = linesBelowFloor
+        .map(({ item, under }) => `  • ${item.product_name || item.sku}: ${t('pos.below_floor_line', { under, currency: t('common.currency') })}`)
+        .join('\n');
+      const ok = window.confirm(`${t('pos.below_floor_confirm')}\n\n${lines}\n\n${t('pos.below_floor_recorded')}`);
+      if (!ok) return;
+    }
+
     try {
       setCheckingOut(true);
       
@@ -532,11 +545,48 @@ export default function POSPage() {
     };
   };
 
+  /**
+   * May this person sell under the shop's own floor, having been asked?
+   *
+   * Administrators only, matching `canWaiveFloor` on the server, which is what
+   * actually decides. Narrow on purpose: `price_override` means "may choose the
+   * price" and the floor is what bounds that choice, so letting it waive the bound
+   * too would quietly remove the protection from every shop that granted it to a
+   * cashier.
+   */
+  const canWaiveFloor = user?.role_name === 'admin';
+
+  /** Under the floor, by how much — or null when it is not. */
+  const belowFloorBy = (item) => {
+    const price = parseFloat(item.sale_price);
+    if (isNaN(price)) return null;
+    const { min, max } = bandOf(item);
+    // An impossible band is a broken product, not a price decision, and is left to
+    // the message that says so.
+    if (min !== null && max !== null && min > max) return null;
+    if (min === null || price >= min) return null;
+    return Math.round((min - price) * 100) / 100;
+  };
+
+  /**
+   * Can this line be sold at all?
+   *
+   * Under the floor USED TO BE a flat no, for everybody — the Checkout button simply
+   * went dead, including for the owner, whose own floor it is. Clearing a slow line
+   * or matching a shop down the road then meant editing the product's minimum and
+   * editing it back, which moves the floor for every till and records nothing.
+   *
+   * So for an administrator it is no longer invalid, only an exception: allowed, said
+   * out loud on the line, and confirmed once before the sale goes through. Above the
+   * ceiling stays a flat no for everyone — that floor is the shop's own rule to set
+   * aside, where the ceiling is what the customer was told they would pay.
+   */
   const isValidPrice = (item) => {
     const price = parseFloat(item.sale_price);
     if (isNaN(price)) return false;
     const { min, max } = bandOf(item);
-    if (min !== null && price < min) return false;
+    if (min !== null && max !== null && min > max) return false;
+    if (min !== null && price < min && !canWaiveFloor) return false;
     if (max !== null && price > max) return false;
     return true;
   };
@@ -556,6 +606,9 @@ export default function POSPage() {
    */
   const priceProblem = (item) => {
     if (isValidPrice(item)) return null;
+    // An administrator under the floor is warned, not blocked; that wording lives in
+    // `floorWarning` so the two cannot contradict each other.
+    if (canWaiveFloor && belowFloorBy(item) !== null) return null;
     const price = parseFloat(item.sale_price);
     if (isNaN(price)) return t('pos.price_missing');
     const { min, max } = bandOf(item);
@@ -570,6 +623,20 @@ export default function POSPage() {
   };
 
   const isCartValid = cart.length > 0 && cart.every(isValidPrice);
+
+  /** Said on the line as it is typed, so the exception is never a surprise at the end. */
+  const floorWarning = (item) => {
+    if (!canWaiveFloor) return null;
+    const under = belowFloorBy(item);
+    if (under === null) return null;
+    const { min } = bandOf(item);
+    return t('pos.below_floor_warning', { min, under, currency: t('common.currency') });
+  };
+
+  /** Every line going under the floor, for the one confirmation before checkout. */
+  const linesBelowFloor = cart
+    .map((item, index) => ({ item, index, under: belowFloorBy(item) }))
+    .filter((x) => x.under !== null && canWaiveFloor);
 
   const handleQuickAddCustomer = async (e) => {
     e.preventDefault();
@@ -939,6 +1006,14 @@ export default function POSPage() {
                       {!isValid && !hidePrices && problem && (
                         <div className="pos-cart-item-error" data-testid={`pos-price-problem-${index}`}>
                           {problem}
+                        </div>
+                      )}
+                      {/* Allowed, but not silently: amber rather than red, because
+                          this is a decision being recorded, not a mistake being
+                          refused. */}
+                      {!hidePrices && floorWarning(item) && (
+                        <div className="pos-cart-item-warning" data-testid={`pos-below-floor-${index}`}>
+                          {floorWarning(item)}
                         </div>
                       )}
                     </div>

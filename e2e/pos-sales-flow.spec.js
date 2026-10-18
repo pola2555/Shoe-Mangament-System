@@ -358,8 +358,14 @@ test('the reason quotes the branch band that is actually enforced', async ({ pag
   // is judged against the BRANCH numbers — as it is on the server — but the message
   // used to print the catalogue ones, so it named a range the price was already
   // inside and gave no way to work out what was wrong.
+  //
+  // Checked ABOVE the branch ceiling. Below the branch FLOOR is no longer refused for
+  // an administrator — it is allowed, warned and recorded — so the refusal message
+  // this test exists for is raised by the ceiling now. The resolution being guarded
+  // (branch numbers, not catalogue) is the same either way; the half below the floor
+  // is covered by the test underneath.
   await seedCart(page, ctx.storeId, {
-    ...line, sale_price: 100,
+    ...line, sale_price: 400,
     min_selling_price: 50, max_selling_price: 500,
     store_min_selling_price: 200, store_max_selling_price: 300,
   });
@@ -367,7 +373,114 @@ test('the reason quotes the branch band that is actually enforced', async ({ pag
   const problem = page.getByTestId('pos-price-problem-0');
   await expect(problem).toBeVisible();
   const text = await problem.textContent();
-  expect(text).toMatch(/200/);
-  expect(text).toMatch(/300/);
-  expect(text).not.toMatch(/50|500/);
+  expect(text, 'it should name the branch ceiling').toMatch(/300/);
+  expect(text, 'and not the catalogue one the server does not enforce').not.toMatch(/500/);
+});
+
+test('the warning under the floor quotes the branch floor too', async ({ page }) => {
+  // The other half of the same resolution: an administrator under the branch floor is
+  // warned rather than refused, and that warning has to name the number actually in
+  // force — the branch's 200, not the catalogue's 50. Getting this wrong would tell
+  // somebody they were under a floor they were comfortably above.
+  await page.goto('/');
+  const inv = await api(page, 'GET', '/inventory', {
+    params: { store_id: ctx.storeId, product_id: ctx.productId, status: 'in_stock' },
+  });
+  const line = inv.body.data[0];
+
+  await seedCart(page, ctx.storeId, {
+    ...line, sale_price: 100,
+    min_selling_price: 50, max_selling_price: 500,
+    store_min_selling_price: 200, store_max_selling_price: 300,
+  });
+
+  // Allowed, not refused.
+  await expect(page.getByTestId('pos-price-problem-0')).toHaveCount(0);
+
+  const warning = page.getByTestId('pos-below-floor-0');
+  await expect(warning).toBeVisible();
+  const text = await warning.textContent();
+  expect(text, 'it should name the branch floor').toMatch(/200/);
+  expect(text, 'and the shortfall against it').toMatch(/100/);
+  expect(text, 'not the catalogue floor the server does not enforce').not.toMatch(/\b50\b/);
+});
+
+// ---------------------------------------------------------------- the price floor
+
+test('an admin may sell under the floor, but is warned and must confirm', async ({ page }) => {
+  // IT USED TO BE A FLAT NO. The Checkout button simply went dead — for the owner
+  // too, whose own floor it is — so clearing a slow line meant editing the product's
+  // minimum and editing it back, which moves the floor for every till and records
+  // nothing about why.
+  await page.goto('/');
+
+  const cats = await api(page, 'GET', '/product-categories');
+  const made = await api(page, 'POST', '/products', {
+    body: {
+      product_code: `${MARK}-FLOOR-${Date.now()}`, model_name: 'floor flow',
+      category_id: cats.body.data.find((c) => c.code === 'shoes').id,
+      default_selling_price: 300, net_price: 100, min_selling_price: 250,
+    },
+  });
+  expect(made.status, JSON.stringify(made.body)).toBe(201);
+  const pid = made.body.data.id;
+  const colour = await api(page, 'POST', `/products/${pid}/colors`, { body: { color_name: 'Floor Flow' } });
+  const variant = await api(page, 'POST', `/products/${pid}/variants`, {
+    body: { product_color_id: colour.body.data.id, size_eu: '43' },
+  });
+  await api(page, 'POST', '/inventory/manual', {
+    body: { variant_id: variant.body.data.id, store_id: ctx.storeId, cost: 100, quantity: 1 },
+  });
+
+  await page.goto('/pos');
+  const search = page.locator('.pos-search-input-wrap input[type="search"]');
+  await expect(search).toBeVisible({ timeout: 30_000 });
+  await search.fill(`${MARK}-FLOOR`);
+  await search.press('Enter');
+
+  const card = page.locator('.pos-product-card').first();
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await card.click();
+
+  // The card opens a size picker — "tap a size to add it to the cart" — so the cart
+  // line does not exist until a size is chosen.
+  await page.getByRole('button', { name: /EU 43/i }).first().click();
+  // The picker stays open so several sizes can be added in one go; it has to be shut
+  // before the cart behind it can be touched.
+  await page.locator('.modal-overlay, [class*="modal"]').locator('button', { hasText: /^\s*×?\s*$/ }).first()
+    .click({ timeout: 5000 }).catch(() => page.keyboard.press('Escape'));
+  await page.waitForTimeout(400);
+
+  const priceInput = page.locator('.pos-cart-item .price-input').first();
+  await expect(priceInput).toBeVisible({ timeout: 20_000 });
+
+  // Under the floor of 250.
+  await priceInput.fill('180');
+
+  // Said on the line as it is typed, not sprung at the end.
+  const warning = page.getByTestId('pos-below-floor-0');
+  await expect(warning, 'going under the floor should say so on the line').toBeVisible();
+  await expect(warning).toContainText('250');
+
+  // And NOT treated as an error: the sale is allowed, so Checkout stays alive. THIS
+  // IS THE REGRESSION — the button used to go dead right here.
+  await expect(page.getByTestId('pos-price-problem-0')).toHaveCount(0);
+  const checkout = page.locator('.pos-checkout-btn');
+  await expect(checkout, 'an admin under the floor must still be able to sell').toBeEnabled();
+  await shot(page, 'pos-below-floor-warned');
+
+  // Confirmed at the moment it becomes real — after the payment is entered, not on
+  // every keystroke of the price.
+  let asked = null;
+  page.on('dialog', async (d) => { asked = d.message(); await d.dismiss(); });
+  await checkout.click();
+  await page.getByTestId('pos-confirm-payment').click();
+  await expect.poll(() => asked, { timeout: 10_000, message: 'it never asked' }).toBeTruthy();
+  expect(asked).toMatch(/minimum/i);
+
+  // Dismissed means dismissed.
+  await page.waitForTimeout(600);
+  const sales = await api(page, 'GET', '/sales', { params: { limit: '10' } });
+  const sold = (sales.body.data || []).some((sale) => Math.abs(Number(sale.total_amount) - 180) < 0.01);
+  expect(sold, 'saying no to the confirmation still rang the sale up').toBe(false);
 });

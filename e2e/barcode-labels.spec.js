@@ -135,9 +135,21 @@ test('rendered label shows colour, the size, product code and a CODED price', as
 
   if (first.price != null && first.price > 0) {
     expect(text, 'the coded price must be present').toContain(first.price_code);
+
     // The whole point: the plain number must NOT appear.
-    expect(text, 'plain price must never be printed').not.toContain(String(Math.round(first.price)));
-    expect(text).not.toContain(first.price.toLocaleString());
+    //
+    // Searched in what is left AFTER the product code and the barcode are removed.
+    // Both are long digit strings that can contain the price by coincidence — this
+    // failed on product code "E2E-POS-1792364443004", whose timestamp happens to
+    // carry "300", for a label that was perfectly correct. A bare substring test
+    // over the whole label is a test of the clock.
+    const priceable = text
+      .split(first.product_code).join(' ')
+      .split(first.barcode || '\u0000').join(' ');
+
+    const plain = String(Math.round(first.price));
+    expect(priceable, `plain price "${plain}" must never be printed`).not.toContain(plain);
+    expect(priceable).not.toContain(first.price.toLocaleString());
   }
 
   await shot(page, 'labels-rendered-38x25', { clip: await label.boundingBox() });

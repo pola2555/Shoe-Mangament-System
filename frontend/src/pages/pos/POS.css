@@ -229,6 +229,18 @@
   color: var(--color-text-muted);
 }
 
+/* Allowed, but recorded. Amber rather than the error red beside it: this line WILL
+   sell, and colouring a permitted decision like a refusal teaches people to ignore
+   the colour that means refused. */
+.pos-cart-item-warning {
+  font-size: 0.7rem;
+  color: var(--color-warning, #b26a00);
+  font-weight: 600;
+  margin-top: 2px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .pos-cart-item-error {
   font-size: 0.7rem;
   color: var(--color-danger);

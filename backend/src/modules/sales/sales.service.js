@@ -25,6 +25,17 @@ function canOverridePrice(user) {
   return Boolean(user.permissions?.price_override);
 }
 
+/**
+ * May this person sell under the shop's own price floor?
+ *
+ * Administrators only, deliberately narrow — see the note at the check itself. This
+ * is about setting the shop's rule aside, not about choosing a price within it, which
+ * is `canOverridePrice` above.
+ */
+function canWaiveFloor(user) {
+  return Boolean(user) && user.role_name === 'admin';
+}
+
 function canApproveDiscount(user) {
   if (!user) return false;
   if (user.role_name === 'admin') return true;
@@ -440,7 +451,8 @@ class SalesService {
 
     const userId = user.id;
     const saleId = generateUUID();
-    const { estimatedCostTracking: trackEstimated } = await capabilities();
+    const { estimatedCostTracking: trackEstimated, floorWaiverTracking: trackFloor }
+      = await capabilities();
 
     // Who gets credited with the sale. Resolved BEFORE the transaction because it is a
     // bcrypt comparison — slow by design — and holding a stock lock open across it
@@ -493,6 +505,10 @@ class SalesService {
 
         let sellingPrice = defaultPrice;
 
+        // Non-null only when this line went under the floor; it holds the floor it
+        // went under. Reset per item, not per sale.
+        let floorWaived = null;
+
         if (reqItem.sale_price !== undefined && reqItem.sale_price !== null && reqItem.sale_price !== '') {
           sellingPrice = parseFloat(reqItem.sale_price);
           if (isNaN(sellingPrice) || sellingPrice < 0) {
@@ -537,8 +553,28 @@ class SalesService {
             );
           }
 
+          // UNDER THE FLOOR: refused for staff, allowed to an administrator, recorded
+          // either way it goes.
+          //
+          // The floor is the shop's own rule about what it will accept, so the person
+          // who owns the shop is exactly the person entitled to set it aside — to clear
+          // a slow line or match a shop down the road. Refusing them achieved nothing
+          // except sending them to edit the product's minimum and edit it back, which
+          // moves the floor for every till and leaves no trace of the decision.
+          //
+          // It is NOT extended to `price_override`. That permission means "may choose
+          // the price", and the floor is what bounds that choice; letting it also waive
+          // the bound would collapse the two into one and quietly remove the protection
+          // from every shop that has granted it to a cashier. An administrator can
+          // widen this if they want it; nobody can narrow it back once it has shipped
+          // wide.
           if (minPrice !== null && Number.isFinite(minPrice) && sellingPrice < minPrice) {
-            throw new AppError(`Price for ${product.model_name} cannot be less than the minimum allowed (${minPrice} EGP)`, 400);
+            if (!canWaiveFloor(user)) {
+              throw new AppError(`Price for ${product.model_name} cannot be less than the minimum allowed (${minPrice} EGP)`, 400);
+            }
+            // The floor as it stood at this moment, not a flag: by the time anyone
+            // asks, the product's minimum may have moved.
+            floorWaived = minPrice;
           }
           if (maxPrice !== null && Number.isFinite(maxPrice) && sellingPrice > maxPrice) {
             throw new AppError(`Price for ${product.model_name} cannot be more than the maximum allowed (${maxPrice} EGP)`, 400);
@@ -556,6 +592,10 @@ class SalesService {
           // every query. Omitted entirely where the column is absent, so this code runs
           // on a database that has not had migration 20260903_002 yet.
           ...(trackEstimated ? { cost_is_estimated: item.cost_is_estimated ?? false } : {}),
+          // The floor this line went under, where it went under one. Guarded the
+          // same way, so the till keeps selling on a database that has not had
+          // migration 20261019_001 yet — it simply records no exception.
+          ...(trackFloor ? { floor_waived: floorWaived } : {}),
         });
 
         totalAmount = Math.round((totalAmount + sellingPrice) * 100) / 100;

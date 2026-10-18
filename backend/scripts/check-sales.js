@@ -61,6 +61,33 @@ async function stockUp(storeId, sizes, opts = {}) {
   return { product: p, color, items };
 }
 
+/** One pair, of a product with a real price floor (and optionally a ceiling). */
+async function floorWorld(min, max = null) {
+  const list = await cats.listCategories({});
+  const shoes = list.find((c) => c.code === 'shoes');
+  const p = await products.create({
+    product_code: 'ZZFLOOR-' + Date.now() + '-' + Math.floor(pass * 17 + fail),
+    model_name: 'floor test',
+    category_id: shoes.id,
+    default_selling_price: 200,
+    net_price: 50,
+    min_selling_price: min,
+    ...(max === null ? {} : { max_selling_price: max }),
+  });
+  made.products.push(p.id);
+  const color = await products.createColor(p.id, { color_name: 'Floor Test' });
+  const v = await products.createVariant(p.id, { product_color_id: color.id, size_eu: '42' });
+  const [row] = await knex('inventory_items').insert({
+    id: generateUUID(), variant_id: v.id, store_id: storeIdForFloor,
+    cost: 50, source: 'manual', status: 'in_stock',
+  }).returning('*');
+  made.items.push(row.id);
+  return { itemId: row.id, productId: p.id };
+}
+
+/** Set once the store is known, so floorWorld needs no argument at each call site. */
+let storeIdForFloor = null;
+
 /** Every number a report puts on the screen, flattened for comparison. */
 async function snapshot(storeId) {
   const [home, statsAll, salesAn, prodAn, fin, custAn, empAn] = await Promise.all([
@@ -701,6 +728,118 @@ async function snapshot(storeId) {
     }, admin);
     made.sales.push(s.id);
     return s.sale_number + ' at 85, inside 80-90';
+  });
+
+  console.log('');
+  console.log("selling under the shop's own floor:");
+
+  storeIdForFloor = store.id;
+  const cashier = { id: user.id, role_name: 'cashier', permissions: { all_stores: true } };
+  const pricer = { id: user.id, role_name: 'cashier', permissions: { all_stores: true, price_override: true } };
+
+  await check('a cashier never reaches the floor — they cannot move a price at all', async () => {
+    const w = await floorWorld(140);
+    let msg = null;
+    try {
+      await sales.create({
+        store_id: store.id,
+        items: [{ id: w.itemId, sale_price: 100 }],
+        payments: [{ amount: 100, payment_method: 'cash' }],
+      }, cashier);
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('a cashier sold under the floor');
+    // Stopped at the earlier gate, by canOverridePrice, so the refusal names the
+    // marked price rather than the floor. Asserting /minimum/ here would be asserting
+    // a message this path does not produce.
+    if (!/cannot change the price/i.test(msg)) throw new Error('unexpected refusal: ' + msg);
+    return msg.slice(0, 55) + '...';
+  });
+
+  await check('price_override alone does NOT waive the floor', async () => {
+    // That permission means "may choose the price"; the floor is what bounds the
+    // choice. Collapsing the two would remove the protection from every shop that has
+    // granted price_override to a cashier.
+    const w = await floorWorld(140);
+    let msg = null;
+    try {
+      await sales.create({
+        store_id: store.id,
+        items: [{ id: w.itemId, sale_price: 100 }],
+        payments: [{ amount: 100, payment_method: 'cash' }],
+      }, pricer);
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('price_override was treated as authority to waive the floor');
+    if (!/minimum/i.test(msg)) throw new Error('wrong refusal: ' + msg);
+    return 'refused, as it should be';
+  });
+
+  await check('an administrator may, and the floor is recorded against the line', async () => {
+    const w = await floorWorld(140);
+    const sale2 = await sales.create({
+      store_id: store.id,
+      items: [{ id: w.itemId, sale_price: 100 }],
+      payments: [{ amount: 100, payment_method: 'cash' }],
+    }, admin);
+    made.sales.push(sale2.id);
+
+    const line = await knex('sale_items').where('sale_id', sale2.id).first();
+    if (Number(line.sale_price) !== 100) throw new Error('sold at ' + line.sale_price);
+    // THE POINT: an exception nobody can find afterwards is not an exception, it is a
+    // hole.
+    if (line.floor_waived === null || line.floor_waived === undefined) {
+      throw new Error('it sold under the floor and recorded nothing');
+    }
+    if (Number(line.floor_waived) !== 140) throw new Error('recorded the wrong floor: ' + line.floor_waived);
+    return 'sold at 100 against a floor of 140, recorded';
+  });
+
+  await check('the floor recorded is the one that applied, not the one in force later', async () => {
+    const w = await floorWorld(140);
+    const sale2 = await sales.create({
+      store_id: store.id,
+      items: [{ id: w.itemId, sale_price: 100 }],
+      payments: [{ amount: 100, payment_method: 'cash' }],
+    }, admin);
+    made.sales.push(sale2.id);
+    await knex('products').where('id', w.productId).update({ min_selling_price: 500 });
+    const line = await knex('sale_items').where('sale_id', sale2.id).first();
+    // A boolean would have lost this entirely.
+    if (Number(line.floor_waived) !== 140) {
+      throw new Error('the record followed the product, not the sale: ' + line.floor_waived);
+    }
+    return 'still 140 after the product moved to 500';
+  });
+
+  await check('an ordinary sale records no waiver', async () => {
+    const w = await floorWorld(140);
+    const sale2 = await sales.create({
+      store_id: store.id,
+      items: [{ id: w.itemId, sale_price: 200 }],
+      payments: [{ amount: 200, payment_method: 'cash' }],
+    }, admin);
+    made.sales.push(sale2.id);
+    const line = await knex('sale_items').where('sale_id', sale2.id).first();
+    if (line.floor_waived !== null) {
+      throw new Error('a sale at the marked price was flagged as an exception: ' + line.floor_waived);
+    }
+    return 'null, as it should be';
+  });
+
+  await check('the CEILING is not waived, not even for an administrator', async () => {
+    // The floor is the shop's own rule and the shop may set it aside. The ceiling is
+    // what the customer was told they would pay, which is not the shop's to move.
+    const w = await floorWorld(140, 300);
+    let msg = null;
+    try {
+      await sales.create({
+        store_id: store.id,
+        items: [{ id: w.itemId, sale_price: 400 }],
+        payments: [{ amount: 400, payment_method: 'cash' }],
+      }, admin);
+    } catch (e) { msg = e.message; }
+    if (!msg) throw new Error('an administrator overcharged past the ceiling');
+    if (!/maximum/i.test(msg)) throw new Error('wrong refusal: ' + msg);
+    return msg.slice(0, 50) + '...';
   });
 
   // ---------------------------------------------------------------- cleanup
